@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% set nav = 'overview' %}
+{% block heading %}Pacing{% endblock %}
+{% block headactions %}
+  <a class="btn-create" href="{{ url_for('export_overview', **args) }}">&#8595; Export</a>
+{% endblock %}
+
+{% block body %}
+<p class="crumbs">Paced through <span class="crumbc">{{ as_of.strftime('%-d %b %Y') }}</span>
+  &middot; {{ total_rows }} orders{% if pages > 1 %} &middot; page {{ page }} of {{ pages }}{% endif %}</p>
+
+<form class="controls" method="get">
+  <div class="search">
+    <span>&#9906;</span>
+    <input type="text" name="q" value="{{ args.get('q','') }}" placeholder="Client or order">
+  </div>
+  <select name="buyer" class="filtersel">
+    <option value="">All buyers</option>
+    {% for b in options.buyers %}
+      <option value="{{ b }}" {% if args.get('buyer')==b %}selected{% endif %}>{{ b }}</option>
+    {% endfor %}
+  </select>
+  <select name="market" class="filtersel">
+    <option value="">All markets</option>
+    {% for m in options.markets %}
+      <option value="{{ m }}" {% if args.get('market')==m %}selected{% endif %}>{{ m }}</option>
+    {% endfor %}
+  </select>
+  <select name="pacing_type" class="filtersel">
+    <option value="">All types</option>
+    {% for t in pacing_types %}
+      <option value="{{ t }}" {% if args.get('pacing_type')==t %}selected{% endif %}>{{ t|capitalize }}</option>
+    {% endfor %}
+  </select>
+  <select name="needs" class="filtersel">
+    <option value="">Sold terms: any</option>
+    <option value="0" {% if args.get('needs')=='0' %}selected{% endif %}>Entered</option>
+    <option value="1" {% if args.get('needs')=='1' %}selected{% endif %}>Needs terms</option>
+  </select>
+  <label class="endedbox"><input type="checkbox" name="ended" value="1"
+    {% if args.get('ended')=='1' %}checked{% endif %}> Include ended</label>
+  <button class="btn-cat" type="submit">Apply</button>
+</form>
+
+<div class="tablecard">
+ <div class="scroller">
+  <table class="overview">
+    <thead>
+      <tr>
+        <th>Buyer</th><th>Market</th><th>Client</th><th>Order</th><th>Type</th>
+        <th>Start</th><th>End</th>
+        <th class="num">Sold Total</th><th class="num">Mon. Sold</th><th class="num">CTR</th>
+        <th class="num">Total TD</th><th class="num">Total On Pace</th><th class="num">Total Pacing</th>
+        <th class="num">Mon. TD</th><th class="num">Mon. On Pace</th><th class="num pacecol">Mon. Pacing</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>{{ r.order.buyer or '—' }}</td>
+        <td class="clip" title="{{ r.client.market or '' }}">{{ r.client.market or '—' }}</td>
+        <td class="lnk clip" title="{{ r.client.name }}"><a
+          href="{{ url_for('order_detail', order_id=r.order.id) }}">{{ r.client.name }}</a></td>
+        <td class="ordname clip" title="{{ r.order.name }}">{{ r.order.name }}</td>
+        <td><span class="tag type-{{ r.order.pacing_type }}">{{ r.order.pacing_type[:4]|upper }}</span></td>
+        <td class="num">{{ r.order.start_date.strftime('%-m/%-d/%y') if r.order.start_date else '—' }}</td>
+        <td class="num">{{ r.order.end_date.strftime('%-m/%-d/%y') if r.order.end_date else '—' }}</td>
+        <td class="num">{{ r.total.total_target|metric(r.total) }}</td>
+        <td class="num">{{ r.total.monthly_target|metric(r.total) }}</td>
+        <td class="num">{{ r.total.ctr|pct }}</td>
+        <td class="num">{{ r.total.to_date|metric(r.total) }}</td>
+        <td class="num">{{ r.total.on_pace|metric(r.total) }}</td>
+        <td class="num">{{ r.total.pacing_delta|metric(r.total) }}</td>
+        <td class="num">{{ r.total.month_to_date|metric(r.total) }}</td>
+        <td class="num">{{ r.total.month_on_pace|metric(r.total) }}</td>
+        <td class="num pacecol"><span class="pace {{ r.health }}">{{ r.total.month_pacing_pct|pct }}</span>
+          {% if r.partial_history %}<span class="partial" title="This flight started before the delivery feed's earliest day, so the life-of-flight figures are short by whatever ran earlier.">partial</span>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="16" class="empty">Nothing to pace yet. Load a delivery file on the
+        <a href="/data">Data</a> page.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+ </div>
+</div>
+
+{% if pages > 1 %}
+<div class="pager">
+  <span>{{ (page - 1) * 150 + 1 }}–{{ [page * 150, total_rows]|min }} of {{ total_rows }}</span>
+  <span class="arrows">
+    {% if page > 1 %}<a href="{{ url_for('overview', **dict(args, page=page-1)) }}">&#8592; Previous</a>{% endif %}
+    {% if page < pages %}<a href="{{ url_for('overview', **dict(args, page=page+1)) }}">Next &#8594;</a>{% endif %}
+  </span>
+</div>
+{% endif %}
+
+<p class="note">Negative pacing is over-delivering, positive is under. Within
+  &plusmn;10% counts as on pace. <b>partial</b> marks a flight that began before
+  the delivery feed's earliest day &mdash; its life-of-flight figures are short
+  until enough daily drops have accumulated.</p>
+{% endblock %}

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<title>adtini · Pacing{% block title %}{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/static/adtini.css">
+<link rel="stylesheet" href="/static/pacing.css">
+</head>
+<body>
+
+<nav class="rail">
+  <a href="/" title="Home" aria-label="Home"><svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M12 3 3 10v11h6v-6h6v6h6V10z"/></svg></a>
+  <a href="/" title="Pacing" aria-label="Pacing" class="mark{% if nav == 'overview' %} on{% endif %}">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M4 19h16v2H4z"/><path d="M6 15h3v3H6zm5-6h3v9h-3zm5-5h3v14h-3z"/></svg></a>
+  <a href="/data" title="Data" aria-label="Data" class="mark{% if nav == 'data' %} on{% endif %}">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+    <ellipse cx="12" cy="6" rx="8" ry="3" fill="none" stroke="currentColor" stroke-width="2"/>
+    <path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6" fill="none" stroke="currentColor" stroke-width="2"/>
+    <path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" fill="none" stroke="currentColor" stroke-width="2"/></svg></a>
+</nav>
+
+<div class="pagehead">
+  <span class="burger">&#9776;</span>
+  <h2>{% block heading %}Pacing{% endblock %}</h2>
+  {% if build %}<span class="build">{{ build }}</span>{% endif %}
+  {% block headactions %}{% endblock %}
+</div>
+
+<div class="wrap">
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      {% for m in messages %}<p class="flash">{{ m }}</p>{% endfor %}
+    {% endif %}
+  {% endwith %}
+  {% block body %}{% endblock %}
+</div>
+
+</body>
+</html>

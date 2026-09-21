@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% set nav = 'overview' %}
+{% set o = v.order %}
+{% set t = v.total %}
+{% block title %} — {{ v.client.name }}{% endblock %}
+{% block heading %}{{ v.client.name }}{% endblock %}
+{% block headactions %}
+  <a class="btn-create" href="{{ url_for('export_order', order_id=o.id) }}">&#8595; Export</a>
+{% endblock %}
+
+{% block body %}
+<p class="crumbs"><a href="/">Pacing</a> / <span class="crumbc">{{ o.name }}</span>
+  &middot; paced through {{ v.as_of.strftime('%-d %b %Y') }}</p>
+
+{% if v.partial_history and not (t.needs_setup and not t.total_target) %}
+<p class="warnbar">This flight started {{ o.start_date.strftime('%-d %b %Y') }}, before the
+  delivery feed's earliest day ({{ v.covers_from.strftime('%-d %b %Y') }}). Life-of-flight
+  figures are short by whatever ran earlier; month-to-date is unaffected.</p>
+{% endif %}
+
+<div class="qtiles">
+  {% if t.needs_setup and not t.total_target %}
+  {# Nothing sold has been entered yet, so there is no pace to be on. Show
+     what did run and say plainly what is missing. #}
+  <div class="qtile"><small>Sold terms</small><b class="pace unknown">Not set</b>
+    <u>enter them below to pace this order</u></div>
+  <div class="qtile"><small>Delivered</small>
+    <b>{{ t.impressions|num }}</b><u>impressions, all time in feed</u></div>
+  <div class="qtile"><small>Spend</small>
+    <b>{{ t.cost|money }}</b><u>{{ t.clicks|num }} clicks</u></div>
+  <div class="qtile"><small>Delivered CTR</small><b>{{ t.ctr|pct }}</b></div>
+  <div class="qtile"><small>Effective CPM</small>
+    <b>{{ t.effective_unit_cost|money }}</b></div>
+  {% else %}
+  <div class="qtile"><small>Month pacing</small>
+    <b class="pace {{ v.health }}">{{ t.month_pacing_pct|pct }}</b>
+    <u>{{ t.month_to_date|metric(t) }} of {{ t.month_on_pace|metric(t) }} on pace</u></div>
+  <div class="qtile"><small>Flight pacing</small>
+    <b class="pace {{ t.pacing_pct|paceclass }}">{{ t.pacing_pct|pct }}</b>
+    <u>{{ t.to_date|metric(t) }} of {{ t.total_target|metric(t) }} sold</u></div>
+  <div class="qtile"><small>Left to deliver</small>
+    <b>{{ t.remaining|metric(t) }}</b>
+    <u>{% if t.flight_days %}{{ t.flight_days }} day flight{% else %}no flight dates{% endif %}</u></div>
+  <div class="qtile"><small>Delivered CTR</small>
+    <b>{{ t.ctr|pct }}</b><u>{{ t.clicks|num }} clicks</u></div>
+  <div class="qtile"><small>Effective {{ 'CPM' if o.pacing_type=='impression' else ('CPC' if o.pacing_type=='click' else 'CPE') }}</small>
+    <b>{{ t.effective_unit_cost|money }}</b>
+    <u>{% if t.unit_cost %}goal {{ t.unit_cost|money }}{% else %}no goal set{% endif %}</u></div>
+  {% endif %}
+</div>
+
+<form method="post" action="{{ url_for('order_save', order_id=o.id) }}">
+<div class="tablecard ordercard">
+  <div class="orderterms">
+    <div class="f"><label for="pacing_type">Pacing type</label>
+      <select id="pacing_type" name="pacing_type">
+        {% for pt in pacing_types %}
+          <option value="{{ pt }}" {% if o.pacing_type==pt %}selected{% endif %}>{{ pt|capitalize }}</option>
+        {% endfor %}
+      </select></div>
+    <div class="f"><label for="start_date">Start</label>
+      <input id="start_date" type="date" name="start_date"
+        value="{{ o.start_date.isoformat() if o.start_date else '' }}"></div>
+    <div class="f"><label for="end_date">End</label>
+      <input id="end_date" type="date" name="end_date"
+        value="{{ o.end_date.isoformat() if o.end_date else '' }}"></div>
+    <div class="f"><label for="buyer">Buyer</label>
+      <input id="buyer" type="text" name="buyer" value="{{ o.buyer or '' }}"></div>
+    <div class="f"><label for="last_adjusted_on">Adjusted on</label>
+      <input id="last_adjusted_on" type="date" name="last_adjusted_on"
+        value="{{ o.last_adjusted_on.isoformat() if o.last_adjusted_on else '' }}"></div>
+    <div class="f"><label for="adjustment_note">Adjustment</label>
+      <input id="adjustment_note" type="text" name="adjustment_note"
+        value="{{ o.adjustment_note or '' }}" placeholder="lowered budget"></div>
+    <div class="f wide"><label for="notes">Monthly notes</label>
+      <input id="notes" type="text" name="notes" value="{{ o.notes or '' }}"></div>
+    <div class="f"><label class="pausebox"><input type="checkbox" name="paused"
+      {% if o.paused %}checked{% endif %}> Paused</label></div>
+  </div>
+
+ <div class="scroller">
+  <table class="elements">
+    <thead>
+      {% if o.pacing_type == 'impression' %}
+      <tr><th>Campaign Elements:</th><th class="num">Impr.</th><th class="num">Tot. Impr.</th>
+        <th class="num">Day Impr.</th><th class="num">CPM</th><th class="num">Day Budg.</th>
+        <th class="num">Tot Budg.</th><th class="num">TD Impr.</th><th class="num">Impr. Left</th>
+        <th class="num">On Pace</th><th class="num">Pacing</th><th></th></tr>
+      {% elif o.pacing_type == 'click' %}
+      <tr><th>Campaign Elements</th><th class="num">Mon Spend</th><th class="num">Total Spend</th>
+        <th class="num">Daily Spend</th><th class="num">CPC</th><th class="num">Mon Clicks</th>
+        <th class="num">Total Clicks</th><th class="num">TD Spend</th><th class="num">Spend Left</th>
+        <th class="num">On Pace</th><th class="num">Pacing</th><th></th></tr>
+      {% else %}
+      <tr><th>Campaign Elements</th><th class="num">Client Mon. Budget</th>
+        <th class="num">Client Tot. Budget</th><th class="num">Google Mon. Spend</th>
+        <th class="num">Google Tot. Spend</th><th class="num">Google Daily</th>
+        <th class="num">CPE</th><th class="num">Mon. Events</th><th class="num">TD Spend</th>
+        <th class="num">Spend Left</th><th class="num">On Pace</th><th class="num">Pacing</th><th></th></tr>
+      {% endif %}
+    </thead>
+    <tbody>
+    {% for r in v.rows %}
+      {% set li = r.line_item_id %}
+      <tr class="{% if r.needs_setup %}needssetup{% endif %}">
+        <td class="elname"><input type="text" name="li-{{ li }}-name" value="{{ r.label }}">
+          {% if r.needs_setup %}<span class="setupflag" title="Add the sold total and flight dates to pace this row">needs terms</span>{% endif %}</td>
+        {% if o.pacing_type == 'impression' %}
+          <td class="num"><input type="text" name="li-{{ li }}-monthly_impressions" value="{{ r.monthly_target|entry }}"></td>
+          <td class="num"><input type="text" name="li-{{ li }}-total_impressions" value="{{ r.total_target|entry }}"></td>
+          <td class="num ro">{{ r.daily_target|num(2) }}</td>
+          <td class="num"><input type="text" name="li-{{ li }}-goal_cpm" value="{{ r.unit_cost|entry }}"></td>
+          <td class="num ro">{{ r.daily_budget|money }}</td>
+          <td class="num ro">{{ r.total_budget|money }}</td>
+          <td class="num ro">{{ r.to_date|num }}</td>
+          <td class="num ro">{{ r.remaining|num if r.total_target else '—' }}</td>
+          <td class="num ro">{{ r.on_pace|num if r.total_target else '—' }}</td>
+        {% elif o.pacing_type == 'click' %}
+          <td class="num"><input type="text" name="li-{{ li }}-monthly_spend" value="{{ r.monthly_target|entry }}"></td>
+          <td class="num"><input type="text" name="li-{{ li }}-total_spend" value="{{ r.total_target|entry }}"></td>
+          <td class="num ro">{{ r.daily_target|money }}</td>
+          <td class="num"><input type="text" name="li-{{ li }}-goal_cpc" value="{{ r.unit_cost|entry }}"></td>
+          <td class="num ro">{{ ((r.monthly_target / r.unit_cost) if r.unit_cost else None)|num }}</td>
+          <td class="num ro">{{ ((r.total_target / r.unit_cost) if r.unit_cost else None)|num }}</td>
+          <td class="num ro">{{ r.to_date|money }}</td>
+          <td class="num ro">{{ r.remaining|money if r.total_target else '—' }}</td>
+          <td class="num ro">{{ r.on_pace|money if r.total_target else '—' }}</td>
+        {% else %}
+          <td class="num"><input type="text" name="li-{{ li }}-client_monthly_budget" value="{{ r.client_monthly_budget|entry }}"></td>
+          <td class="num"><input type="text" name="li-{{ li }}-client_total_budget" value="{{ r.client_total_budget|entry }}"></td>
+          <td class="num"><input type="text" name="li-{{ li }}-google_monthly_spend" value="{{ r.monthly_target|entry }}"></td>
+          <td class="num"><input type="text" name="li-{{ li }}-google_total_spend" value="{{ r.total_target|entry }}"></td>
+          <td class="num ro">{{ r.daily_target|money }}</td>
+          <td class="num"><input type="text" name="li-{{ li }}-goal_cpe" value="{{ r.unit_cost|entry }}"></td>
+          <td class="num"><input type="text" name="li-{{ li }}-monthly_events" value="{{ r.monthly_events|entry }}"></td>
+          <td class="num ro">{{ r.to_date|money }}</td>
+          <td class="num ro">{{ r.remaining|money if r.total_target else '—' }}</td>
+          <td class="num ro">{{ r.on_pace|money if r.total_target else '—' }}</td>
+        {% endif %}
+        <td class="num ro"><span class="pace {{ r.pacing_pct|paceclass }}">{{ r.pacing_pct|pct }}</span></td>
+        <td class="rowdel">
+          <button class="btn-del" type="submit" formnovalidate
+            formaction="{{ url_for('line_item_delete', order_id=o.id, line_item_id=li) }}"
+            title="Remove row">&times;</button></td>
+      </tr>
+    {% endfor %}
+      <tr class="totalrow">
+        <td>Total:</td>
+        {% if o.pacing_type == 'impression' %}
+          <td class="num">{{ t.monthly_target|num }}</td>
+          <td class="num">{{ t.total_target|num }}</td>
+          <td class="num">{{ t.daily_target|num(2) }}</td>
+          <td class="num">{{ t.unit_cost|money }}</td>
+          <td class="num">{{ t.daily_budget|money }}</td>
+          <td class="num">{{ t.total_budget|money }}</td>
+          <td class="num">{{ t.to_date|num }}</td>
+          <td class="num">{{ t.remaining|num }}</td>
+          <td class="num">{{ t.on_pace|num }}</td>
+        {% elif o.pacing_type == 'click' %}
+          <td class="num">{{ t.monthly_target|money }}</td>
+          <td class="num">{{ t.total_target|money }}</td>
+          <td class="num">{{ t.daily_target|money }}</td>
+          <td class="num">{{ t.unit_cost|money }}</td>
+          <td class="num">{{ ((t.monthly_target / t.unit_cost) if t.unit_cost else None)|num }}</td>
+          <td class="num">{{ ((t.total_target / t.unit_cost) if t.unit_cost else None)|num }}</td>
+          <td class="num">{{ t.to_date|money }}</td>
+          <td class="num">{{ t.remaining|money }}</td>
+          <td class="num">{{ t.on_pace|money }}</td>
+        {% else %}
+          <td class="num">{{ t.client_monthly_budget|money }}</td>
+          <td class="num">{{ t.client_total_budget|money }}</td>
+          <td class="num">{{ t.monthly_target|money }}</td>
+          <td class="num">{{ t.total_target|money }}</td>
+          <td class="num">{{ t.daily_target|money }}</td>
+          <td class="num">{{ t.unit_cost|money }}</td>
+          <td class="num">{{ t.monthly_events|num }}</td>
+          <td class="num">{{ t.to_date|money }}</td>
+          <td class="num">{{ t.remaining|money }}</td>
+          <td class="num">{{ t.on_pace|money }}</td>
+        {% endif %}
+        <td class="num"><span class="pace {{ t.pacing_pct|paceclass }}">{{ t.pacing_pct|pct }}</span></td>
+        <td></td>
+      </tr>
+    </tbody>
+  </table>
+ </div>
+
+  <div class="cardfoot">
+    <button class="btn save" type="submit">Save terms</button>
+  </div>
+</div>
+</form>
+
+<form method="post" action="{{ url_for('line_item_add', order_id=o.id) }}" class="addrow">
+  <input type="text" name="name" placeholder="New campaign element">
+  <button class="btn2 addprod" type="submit">&#43; Add row</button>
+</form>
+
+{% if v.grid_dates %}
+<details class="qfold dailygrid" open>
+  <summary>Daily delivery — {{ v.grid_dates|length }} days</summary>
+  <div class="scroller">
+    <table class="daily">
+      <thead><tr><th>Campaign Elements</th>
+        {% for d in v.grid_dates %}<th class="num">{{ d.strftime('%-d-%b') }}</th>{% endfor %}</tr></thead>
+      <tbody>
+      {% for r in v.rows %}
+        <tr><td class="elname">{{ r.label }}</td>
+          {% for d in v.grid_dates %}
+            {% set val = v.grid.get(r.line_item_id, {}).get(d) %}
+            <td class="num {% if not val %}zero{% endif %}">{{ val|num if val else '—' }}</td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+        <tr class="ontrack"><td>On pace / day</td>
+          {% for d in v.grid_dates %}<td class="num">{{ v.on_pace_daily|num }}</td>{% endfor %}</tr>
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endif %}
+{% endblock %}

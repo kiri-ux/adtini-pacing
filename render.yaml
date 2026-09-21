@@ -1,0 +1,68 @@
+# Blueprint for pacing.reporting.zone.
+#
+# Three pieces: the web service people use, a nightly cron job that pulls the
+# S3 drops, and the Postgres instance they share. `render blueprint launch`
+# or Render's "New > Blueprint" creates all three from this file.
+services:
+  - type: web
+    name: adtini-pacing
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    # Two workers with threads: a page render is short, but an XLSX export of
+    # every order is not, and one worker would block the whole tool while it
+    # ran. The timeout covers a manual upload of a ~70MB drop.
+    startCommand: gunicorn app:app --timeout 600 --worker-class gthread --workers 2 --threads 8
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: DATABASE_URL
+        fromDatabase:
+          name: adtini-pacing-db
+          property: connectionString
+      - key: S3_BUCKET
+        value: adtini-orders
+      - key: S3_PREFIX
+        value: orders/
+      - key: AWS_REGION
+        value: us-east-1
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+
+  - type: cron
+    name: adtini-pacing-ingest
+    runtime: python
+    plan: starter
+    # 13:00 UTC, a little after the ~12:02 drop the sample file came from.
+    schedule: "0 13 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/ingest.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: DATABASE_URL
+        fromDatabase:
+          name: adtini-pacing-db
+          property: connectionString
+      - key: S3_BUCKET
+        value: adtini-orders
+      - key: S3_PREFIX
+        value: orders/
+      - key: AWS_REGION
+        value: us-east-1
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+
+databases:
+  - name: adtini-pacing-db
+    plan: basic-256mb
+    postgresMajorVersion: "16"

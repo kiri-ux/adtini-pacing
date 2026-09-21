@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<title>adtini · Pacing</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/static/adtini.css">
+<link rel="stylesheet" href="/static/pacing.css">
+</head>
+<body class="loginpage">
+  <form method="post" class="loginbox">
+    <h1>adtini · Pacing</h1>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autofocus>
+    {% if error %}<p class="rowmsg err">{{ error }}</p>{% endif %}
+    <button class="btn save" type="submit">Sign in</button>
+  </form>
+</body>
+</html>

@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% set nav = 'data' %}
+{% block heading %}Data{% endblock %}
+
+{% block body %}
+<p class="crumbs"><a href="/">Pacing</a> / <span class="crumbc">Data</span></p>
+
+{% if message %}<p class="flash">{{ message }}</p>{% endif %}
+
+<div class="qtiles">
+  <div class="qtile"><small>Delivery through</small>
+    <b>{{ latest.strftime('%-d %b') if latest else '—' }}</b>
+    <u>{{ latest.strftime('%Y') if latest else 'nothing loaded' }}</u></div>
+  <div class="qtile"><small>Clients</small><b>{{ counts.clients }}</b></div>
+  <div class="qtile"><small>Orders</small><b>{{ counts.orders }}</b></div>
+  <div class="qtile"><small>Bucket</small><b class="small">{{ bucket }}</b><u>{{ prefix }}</u></div>
+</div>
+
+<div class="tablecard datacard">
+  <div class="datarow">
+    <form method="post">
+      <input type="hidden" name="action" value="ingest">
+      <div>
+        <h4>Pull from S3</h4>
+        <p class="hint">Reads every new drop under <code>{{ bucket }}/{{ prefix }}</code>.
+          Days already loaded are replaced with the newer numbers.</p>
+      </div>
+      <label class="forcebox"><input type="checkbox" name="force"> Re-read files already loaded</label>
+      <button class="btn preview" type="submit">Run sweep</button>
+    </form>
+  </div>
+
+  <div class="datarow">
+    <form method="post" enctype="multipart/form-data">
+      <input type="hidden" name="action" value="upload">
+      <div>
+        <h4>Upload a file</h4>
+        <p class="hint">A client-serve CSV, .csv.gz or .zip — for backfilling
+          before the bucket is wired up.</p>
+      </div>
+      <input type="file" name="file" accept=".csv,.gz,.zip">
+      <button class="btn preview" type="submit">Load</button>
+    </form>
+  </div>
+
+  <div class="datarow">
+    <form method="post">
+      <input type="hidden" name="action" value="sync">
+      <div>
+        <h4>Rebuild the order book</h4>
+        <p class="hint">Creates any client, order and campaign element the feed
+          has but the order book does not. Never touches terms already entered.</p>
+      </div>
+      <button class="btn preview" type="submit">Sync</button>
+    </form>
+  </div>
+</div>
+
+<h3 class="products">Recent files</h3>
+<div class="tablecard">
+ <div class="scroller">
+  <table>
+    <thead><tr><th>File</th><th>Status</th><th class="num">Rows</th>
+      <th class="num">Covers</th><th class="num">Loaded</th></tr></thead>
+    <tbody>
+    {% for f in files %}
+      <tr>
+        <td class="lnk">{{ f.s3_key }}</td>
+        <td><span class="pace {{ 'on-pace' if f.status == 'ok' else 'under' }}">{{ f.status }}</span>
+          {% if f.message %}<span class="rowmsg err">{{ f.message[:120] }}</span>{% endif %}</td>
+        <td class="num">{{ f.rows_written|num if f.rows_written else '—' }}</td>
+        <td class="num">{% if f.min_date %}{{ f.min_date.strftime('%-d %b') }} – {{ f.max_date.strftime('%-d %b') }}{% else %}—{% endif %}</td>
+        <td class="num">{{ f.ingested_at.strftime('%-d %b %H:%M') if f.ingested_at else '—' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="empty">No files loaded yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+ </div>
+</div>
+{% endblock %}
