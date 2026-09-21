@@ -30,6 +30,7 @@ COLUMN_MAP = {
     "order_id": "external_order_id",
     "order_level_name": "order_level_name",
     "product": "product",
+    "restricted": "restricted",
     "strategy_id": "strategy_id",
     "strategy_name": "strategy_name",
     "strategy_type": "strategy_type",
@@ -51,7 +52,7 @@ ATTRS = [
     "business_unit", "client_name", "external_order_id", "external_line_item_id",
     "order_level_name",
     "line_item_name", "strategy_name", "strategy_type", "product",
-    "campaign_name", "campaign_start_date", "goal_cpm",
+    "restricted", "campaign_name", "campaign_start_date", "goal_cpm",
 ]
 
 FILENAME_DATE = re.compile(r"(\d{8})")

@@ -222,3 +222,87 @@ def test_health_tolerance():
     assert health(0.4) == "under"
     assert health(-0.4) == "over"
     assert health(None) == "unknown"
+
+
+# --- rate card -------------------------------------------------------------
+def test_pacing_uses_the_setup_cpm_not_the_retail_one():
+    """Three CPMs exist per line item and only one is the pacing rate.
+
+    The orders file's budget over its impressions is the retail rate the
+    client is billed. Pacing on it would show a budget the buying team never
+    bought at, so the rate card's setup rate wins wherever it has one.
+    """
+    from orderbook import resolve_goal_cpm
+
+    # Display is on the card at $2.50; the retail rate here works out to $8.
+    cpm, source = resolve_goal_cpm("Display", False, total_budget=8_000,
+                                   total_impressions=1_000_000)
+    assert cpm == 2.50
+    assert source == "rate card"
+
+
+def test_a_product_the_card_does_not_price_falls_back_to_the_orders_file():
+    from orderbook import resolve_goal_cpm
+
+    cpm, source = resolve_goal_cpm("Some New Product", False, total_budget=8_000,
+                                   total_impressions=1_000_000)
+    assert cpm == 8.0
+    assert source == "orders file"
+
+
+def test_products_bought_on_spend_have_no_cpm_at_all():
+    """PPC, LinkedIn and PMax are bought on budget, not on a rate."""
+    from orderbook import resolve_goal_cpm
+
+    assert resolve_goal_cpm("PPC", False, None, None) == (None, None)
+    assert resolve_goal_cpm("LinkedIn", False, None, None) == (None, None)
+
+
+def test_restricted_categories_take_their_own_higher_rate():
+    import ratecard
+
+    assert ratecard.setup_cpm("Display") == 2.50
+    assert ratecard.setup_cpm("Display", restricted=True) == 4.00
+
+
+def test_the_card_matches_the_hand_kept_sheet():
+    """A Display line on the buying team's sheet reads $2.50, which is the
+    card's Max - not its $1.00 Starting."""
+    import ratecard
+
+    assert ratecard.setup_cpm("Display") == 2.50
+    assert ratecard.setup_cpm("CTV") == 14.00
+    assert ratecard.setup_cpm("Meta") == 7.00
+
+
+def test_margin_is_measured_against_the_partner_hard_cost():
+    """The sheet's own "Margin v Max" column: Display is 37.50%."""
+    import ratecard
+
+    rate = ratecard.lookup("Display")
+    assert rate.partner_hard_cost == 4.00
+    assert round(rate.margin_at(2.50) * 100, 2) == 37.50
+
+
+def test_performance_goals_parse_off_the_card():
+    import ratecard
+
+    display = ratecard.lookup("Display")
+    assert display.goal_metric == "ctr"
+    assert display.goal_value == 0.004
+
+    ctv = ratecard.lookup("CTV")
+    assert ctv.goal_metric == "vr"
+    assert ctv.goal_value == 0.90
+
+
+def test_the_row_carries_its_goal_and_margin():
+    order = Order(id=90, client_id=1, name="Acme", pacing_type="impression",
+                  start_date=dt.date(2026, 9, 1), end_date=dt.date(2026, 9, 30))
+    item = LineItem(id=90, order_id=90, name="D - Behavioral", product="Display",
+                    monthly_impressions=100_000, total_impressions=100_000,
+                    goal_cpm=2.50, goal_cpm_source="rate card")
+    row = compute_row(item, order, [], dt.date(2026, 9, 1))
+    assert row.goal_label == "0.40% CTR"
+    assert round(row.margin * 100, 2) == 37.50
+    assert row.goal_cpm_source == "rate card"

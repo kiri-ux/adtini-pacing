@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import func, select
 
+import ratecard
 from ingest.orders import SPEND_BY_PRODUCT
 from models import (
     PACING_CLICK,
@@ -123,11 +124,36 @@ def unique_label(label: str, taken: set[str]) -> str:
     return unique
 
 
-def goal_cpm(total_budget: float | None, total_impressions: float | None) -> float | None:
-    """The orders file prices in budget and impressions, not in a CPM."""
+def retail_cpm(total_budget: float | None, total_impressions: float | None) -> float | None:
+    """What the client is billed per thousand, from the orders file.
+
+    This is the retail rate, not the rate the campaign was set up at, so it
+    is for margin - never for pacing.
+    """
     if not total_budget or not total_impressions:
         return None
     return round(total_budget / total_impressions * 1000, 2)
+
+
+def resolve_goal_cpm(
+    product: str | None, restricted: bool, total_budget: float | None,
+    total_impressions: float | None,
+) -> tuple[float | None, str | None]:
+    """The CPM to pace against, and where it came from.
+
+    The rate card wins: it holds what the DSP campaign is actually set up at,
+    which is what the buying team's sheet works in. The orders file's budget
+    over its impressions is the retail rate the client pays, which is higher
+    and would pace the line against a budget nobody bought at - it is only
+    the fallback for a product the card does not price.
+    """
+    from_card = ratecard.setup_cpm(product, restricted=restricted)
+    if from_card:
+        return from_card, "rate card"
+    derived = retail_cpm(total_budget, total_impressions)
+    if derived:
+        return derived, "orders file"
+    return None, None
 
 
 @dataclass
@@ -156,8 +182,11 @@ def _apply_sold_terms(item: LineItem, row, pacing_type: str) -> None:
     if pacing_type == PACING_IMPRESSION:
         item.total_impressions = row.get("total_impressions")
         item.monthly_impressions = row.get("monthly_impressions")
-        item.goal_cpm = goal_cpm(
-            row.get("total_campaign_budget"), row.get("total_impressions")
+        item.goal_cpm, item.goal_cpm_source = resolve_goal_cpm(
+            row.get("product"),
+            bool(item.restricted),
+            row.get("total_campaign_budget"),
+            row.get("total_impressions"),
         )
         return
 
@@ -318,6 +347,7 @@ def adopt_unmatched_delivery(session) -> AdoptResult:
             DailyDelivery.order_level_name,
             DailyDelivery.line_item_name,
             DailyDelivery.product,
+            DailyDelivery.restricted,
             DailyDelivery.business_unit,
             func.min(DailyDelivery.campaign_start_date).label("start_date"),
         ).group_by(
@@ -327,6 +357,7 @@ def adopt_unmatched_delivery(session) -> AdoptResult:
             DailyDelivery.order_level_name,
             DailyDelivery.line_item_name,
             DailyDelivery.product,
+            DailyDelivery.restricted,
             DailyDelivery.business_unit,
         )
     ).all()
@@ -381,11 +412,16 @@ def adopt_unmatched_delivery(session) -> AdoptResult:
             continue
 
         taken = {li.name for li in order.line_items}
+        restricted = (row.restricted or "").strip().lower() == "yes"
+        cpm, source = resolve_goal_cpm(row.product, restricted, None, None)
         item = LineItem(
             order_id=order.id,
             external_id=key,
             name=unique_label(line_item_label(row.product), taken),
             product=row.product,
+            restricted=restricted,
+            goal_cpm=cpm,
+            goal_cpm_source=source,
             sort_order=len(order.line_items),
         )
         session.add(item)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import os
 import io
 
 import pandas as pd
@@ -9,7 +10,7 @@ import pytest
 
 from ingest.loader import DELIVERY, ORDERS, classify
 from ingest.orders import match_columns, normalize, simplify, strip_html
-from orderbook import goal_cpm
+from orderbook import retail_cpm
 
 
 def csv(text: str) -> pd.DataFrame:
@@ -128,11 +129,11 @@ def test_money_survives_its_formatting():
 
 
 # --- deriving the rate -----------------------------------------------------
-def test_goal_cpm_comes_from_budget_and_impressions():
-    """The orders file prices in budget and impressions, not in a CPM."""
-    assert goal_cpm(3500.0, 700000.0) == 5.0
-    assert goal_cpm(None, 700000.0) is None
-    assert goal_cpm(3500.0, 0) is None
+def test_retail_cpm_comes_from_budget_and_impressions():
+    """What the client is billed - used for margin, never for pacing."""
+    assert retail_cpm(3500.0, 700000.0) == 5.0
+    assert retail_cpm(None, 700000.0) is None
+    assert retail_cpm(3500.0, 0) is None
 
 
 # --- schema ----------------------------------------------------------------
@@ -157,3 +158,36 @@ def test_the_app_never_builds_its_own_schema():
             if isinstance(node, ast.Call)
         }
         assert not (called & banned), f"{name} must not build the schema"
+
+
+def test_a_migrated_database_can_take_a_bulk_insert(tmp_path):
+    """Regression: the frozen baseline dropped `updated_at`'s server default.
+
+    The ingest inserts in bulk without setting it, so every row failed NOT
+    NULL on a freshly migrated database - which no unit test touched, because
+    they all build the schema from the models instead.
+    """
+    import datetime as dt
+    import subprocess
+    import sys
+
+    url = f"sqlite:///{tmp_path}/m.db"
+    subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        env={**os.environ, "DATABASE_URL": url}, check=True, capture_output=True,
+    )
+
+    from sqlalchemy import create_engine, insert, select
+    from models import DailyDelivery
+
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(
+            insert(DailyDelivery.__table__).values(
+                date=dt.date(2026, 9, 1), data_source="x", campaign_id="1",
+                strategy_id="1", impressions=1.0, clicks=0.0, cost=0.0,
+                conversions=0.0, viewthroughs=0.0, click_conversions=0.0,
+            )
+        )
+        stored = conn.execute(select(DailyDelivery.__table__)).first()
+    assert stored.updated_at is not None

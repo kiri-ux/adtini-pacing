@@ -84,6 +84,15 @@ class PacingRow:
     ctr: float | None = None
     effective_unit_cost: float | None = None
 
+    # From the rate card: what this product is expected to do, and what the
+    # supply partner charges for it.
+    goal_metric: str | None = None      # "ctr" or "vr"
+    goal_value: float | None = None
+    goal_label: str | None = None
+    partner_hard_cost: float | None = None
+    margin: float | None = None
+    goal_cpm_source: str | None = None
+
     needs_setup: bool = False
     daily: list[DailyPoint] = field(default_factory=list)
     # The row's sold terms, so a template can read fields the engine does not
@@ -186,6 +195,7 @@ def compute_row(
             attr,
         )
         _attach_effective_cost(row)
+        _attach_rate_card(row, line_item)
         return row
 
     row.flight_days = inclusive_days(start, end)
@@ -229,7 +239,23 @@ def compute_row(
         row.month_pacing_pct = _pct(row.month_on_pace, row.month_to_date)
 
     _attach_effective_cost(row)
+    _attach_rate_card(row, line_item)
     return row
+
+
+def _attach_rate_card(row: PacingRow, line_item: LineItem) -> None:
+    """Hang the product's expected performance and margin off the row."""
+    import ratecard
+
+    row.goal_cpm_source = line_item.goal_cpm_source
+    rate = ratecard.lookup(line_item.product, restricted=bool(line_item.restricted))
+    if rate is None:
+        return
+    row.goal_metric = rate.goal_metric
+    row.goal_value = rate.goal_value
+    row.goal_label = rate.goal_label
+    row.partner_hard_cost = rate.partner_hard_cost
+    row.margin = rate.margin_at(row.unit_cost)
 
 
 def _attach_effective_cost(row: PacingRow) -> None:
@@ -282,6 +308,33 @@ def total_row(rows: Sequence[PacingRow], pacing_type: str) -> PacingRow:
         total.unit_cost = sum(r.unit_cost for r in priced) / len(priced) if priced else 0.0
 
     _attach_effective_cost(total)
+
+    # A goal only means something on the total when every row shares it.
+    labels = {r.goal_label for r in rows if r.goal_label}
+    if len(labels) == 1:
+        only = rows[0 if rows[0].goal_label else -1]
+        for candidate in rows:
+            if candidate.goal_label:
+                only = candidate
+                break
+        total.goal_metric = only.goal_metric
+        total.goal_value = only.goal_value
+        total.goal_label = only.goal_label
+
+    costed = [r for r in rows if r.partner_hard_cost and r.total_target]
+    if costed:
+        weight = sum(r.total_target for r in costed)
+        total.partner_hard_cost = (
+            sum(r.partner_hard_cost * r.total_target for r in costed) / weight
+        )
+        if total.partner_hard_cost and total.unit_cost:
+            total.margin = (
+                (total.partner_hard_cost - total.unit_cost) / total.partner_hard_cost
+            )
+
+    sources = {r.goal_cpm_source for r in rows if r.goal_cpm_source}
+    total.goal_cpm_source = sources.pop() if len(sources) == 1 else None
+
     return total
 
 

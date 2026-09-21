@@ -51,7 +51,7 @@ CHUNK = 1000
 # Everything except the grain and the primary key gets refreshed on conflict.
 UPDATABLE = [
     "business_unit", "client_name", "external_order_id", "order_level_name",
-    "line_item_name", "strategy_name", "strategy_type", "product",
+    "line_item_name", "strategy_name", "strategy_type", "product", "restricted",
     "campaign_name", "campaign_start_date", "impressions", "clicks", "cost",
     "conversions", "viewthroughs", "click_conversions", "goal_cpm",
 ]

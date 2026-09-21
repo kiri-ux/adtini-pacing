@@ -43,11 +43,23 @@
   <div class="qtile"><small>Left to deliver</small>
     <b>{{ t.remaining|metric(t) }}</b>
     <u>{% if t.flight_days %}{{ t.flight_days }} day flight{% else %}no flight dates{% endif %}</u></div>
+  {% if t.goal_metric == 'vr' %}
   <div class="qtile"><small>Delivered CTR</small>
-    <b>{{ t.ctr|pct }}</b><u>{{ t.clicks|num }} clicks</u></div>
-  <div class="qtile"><small>Effective {{ 'CPM' if o.pacing_type=='impression' else ('CPC' if o.pacing_type=='click' else 'CPE') }}</small>
-    <b>{{ t.effective_unit_cost|money }}</b>
-    <u>{% if t.unit_cost %}goal {{ t.unit_cost|money }}{% else %}no goal set{% endif %}</u></div>
+    <b>{{ t.ctr|pct }}</b><u>{{ t.clicks|num }} clicks &middot; goal is {{ t.goal_label }}</u></div>
+  {% else %}
+  <div class="qtile"><small>Delivered CTR</small>
+    <b class="{% if t.goal_value %}pace {{ 'on-pace' if (t.ctr or 0) >= t.goal_value else 'under' }}{% endif %}">{{ t.ctr|pct }}</b>
+    <u>{% if t.goal_label %}goal {{ t.goal_label }}{% else %}{{ t.clicks|num }} clicks{% endif %}</u></div>
+  {% endif %}
+  <div class="qtile"><small>Setup {{ 'CPM' if o.pacing_type=='impression' else ('CPC' if o.pacing_type=='click' else 'CPE') }}</small>
+    <b>{{ t.unit_cost|money }}</b>
+    <u>{% if t.goal_cpm_source %}from {{ t.goal_cpm_source }}{% else %}not set{% endif %}
+      &middot; running at {{ t.effective_unit_cost|money }}</u></div>
+  {% if t.margin is not none %}
+  <div class="qtile"><small>Margin</small>
+    <b class="pace {{ 'on-pace' if t.margin >= 0.5 else 'under' }}">{{ t.margin|pct(1) }}</b>
+    <u>partner {{ t.partner_hard_cost|money }} &middot; target 50%</u></div>
+  {% endif %}
   {% endif %}
 </div>
 

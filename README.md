@@ -69,9 +69,36 @@ Monthly pacing works the same way on the part of the calendar month the flight
 actually covers - a flight starting on the 17th owes its monthly impressions
 in 14 days, not 30.
 
-The orders file prices in budget and impressions rather than in a rate, so the
-goal CPM is derived: `total_campaign_budget / total_campaign_impressions ×
-1000`.
+### Which CPM
+
+Three different CPMs exist for the same line item and they are not
+interchangeable:
+
+| | What it is | Where it comes from | Used for |
+|---|---|---|---|
+| **Setup CPM** | what the DSP campaign is built at | the rate card | **pacing** |
+| **Retail CPM** | what the client is billed | orders file: budget ÷ impressions | margin |
+| **Partner hard cost** | what the supply partner charges | the rate card | margin |
+
+Pacing runs on the setup rate. Pacing on the retail rate would show a budget
+the buying team never bought at - a Display line is set up at $2.50, which is
+the card's Max and matches the hand-kept sheet, while its retail rate is
+several times that.
+
+The card lives in `data/rate_card.csv`, versioned so a rate change is a
+reviewable commit, and moves into the database the day the team wants to edit
+it in the app. It also carries each product's performance goal (0.40% CTR for
+Display, 90% VR for CTV) and the partner hard cost, so the order page can show
+delivered CTR against the goal and margin against the 50% target. Restricted
+categories take their own higher entry, keyed off the `restricted` flag the
+delivery feed carries.
+
+Products bought on budget rather than a rate - PPC, LinkedIn, Performance Max -
+are deliberately absent from the card and have no CPM at all.
+
+Each line item records where its rate came from, so the page can say "from
+rate card" rather than leaving a buyer to guess which of the three they are
+looking at.
 
 ### Seeing the strategies apart
 
@@ -215,7 +242,7 @@ it skips the login gate. To work without S3 access, drop a CSV or zip on the
 **Data** page - it takes the same file the bucket does.
 
 ```bash
-python -m pytest tests/ -q    # 51 tests
+python -m pytest tests/ -q    # 60 tests
 python scripts/ingest.py      # what the cron job runs
 ```
 
@@ -239,6 +266,8 @@ ingest/
   orders.py         the orders export's quirks, and its alias table
   loader.py         routes by filename, upserts, ingest log
 
+ratecard.py         setup CPM, goal CTR/VR and partner cost per product
+data/rate_card.csv  the card itself, versioned
 orderbook.py        imports orders; classification and labelling rules
 views.py            read models for the two pages, and the chart series
 exports.py          XLSX in the same column order as the sheets

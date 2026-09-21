@@ -126,6 +126,12 @@ class LineItem(Base):
     monthly_impressions: Mapped[float | None] = mapped_column(Float)
     total_impressions: Mapped[float | None] = mapped_column(Float)
     goal_cpm: Mapped[float | None] = mapped_column(Float)
+    # Where `goal_cpm` came from: "rate card", "orders file" or "buyer".
+    # Three different CPMs exist for one line item and only the setup rate is
+    # the one to pace on, so the page says which is in use.
+    goal_cpm_source: Mapped[str | None] = mapped_column(String(20))
+    # Restricted categories carry their own, higher, rate card entry.
+    restricted: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # --- click pacing (PPC, LinkedIn) ---
     monthly_spend: Mapped[float | None] = mapped_column(Float)
@@ -173,6 +179,7 @@ class DailyDelivery(Base):
     strategy_name: Mapped[str | None] = mapped_column(String(400))
     strategy_type: Mapped[str | None] = mapped_column(String(120))
     product: Mapped[str | None] = mapped_column(String(120))
+    restricted: Mapped[str | None] = mapped_column(String(10))
     campaign_name: Mapped[str | None] = mapped_column(String(400))
     campaign_start_date: Mapped[dt.date | None] = mapped_column(Date)
 
