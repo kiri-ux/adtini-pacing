@@ -9,6 +9,9 @@ services:
     runtime: python
     plan: starter
     buildCommand: pip install -r requirements.txt
+    # Applied before traffic moves to the new version, so the code and the
+    # schema never disagree. The app itself never creates or alters tables.
+    preDeployCommand: alembic upgrade head
     # Two workers with threads: a page render is short, but an XLSX export of
     # every order is not, and one worker would block the whole tool while it
     # ran. The timeout covers a manual upload of a ~70MB drop.

@@ -34,6 +34,13 @@ def session_scope() -> Iterator[Session]:
 
 
 def init_db() -> None:
+    """Build the schema directly from the models, for tests only.
+
+    Not for a real database: `create_all` creates missing tables but never
+    alters existing ones, so on a live database it silently leaves new
+    columns off and every query for one then fails. Alembic owns the schema
+    everywhere else.
+    """
     import models  # noqa: F401  (registers mappers)
 
     models.Base.metadata.create_all(engine)

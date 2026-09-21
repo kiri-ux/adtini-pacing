@@ -133,3 +133,27 @@ def test_goal_cpm_comes_from_budget_and_impressions():
     assert goal_cpm(3500.0, 700000.0) == 5.0
     assert goal_cpm(None, 700000.0) is None
     assert goal_cpm(3500.0, 0) is None
+
+
+# --- schema ----------------------------------------------------------------
+def test_the_app_never_builds_its_own_schema():
+    """`create_all` creates missing tables but never alters existing ones.
+
+    Running it against a live database leaves columns added later off and
+    every query for one then fails - which is exactly what took the first
+    deploy down. Alembic owns the schema; nothing in the request path may
+    touch it.
+    """
+    import ast
+    import pathlib
+
+    banned = {"create_all", "init_db"}
+    for name in ("app.py", "scripts/ingest.py", "views.py", "orderbook.py"):
+        tree = ast.parse(pathlib.Path(name).read_text())
+        called = {
+            node.func.attr if isinstance(node.func, ast.Attribute) else
+            getattr(node.func, "id", None)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+        }
+        assert not (called & banned), f"{name} must not build the schema"

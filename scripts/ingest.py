@@ -1,16 +1,19 @@
 #!/usr/bin/env python
 """Pull new delivery drops from S3 and refresh the order book.
 
-Run on a schedule (Render Cron Job) shortly after the daily file lands. Safe
+Run on a schedule (Render Cron Job) shortly after the daily files land. Safe
 to run more than once a day: a drop already loaded with the same ETag is
 skipped, and days that arrive again simply replace themselves.
+
+The schema is the web service's pre-deploy step to apply; this only reads and
+writes rows.
 """
 from __future__ import annotations
 
 import logging
 import sys
 
-from db import init_db, session_scope
+from db import session_scope
 from ingest import loader
 from orderbook import sync_from_delivery
 
@@ -20,8 +23,6 @@ def main() -> int:
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
     )
     log = logging.getLogger("ingest")
-
-    init_db()
 
     result = loader.run(force="--force" in sys.argv)
     log.info("s3 sweep: %s", result.summary())

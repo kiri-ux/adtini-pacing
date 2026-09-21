@@ -22,13 +22,14 @@ from flask import (
     url_for,
 )
 from sqlalchemy import select
+from werkzeug.exceptions import HTTPException
 
 import exports
 import views
 from config import get_settings
-from db import init_db, session_scope
+from db import session_scope
 from ingest import loader
-from models import PACING_TYPES, Client, IngestedFile, LineItem, Order
+from models import PACING_TYPES, Base, Client, IngestedFile, LineItem, Order
 from orderbook import adopt_unmatched_delivery
 
 logging.basicConfig(level=logging.INFO)
@@ -38,7 +39,10 @@ app = Flask(__name__)
 app.secret_key = settings.session_secret
 app.config["MAX_CONTENT_LENGTH"] = 512 * 1024 * 1024  # the drops are ~70MB
 
-init_db()
+# The schema is owned by Alembic, applied by the deploy's pre-deploy command.
+# Nothing here creates or alters tables: `create_all` only ever creates
+# missing tables, so running it on a live database silently leaves new
+# columns off and every page then fails on the missing column.
 
 
 # --------------------------------------------------------------------------
@@ -452,10 +456,65 @@ def _xlsx(book, stem: str) -> Response:
     )
 
 
+@app.errorhandler(500)
+@app.errorhandler(Exception)
+def on_error(error):
+    """Log the traceback, and say something a person can act on.
+
+    Flask's default 500 page says only that something went wrong, which is
+    nothing to go on when the app is on Render and the reader is not.
+    """
+    if isinstance(error, HTTPException):
+        return error
+    app.logger.exception("unhandled error on %s", request.path)
+    return render_template("error.html", detail=str(error)), 500
+
+
 @app.route("/healthz")
 def healthz():
+    """Liveness, plus whether the schema is actually current.
+
+    A health check that only proves the process is up would have reported
+    green through the outage that made every page 500.
+    """
+    from sqlalchemy import inspect
+
+    from db import engine
+
+    try:
+        tables = set(inspect(engine).get_table_names())
+    except Exception as exc:
+        return {"ok": False, "database": f"unreachable: {exc}"}, 503
+
+    expected = {t.name for t in Base.metadata.sorted_tables}
+    missing = sorted(expected - tables)
+    if missing:
+        return {
+            "ok": False,
+            "database": "reachable",
+            "missing_tables": missing,
+            "hint": "run `alembic upgrade head`",
+        }, 503
+
+    try:
+        with session_scope() as db:
+            db.execute(select(Order).limit(1)).first()
+    except Exception as exc:
+        # Almost always a column the models have and the database does not.
+        return {
+            "ok": False,
+            "database": "reachable",
+            "schema": f"out of date: {exc}",
+            "hint": "run `alembic upgrade head`",
+        }, 503
+
     return {"ok": True}
 
 
 if __name__ == "__main__":
+    # Local convenience: bring the schema up before serving, which the deploy
+    # does with its own pre-deploy step.
+    import subprocess
+
+    subprocess.run(["alembic", "upgrade", "head"], check=False)
     app.run(debug=True, port=5000)

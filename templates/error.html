@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block heading %}Something went wrong{% endblock %}
+{% block body %}
+<p class="crumbs"><a href="/">Pacing</a> / <span class="crumbc">Error</span></p>
+<div class="tablecard">
+  <div class="datarow">
+    <div style="padding:20px">
+      <h4>The page could not be built.</h4>
+      <p class="hint">The details are in the server log. If this started right
+        after a deploy, the schema is the usual cause &mdash;
+        <a href="/healthz">/healthz</a> says whether it is current.</p>
+      {% if detail %}<p class="rowmsg err">{{ detail[:400] }}</p>{% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

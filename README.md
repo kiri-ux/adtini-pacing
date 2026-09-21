@@ -181,11 +181,32 @@ After that the cron job keeps both sides current on its own.
 
 ---
 
+## Schema changes
+
+The schema is Alembic's, applied by the web service's pre-deploy command
+(`alembic upgrade head`) before traffic moves to the new version. Nothing in
+the app creates or alters tables.
+
+That is not a style preference. The first deploy built its tables with
+`create_all`, which creates missing tables but never alters existing ones, so
+the columns added in the next deploy were never applied and every page failed
+on `column orders.order_type does not exist`. `/healthz` now reports that
+case specifically - it returns 503 naming the missing tables or the failing
+column, rather than going green on a process that cannot serve a page.
+
+After changing a model:
+
+```bash
+alembic revision --autogenerate -m "what changed"
+alembic upgrade head
+```
+
 ## Running it locally
 
 ```bash
 pip install -r requirements.txt
 cp .env.example .env          # fill in the AWS keys, or skip and upload a file
+alembic upgrade head          # `python app.py` also does this for you
 python app.py                 # http://127.0.0.1:5000
 ```
 
@@ -194,7 +215,7 @@ it skips the login gate. To work without S3 access, drop a CSV or zip on the
 **Data** page - it takes the same file the bucket does.
 
 ```bash
-python -m pytest tests/ -q    # 37 tests
+python -m pytest tests/ -q    # 51 tests
 python scripts/ingest.py      # what the cron job runs
 ```
 
@@ -211,6 +232,7 @@ pacing/
   calendar.py       flight windows, elapsed days, month clipping
   engine.py         the three pacing types, and the Total row
 
+migrations/         Alembic; the schema's only owner
 ingest/
   s3.py             listing and fetching the drops
   normalize.py      the delivery export's quirks
