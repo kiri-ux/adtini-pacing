@@ -12,16 +12,31 @@ rewrite.
 
 ## What it does
 
-**Delivery in.** A daily `client-serve_YYYYMMDD_HHMM_N.csv` lands in
-`s3://adtini-orders/orders/`. A cron job reads anything new and stores it one
-row per day per strategy. Each drop is a rolling 31-day window, so days arrive
+Two kinds of file land in `s3://adtini-orders/orders/`, told apart by their
+filename:
+
+| Filename | What it carries | Grain |
+|---|---|---|
+| `client-serve*` | delivery - impressions, clicks, spend, conversions | one row per day per strategy |
+| `orders*` | the sold side - totals, flight dates, budgets | one row per line item |
+
+They join on the ids they share, `order_id` and `line_item_id`, so nothing is
+matched on names. The orders file is read first on each sweep, so a line item
+exists for that day's delivery to land against.
+
+**Delivery in.** Each drop is a rolling 31-day window, so days arrive
 repeatedly; rows are replaced, not appended, and the numbers are always the
 latest ones.
 
-**Sold terms in.** The feed never carries what was sold, when the flight ends,
-or what the client is owed - so that lives in the tool's own order book. The
-skeleton (client, order, campaign elements) is built from the feed
-automatically; a buyer types in the sold totals, dates and goal rate.
+**Sold terms in.** Imported from the orders drops, so nothing is typed in by
+hand. Anything a buyer does edit is marked buyer-maintained and the next
+import leaves it alone - budgets get adjusted mid-flight and the adjustment
+has to survive. "Hand back to orders file" undoes that.
+
+**Which orders get a page.** Only Insertion Orders. A Cancelled order is kept
+rather than dropped, because it may have run for months before it was
+cancelled - it appears if it delivered, and is marked `cancelled`. An order
+that never ran at all (Draft, Declined) is out.
 
 **Pacing out.** Three layouts, matching the three tabs:
 
@@ -53,6 +68,23 @@ under.** Within ±10% shows as on pace.
 Monthly pacing works the same way on the part of the calendar month the flight
 actually covers - a flight starting on the 17th owes its monthly impressions
 in 14 days, not 30.
+
+The orders file prices in budget and impressions rather than in a rate, so the
+goal CPM is derived: `total_campaign_budget / total_campaign_impressions ×
+1000`.
+
+### Seeing the strategies apart
+
+The order page charts delivery per strategy per day, so retargeting behaving
+differently from behavioral is visible rather than buried in a line item
+total. Lines are grouped by targeting, not by the feed's strategy id: one line
+item routinely carries twenty ids that are the same targeting re-flighted, all
+named identically, and twenty indistinguishable lines answer nothing. Past
+eight series the tail folds into "Other" rather than colours being reused.
+
+There is deliberately no daily-target line on that chart. The target is the
+whole order's, and drawing it against a single strategy invites reading that
+strategy as behind when the order is fine.
 
 ---
 
@@ -138,13 +170,14 @@ within a few minutes. No certificate to buy or renew.
 
 1. Open the site and sign in with `APP_PASSWORD`.
 2. Go to **Data** → **Run sweep**. The first sweep loads every drop in the
-   bucket, which takes a couple of minutes for a month of files.
-3. Still on **Data**, hit **Sync** to build the order book from what loaded.
-4. Go to **Pacing**, filter to **Sold terms: needs terms**, and work down the
-   list entering each order's sold totals and dates.
+   bucket - orders first, then delivery - which takes a couple of minutes for
+   a month of files.
+3. Go to **Pacing**. Orders that came through with their sold terms are
+   already pacing.
+4. Filter to **Sold terms: needs terms** to see anything the orders files did
+   not cover, and fill those in by hand.
 
-Step 4 is the only real work, and it is one-off per order. After that the
-cron job keeps the delivery side current on its own.
+After that the cron job keeps both sides current on its own.
 
 ---
 
@@ -180,12 +213,14 @@ pacing/
 
 ingest/
   s3.py             listing and fetching the drops
-  normalize.py      the export's quirks, all in one place
-  loader.py         upsert into daily_delivery, ingest log
+  normalize.py      the delivery export's quirks
+  orders.py         the orders export's quirks, and its alias table
+  loader.py         routes by filename, upserts, ingest log
 
-orderbook.py        builds the skeleton from the feed
-views.py            read models for the two pages
+orderbook.py        imports orders; classification and labelling rules
+views.py            read models for the two pages, and the chart series
 exports.py          XLSX in the same column order as the sheets
+static/chart.js     the per-strategy daily chart
 scripts/ingest.py   the cron entrypoint
 ```
 
@@ -200,13 +235,25 @@ pages mark those `PARTIAL` rather than quietly under-reporting. Month-to-date
 is unaffected, and the gap closes as daily drops accumulate. If there is an
 archive of older drops in the bucket, the first sweep picks them all up.
 
-**The feed's identifiers are messy, and the ingest layer absorbs it.**
-`order_id` is blank for Adlib and beta rows (they fall back to the order-level
-name), the header ships two columns both called `goal_cpm_` (neither is used -
+**Both exports are messy, and the ingest layer absorbs it.**
+
+For delivery (`ingest/normalize.py`): `order_id` is blank on Adlib and beta
+rows, the header ships two columns both called `goal_cpm_` (neither is used -
 `goal_internal_cpm` is), 17-digit Meta campaign ids have to be read as text or
 they lose their last digits, and one strategy running several creatives
-produces several rows for a day, which are summed. All of it is in
-`ingest/normalize.py` with tests.
+produces several rows for a day, which are summed. A blank `line_item_id` gets
+a deterministic key of its own, because leaving it empty collapsed 3% of rows
+across hundreds of unrelated orders into one bucket.
+
+For orders (`ingest/orders.py`): ids arrive as HTML
+(`<a href="...viewOrder/2873">2873</a>`), header names repeat (`start_date`
+twice, `total_campaign_impressions` four times, `months_running`
+thirty-four times) with the value in whichever copy happens to carry it, dates
+carry a time, the buyer carries their email, and the flattened join repeats
+every line item many times over. Column matching is by alias on a simplified
+header name, so the two exports seen so far - which differ from each other -
+both map cleanly. Anything unrecognised is reported on the **Data** page
+rather than silently dropped, so a changed export gets noticed.
 
 **Two strategies can share a name.** The feed ships distinct strategy ids
 under one name - two Meta ad sets both called "Facebook/Instagram Premium" -
@@ -217,3 +264,13 @@ apart are rows they cannot pace.
 nothing else. Pointing it at Adtini's own reporting instead of the S3 drops
 means writing a second loader into the same table; the engine, views and
 exports do not change.
+
+
+**The chart's palette is computed, not chosen.** The eight categorical colours
+in `static/chart.js` are validated against the lightness band, chroma floor,
+colour-vision separation, normal-vision floor and 3:1 contrast on a white
+surface. The order is the colour-vision safety mechanism, so it must not be
+reordered, and a ninth series folds into "Other" rather than reusing a colour.
+Strategy names arrive from the feed and the orders export is known to carry
+HTML in its fields, so every label goes into the DOM with `textContent` and
+the chart reads its data from a JSON block rather than from generated script.

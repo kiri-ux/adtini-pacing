@@ -1,27 +1,29 @@
 """The sold side of the tool.
 
-The delivery feed says what ran; it never says what was sold, when the flight
-ends, or what the client is owed. That lives here, and the buying team owns
-it. `sync_from_delivery` builds the skeleton - every client, order, line item
-and its link back to the feed - so the only thing left to type in is the sold
-terms.
+Built from the `orders*` drops. The delivery feed says what ran but never
+what was sold, so the order book is what makes pacing possible at all.
+
+Delivery joins to it on ids the two exports share - `order_id` and
+`line_item_id` - so nothing has to be matched on names. Delivery that carries
+no order id (Adlib and beta rows) has no sold side to join to, and
+`adopt_unmatched_delivery` gives it a home so it is visible rather than
+silently absent.
 """
 from __future__ import annotations
 
 import datetime as dt
 import logging
-import re
 from dataclasses import dataclass
 
 from sqlalchemy import func, select
 
+from ingest.orders import SPEND_BY_PRODUCT
 from models import (
     PACING_CLICK,
     PACING_EVENT,
     PACING_IMPRESSION,
     Client,
     DailyDelivery,
-    DeliveryMapping,
     LineItem,
     Order,
 )
@@ -29,41 +31,36 @@ from models import (
 log = logging.getLogger(__name__)
 
 # Which sheet a product is paced on. Anything unlisted paces on impressions,
-# which is what the buying team does today.
+# which is what most orders are.
 CLICK_PRODUCTS = {"PPC", "LinkedIn"}
-EVENT_PRODUCTS = {"PMax"}
+EVENT_PRODUCTS = {"PMax", "Performance Max"}
 
 CLICK_SOURCES = {"Google Ads Search", "LinkedIn Targeting"}
 EVENT_SOURCES = {"Google Ads Performance Max"}
 
-# Short product codes, matching how the rows are labelled by hand.
+# Only an Insertion Order gets a pacing page.
+PACEABLE_ORDER_TYPE = "insertion order"
+
+# Statuses that mean the order never ran. A Cancelled order is deliberately
+# not in here: it may have run for months before it was cancelled, and its
+# delivery still has to be visible.
+NEVER_RAN_STATUSES = {"draft", "declined", "rejected", "deleted"}
+
+# Short product codes, matching how rows are labelled by hand.
 PRODUCT_ABBR = {
-    "Display": "D",
-    "Mobile": "M",
-    "Video": "V",
-    "Native Display": "ND",
-    "Native Video": "NV",
-    "CTV": "CTV",
-    "Online Audio": "OA",
-    "Social Mirror": "SM",
-    "Social Mirror CTV": "SM CTV",
-    "Meta": "FB",
-    "TikTok": "TT",
-    "LinkedIn": "LI",
-    "PPC": "PPC",
-    "PMax": "PMax",
-    "YouTube+": "YT+",
-    "YouTube TV": "YTTV",
-    "Amazon Premium Video": "AMZ Video",
-    "Amazon Premium Display": "AMZ Display",
-    "Amazon Premium CTV": "AMZ CTV",
-    "Digital Out-Of-Home": "DOOH",
+    "Display": "D", "Mobile": "M", "Video": "V", "Native Display": "ND",
+    "Native Video": "NV", "CTV": "CTV", "Online Audio": "OA",
+    "Social Mirror": "SM", "Social Mirror CTV": "SM CTV", "Meta": "FB",
+    "TikTok": "TT", "LinkedIn": "LI", "PPC": "PPC", "PMax": "PMax",
+    "YouTube+": "YT+", "YouTube TV": "YTTV",
+    "Amazon Premium Video": "AMZ Video", "Amazon Premium Display": "AMZ Display",
+    "Amazon Premium CTV": "AMZ CTV", "Digital Out-Of-Home": "DOOH",
     "Geo-Framing": "GF",
 }
 
 
-def pacing_type_for(product: str | None, data_source: str | None) -> str:
-    """Which of the three pacing sheets an order belongs on."""
+def pacing_type_for(product: str | None, data_source: str | None = None) -> str:
+    """Which of the three pacing sheets a line item belongs on."""
     if product in EVENT_PRODUCTS or data_source in EVENT_SOURCES:
         return PACING_EVENT
     if product in CLICK_PRODUCTS or data_source in CLICK_SOURCES:
@@ -71,13 +68,17 @@ def pacing_type_for(product: str | None, data_source: str | None) -> str:
     return PACING_IMPRESSION
 
 
-def strip_client_prefix(name: str | None, client_name: str | None) -> str:
-    """Drop the leading client name from a strategy or line item name.
+def is_paceable(order_type: str | None) -> bool:
+    """Only Insertion Orders get a pacing page."""
+    return (order_type or "").strip().lower() == PACEABLE_ORDER_TYPE
 
-    The feed prefixes both with the client, so "Chalfant Corporation -
-    Volkswagen of Boise - Facebook/Instagram Premium Retargeting" is really
-    just "Facebook/Instagram Premium Retargeting".
-    """
+
+def never_ran(status: str | None) -> bool:
+    return (status or "").strip().lower() in NEVER_RAN_STATUSES
+
+
+def strip_client_prefix(name: str | None, client_name: str | None) -> str:
+    """Drop the leading client name the feed prefixes onto every name."""
     text = (name or "").strip()
     client = (client_name or "").strip()
     if client and text.lower().startswith(client.lower()):
@@ -87,8 +88,8 @@ def strip_client_prefix(name: str | None, client_name: str | None) -> str:
 
 def line_item_label(
     product: str | None,
-    strategy_type: str | None,
-    strategy_name: str | None,
+    strategy_type: str | None = None,
+    strategy_name: str | None = None,
     client_name: str | None = None,
 ) -> str:
     """The "Campaign Elements" label, e.g. `SM CTV - Retargeting`."""
@@ -99,7 +100,9 @@ def line_item_label(
         # has to come out of the strategy name. Keep all of it after the
         # client prefix - the tail alone loses "Premium Retargeting" against
         # "Premium", and the two become one row.
-        strategy = strip_client_prefix(strategy_name, client_name) or "Targeting"
+        strategy = strip_client_prefix(strategy_name, client_name)
+    if not strategy:
+        return code or "Line item"
     if not code:
         return strategy
     if strategy.lower().startswith(code.lower()):
@@ -108,12 +111,7 @@ def line_item_label(
 
 
 def unique_label(label: str, taken: set[str]) -> str:
-    """Keep two same-named strategies apart on the same order.
-
-    The feed genuinely ships distinct strategy ids under one name - two Meta
-    ad sets both called "Facebook/Instagram Premium" - and rows a buyer cannot
-    tell apart are rows they cannot pace.
-    """
+    """Keep two same-named rows apart on the same order."""
     if label not in taken:
         taken.add(label)
         return label
@@ -125,87 +123,228 @@ def unique_label(label: str, taken: set[str]) -> str:
     return unique
 
 
-def order_key(row) -> tuple[str, str]:
-    """A stable identity for an order across daily drops.
-
-    `order_id` is the real key but is blank for Adlib and beta rows, so those
-    fall back to the order-level name the feed does carry.
-    """
-    external = (row.external_order_id or "").strip()
-    if external:
-        return external, (row.order_level_name or external).strip()
-    name = (row.order_level_name or row.line_item_name or "").strip()
-    return "", name
+def goal_cpm(total_budget: float | None, total_impressions: float | None) -> float | None:
+    """The orders file prices in budget and impressions, not in a CPM."""
+    if not total_budget or not total_impressions:
+        return None
+    return round(total_budget / total_impressions * 1000, 2)
 
 
 @dataclass
-class SyncResult:
+class ImportResult:
     clients_added: int = 0
     orders_added: int = 0
+    orders_updated: int = 0
     line_items_added: int = 0
-    mappings_added: int = 0
+    line_items_updated: int = 0
+    locked_skipped: int = 0
+
+    def summary(self) -> str:
+        parts = [
+            f"{self.orders_added} orders added",
+            f"{self.orders_updated} updated",
+            f"{self.line_items_added} line items added",
+            f"{self.line_items_updated} updated",
+        ]
+        if self.locked_skipped:
+            parts.append(f"{self.locked_skipped} left alone (edited by hand)")
+        return ", ".join(parts)
+
+
+def _apply_sold_terms(item: LineItem, row, pacing_type: str) -> None:
+    """Copy the sold terms for the sheet this line item paces on."""
+    if pacing_type == PACING_IMPRESSION:
+        item.total_impressions = row.get("total_impressions")
+        item.monthly_impressions = row.get("monthly_impressions")
+        item.goal_cpm = goal_cpm(
+            row.get("total_campaign_budget"), row.get("total_impressions")
+        )
+        return
+
+    total_key, monthly_key = SPEND_BY_PRODUCT.get(
+        row.get("product") or "", ("total_campaign_budget", "monthly_budget")
+    )
+    total = row.get(total_key)
+    monthly = row.get(monthly_key)
+
+    if pacing_type == PACING_CLICK:
+        item.total_spend = total
+        item.monthly_spend = monthly
+        # The orders file prices clicks by budget, not by a CPC, so the goal
+        # rate is left for a buyer to set where they want one.
+        return
+
+    item.google_total_spend = total
+    item.google_monthly_spend = monthly
+    item.client_total_budget = row.get("client_total_budget")
+    item.client_monthly_budget = row.get("client_monthly_budget")
+
+
+def import_orders(session, frame) -> ImportResult:
+    """Upsert an orders export into the order book.
+
+    Anything a buyer has marked `terms_locked` is left exactly as it is -
+    budgets get adjusted mid-flight and those adjustments must survive the
+    next import.
+    """
+    result = ImportResult()
+
+    clients = {c.name: c for c in session.execute(select(Client)).scalars()}
+    orders = {
+        o.external_order_id: o
+        for o in session.execute(
+            select(Order).where(Order.external_order_id.isnot(None))
+        ).scalars()
+    }
+
+    for row in frame.rows.to_dict("records"):
+        client_name = row.get("client_name")
+        external_order_id = row.get("external_order_id")
+        if not client_name or not external_order_id:
+            continue
+
+        client = clients.get(client_name)
+        if client is None:
+            client = Client(name=client_name, market=row.get("business_unit"))
+            session.add(client)
+            session.flush()
+            clients[client_name] = client
+            result.clients_added += 1
+        elif not client.market and row.get("business_unit"):
+            client.market = row.get("business_unit")
+
+        product = row.get("product")
+        pacing_type = pacing_type_for(product)
+
+        order = orders.get(external_order_id)
+        if order is None:
+            order = Order(
+                client_id=client.id,
+                external_order_id=external_order_id,
+                name=row.get("order_name") or f"{client_name} #{external_order_id}",
+                pacing_type=pacing_type,
+            )
+            session.add(order)
+            session.flush()
+            orders[external_order_id] = order
+            result.orders_added += 1
+        else:
+            result.orders_updated += 1
+
+        # Status and type always come from the file - they are the file's to
+        # say, and the pacing rules key off them.
+        order.order_type = row.get("order_type")
+        order.status = row.get("status")
+        order.active = not never_ran(row.get("status"))
+        if row.get("buyer") and not order.buyer:
+            order.buyer = row.get("buyer")
+
+        if not order.terms_locked:
+            order.start_date = row.get("start_date") or order.start_date
+            order.end_date = row.get("end_date") or order.end_date
+            order.pacing_type = pacing_type
+        elif order.terms_locked:
+            result.locked_skipped += 1
+
+        external_line_item_id = row.get("external_line_item_id")
+        item = next(
+            (
+                li for li in order.line_items
+                if li.external_id and li.external_id == external_line_item_id
+            ),
+            None,
+        )
+        if item is None:
+            taken = {li.name for li in order.line_items}
+            item = LineItem(
+                order_id=order.id,
+                external_id=external_line_item_id,
+                name=unique_label(line_item_label(product), taken),
+                product=product,
+                sort_order=len(order.line_items),
+            )
+            session.add(item)
+            order.line_items.append(item)
+            result.line_items_added += 1
+        else:
+            result.line_items_updated += 1
+
+        item.product = product or item.product
+        if item.terms_locked:
+            result.locked_skipped += 1
+        else:
+            item.start_date = row.get("start_date")
+            item.end_date = row.get("end_date")
+            _apply_sold_terms(item, row, pacing_type)
+
+    session.flush()
+    return result
+
+
+@dataclass
+class AdoptResult:
+    orders_added: int = 0
+    line_items_added: int = 0
 
     def summary(self) -> str:
         return (
-            f"{self.clients_added} clients, {self.orders_added} orders, "
-            f"{self.line_items_added} line items, {self.mappings_added} mappings added"
+            f"{self.orders_added} orders and {self.line_items_added} line items "
+            "created for delivery with no order record"
         )
 
 
-def sync_from_delivery(session, since: dt.date | None = None) -> SyncResult:
-    """Create any client, order, line item or mapping the feed implies.
+def adopt_unmatched_delivery(session) -> AdoptResult:
+    """Give delivery that no order row explains somewhere to show up.
 
-    Never edits sold terms, dates or names that already exist - a buyer's
-    entry always wins over anything inferred from the feed.
+    Adlib and beta rows carry no order id, so there is nothing to join them
+    to. Rather than have that delivery vanish, an order is created from the
+    names the feed does carry. These have no sold terms and pace as
+    "needs terms" until someone fills them in.
     """
-    result = SyncResult()
+    result = AdoptResult()
 
-    stmt = select(
-        DailyDelivery.client_name,
-        DailyDelivery.external_order_id,
-        DailyDelivery.order_level_name,
-        DailyDelivery.line_item_name,
-        DailyDelivery.data_source,
-        DailyDelivery.campaign_id,
-        DailyDelivery.strategy_id,
-        DailyDelivery.strategy_name,
-        DailyDelivery.strategy_type,
-        DailyDelivery.product,
-        DailyDelivery.business_unit,
-        func.min(DailyDelivery.campaign_start_date).label("campaign_start_date"),
-        func.avg(DailyDelivery.goal_cpm).label("goal_cpm"),
-    ).group_by(
-        DailyDelivery.client_name,
-        DailyDelivery.external_order_id,
-        DailyDelivery.order_level_name,
-        DailyDelivery.line_item_name,
-        DailyDelivery.data_source,
-        DailyDelivery.campaign_id,
-        DailyDelivery.strategy_id,
-        DailyDelivery.strategy_name,
-        DailyDelivery.strategy_type,
-        DailyDelivery.product,
-        DailyDelivery.business_unit,
-    )
-    if since:
-        stmt = stmt.where(DailyDelivery.date >= since)
+    known_orders = {
+        o.external_order_id
+        for o in session.execute(
+            select(Order).where(Order.external_order_id.isnot(None))
+        ).scalars()
+    }
 
-    rows = session.execute(stmt).all()
+    rows = session.execute(
+        select(
+            DailyDelivery.client_name,
+            DailyDelivery.external_order_id,
+            DailyDelivery.external_line_item_id,
+            DailyDelivery.order_level_name,
+            DailyDelivery.line_item_name,
+            DailyDelivery.product,
+            DailyDelivery.business_unit,
+            func.min(DailyDelivery.campaign_start_date).label("start_date"),
+        ).group_by(
+            DailyDelivery.client_name,
+            DailyDelivery.external_order_id,
+            DailyDelivery.external_line_item_id,
+            DailyDelivery.order_level_name,
+            DailyDelivery.line_item_name,
+            DailyDelivery.product,
+            DailyDelivery.business_unit,
+        )
+    ).all()
 
     clients = {c.name: c for c in session.execute(select(Client)).scalars()}
-    orders: dict[tuple[int, str], Order] = {}
-    for order in session.execute(select(Order)).scalars():
-        orders[(order.client_id, order.name)] = order
-
-    mapped = {
-        (m.data_source, m.campaign_id, m.strategy_id)
-        for m in session.execute(select(DeliveryMapping)).scalars()
-    }
-    labels_by_order: dict[int, set[str]] = {}
+    adopted: dict[tuple[int, str], Order] = {}
+    for order in session.execute(
+        select(Order).where(Order.external_order_id.is_(None))
+    ).scalars():
+        adopted[(order.client_id, order.name)] = order
 
     for row in rows:
         client_name = (row.client_name or "").strip()
         if not client_name:
+            continue
+        # Delivery whose order is already on the books joins by id; nothing
+        # to adopt.
+        if (row.external_order_id or "") in known_orders and row.external_order_id:
             continue
 
         client = clients.get(client_name)
@@ -214,65 +353,46 @@ def sync_from_delivery(session, since: dt.date | None = None) -> SyncResult:
             session.add(client)
             session.flush()
             clients[client_name] = client
-            result.clients_added += 1
-        elif not client.market and row.business_unit:
-            client.market = row.business_unit
 
-        external_id, order_name = order_key(row)
-        if not order_name:
+        name = (row.order_level_name or row.line_item_name or "").strip()
+        if not name:
             continue
 
-        order = orders.get((client.id, order_name))
+        order = adopted.get((client.id, name))
         if order is None:
             order = Order(
                 client_id=client.id,
-                external_order_id=external_id or None,
-                name=order_name,
-                pacing_type=pacing_type_for(row.product, row.data_source),
-                start_date=row.campaign_start_date,
+                external_order_id=None,
+                name=name,
+                pacing_type=pacing_type_for(row.product),
+                start_date=row.start_date,
+                order_type="Insertion Order",
+                status="Unmatched",
             )
             session.add(order)
             session.flush()
-            orders[(client.id, order_name)] = order
+            adopted[(client.id, name)] = order
             result.orders_added += 1
-        elif order.start_date is None and row.campaign_start_date:
-            order.start_date = row.campaign_start_date
 
-        key = (row.data_source, row.campaign_id, row.strategy_id)
-        if key in mapped:
+        # The delivery loader builds the same key for a line item the feed
+        # gave no id, so the two sides meet.
+        key = row.external_line_item_id or f"name:{name}"
+        if any(li.external_id == key for li in order.line_items):
             continue
 
-        taken = labels_by_order.setdefault(
-            order.id, {li.name for li in order.line_items}
-        )
-        label = unique_label(
-            line_item_label(
-                row.product, row.strategy_type, row.strategy_name, client_name
-            ),
-            taken,
-        )
-        line_item = LineItem(
+        taken = {li.name for li in order.line_items}
+        item = LineItem(
             order_id=order.id,
-            name=label,
+            external_id=key,
+            name=unique_label(line_item_label(row.product), taken),
             product=row.product,
-            strategy_type=row.strategy_type,
-            goal_cpm=round(row.goal_cpm, 2) if row.goal_cpm else None,
             sort_order=len(order.line_items),
         )
-        session.add(line_item)
-        session.flush()
+        session.add(item)
+        # Appended so the next row of the same order sees it when checking
+        # for duplicates, before the flush.
+        order.line_items.append(item)
         result.line_items_added += 1
-
-        session.add(
-            DeliveryMapping(
-                line_item_id=line_item.id,
-                data_source=row.data_source,
-                campaign_id=row.campaign_id,
-                strategy_id=row.strategy_id,
-            )
-        )
-        mapped.add(key)
-        result.mappings_added += 1
 
     session.flush()
     return result

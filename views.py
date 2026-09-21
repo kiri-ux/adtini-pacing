@@ -13,7 +13,8 @@ from dataclasses import dataclass, field
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
-from models import Client, DailyDelivery, DeliveryMapping, LineItem, Order
+from models import Client, DailyDelivery, LineItem, Order
+from orderbook import PACEABLE_ORDER_TYPE, line_item_label
 from pacing.engine import DailyPoint, PacingRow, compute_row, health, total_row
 
 
@@ -34,35 +35,59 @@ def earliest_delivery_date(session) -> dt.date | None:
     return session.execute(select(func.min(DailyDelivery.date))).scalar()
 
 
+def _delivery_join(line_items: list[LineItem]):
+    """The condition that ties a day of delivery to the line item it ran under.
+
+    The two exports share `order_id` and `line_item_id`, so the join is on
+    ids. Delivery that carries no order id was adopted under a line item
+    keyed by its own line item id, which is the second branch.
+    """
+    keys = {
+        (li.order.external_order_id, li.external_id): li.id
+        for li in line_items
+        if li.external_id
+    }
+    return keys
+
+
 def _daily_by_line_item(
-    session, line_item_ids: list[int]
+    session, line_items: list[LineItem]
 ) -> dict[int, list[DailyPoint]]:
-    """Delivery per line item per day, summed across its mapped strategies."""
-    if not line_item_ids:
+    """Delivery per line item per day, summed across its strategies."""
+    keys = _delivery_join(line_items)
+    if not keys:
         return {}
+
+    line_item_ids = [li.external_id for li in line_items if li.external_id]
+    order_ids = {li.order.external_order_id for li in line_items}
 
     stmt = (
         select(
-            DeliveryMapping.line_item_id,
+            DailyDelivery.external_order_id,
+            DailyDelivery.external_line_item_id,
             DailyDelivery.date,
             func.sum(DailyDelivery.impressions),
             func.sum(DailyDelivery.clicks),
             func.sum(DailyDelivery.cost),
             func.sum(DailyDelivery.conversions),
         )
-        .join(
-            DailyDelivery,
-            (DailyDelivery.data_source == DeliveryMapping.data_source)
-            & (DailyDelivery.campaign_id == DeliveryMapping.campaign_id)
-            & (DailyDelivery.strategy_id == DeliveryMapping.strategy_id),
+        .where(DailyDelivery.external_line_item_id.in_(line_item_ids))
+        .group_by(
+            DailyDelivery.external_order_id,
+            DailyDelivery.external_line_item_id,
+            DailyDelivery.date,
         )
-        .where(DeliveryMapping.line_item_id.in_(line_item_ids))
-        .group_by(DeliveryMapping.line_item_id, DailyDelivery.date)
     )
 
     out: dict[int, list[DailyPoint]] = defaultdict(list)
-    for li_id, date, impressions, clicks, cost, conversions in session.execute(stmt):
-        out[li_id].append(
+    for order_id, li_id, date, impressions, clicks, cost, conversions in session.execute(stmt):
+        target = keys.get((order_id, li_id))
+        if target is None and order_id not in order_ids:
+            # Adopted delivery, keyed on its line item id alone.
+            target = keys.get((None, li_id))
+        if target is None:
+            continue
+        out[target].append(
             DailyPoint(
                 date=date,
                 impressions=float(impressions or 0),
@@ -71,6 +96,111 @@ def _daily_by_line_item(
                 conversions=float(conversions or 0),
             )
         )
+    return out
+
+
+MAX_CHART_SERIES = 8
+
+
+@dataclass
+class StrategySeries:
+    """One strategy's delivery, day by day.
+
+    The line item is what was sold; the strategies under it are what actually
+    ran, and a buyer needs to see them apart - retargeting behaving
+    differently from behavioral is the thing worth catching.
+
+    Grouped by targeting, not by the feed's strategy id: one line item can
+    carry twenty ids that are the same targeting re-flighted, all named
+    identically, and twenty indistinguishable lines answer nothing.
+    """
+
+    line_item_id: int
+    label: str
+    product: str | None
+    by_date: dict[dt.date, float]
+    total: float = 0.0
+    # How many of the feed's strategy ids rolled up into this line.
+    strategy_count: int = 0
+
+
+def strategy_series(
+    session, line_items: list[LineItem], metric: str = "impressions"
+) -> dict[int, list[StrategySeries]]:
+    """Per-strategy daily delivery, grouped under each line item."""
+    keys = _delivery_join(line_items)
+    if not keys:
+        return {}
+
+    column = {
+        "impressions": DailyDelivery.impressions,
+        "clicks": DailyDelivery.clicks,
+        "cost": DailyDelivery.cost,
+        "conversions": DailyDelivery.conversions,
+    }[metric]
+
+    external_ids = [li.external_id for li in line_items if li.external_id]
+    order_ids = {li.order.external_order_id for li in line_items}
+
+    stmt = (
+        select(
+            DailyDelivery.external_order_id,
+            DailyDelivery.external_line_item_id,
+            DailyDelivery.strategy_id,
+            DailyDelivery.strategy_name,
+            DailyDelivery.strategy_type,
+            DailyDelivery.product,
+            DailyDelivery.date,
+            func.sum(column),
+        )
+        .where(DailyDelivery.external_line_item_id.in_(external_ids))
+        .group_by(
+            DailyDelivery.external_order_id,
+            DailyDelivery.external_line_item_id,
+            DailyDelivery.strategy_id,
+            DailyDelivery.strategy_name,
+            DailyDelivery.strategy_type,
+            DailyDelivery.product,
+            DailyDelivery.date,
+        )
+    )
+
+    collected: dict[tuple[int, str], StrategySeries] = {}
+    seen_ids: dict[tuple[int, str], set[str]] = defaultdict(set)
+    for (
+        order_id, li_id, strategy_id, strategy_name, strategy_type, product, date, value
+    ) in session.execute(stmt):
+        target = keys.get((order_id, li_id))
+        if target is None and order_id not in order_ids:
+            target = keys.get((None, li_id))
+        if target is None:
+            continue
+
+        client = next(
+            (li.order.client.name for li in line_items if li.id == target), None
+        )
+        label = line_item_label(product, strategy_type, strategy_name, client)
+        key = (target, label)
+        seen_ids[key].add(strategy_id)
+
+        series = collected.get(key)
+        if series is None:
+            series = StrategySeries(
+                line_item_id=target, label=label, product=product, by_date={}
+            )
+            collected[key] = series
+        amount = float(value or 0)
+        series.by_date[date] = series.by_date.get(date, 0.0) + amount
+        series.total += amount
+
+    for key, series in collected.items():
+        series.strategy_count = len(seen_ids[key])
+
+    out: dict[int, list[StrategySeries]] = defaultdict(list)
+    for series in collected.values():
+        out[series.line_item_id].append(series)
+    for items in out.values():
+        items.sort(key=lambda s: -s.total)
     return out
 
 
@@ -85,6 +215,8 @@ class OrderView:
     grid: dict[int, dict[dt.date, float]] = field(default_factory=dict)
     on_pace_daily: float = 0.0
     covers_from: dt.date | None = None
+    strategies: dict[int, list["StrategySeries"]] = field(default_factory=dict)
+    metric: str = "impressions"
 
     @property
     def health(self) -> str:
@@ -112,7 +244,7 @@ def order_view(session, order_id: int, as_of: dt.date | None = None) -> OrderVie
     as_of = as_of or latest_delivery_date(session) or dt.date.today()
     covers_from = earliest_delivery_date(session)
     line_items = sorted(order.line_items, key=lambda li: (li.sort_order, li.id))
-    daily = _daily_by_line_item(session, [li.id for li in line_items])
+    daily = _daily_by_line_item(session, line_items)
 
     rows = [compute_row(li, order, daily.get(li.id, []), as_of) for li in line_items]
     total = total_row(rows, order.pacing_type)
@@ -127,6 +259,7 @@ def order_view(session, order_id: int, as_of: dt.date | None = None) -> OrderVie
             day += dt.timedelta(days=1)
 
     attr = "impressions" if order.pacing_type == "impression" else "cost"
+    strategies = strategy_series(session, line_items, metric=attr)
     grid = {
         row.line_item_id: {p.date: getattr(p, attr) for p in row.daily}
         for row in rows
@@ -143,6 +276,8 @@ def order_view(session, order_id: int, as_of: dt.date | None = None) -> OrderVie
         grid=grid,
         on_pace_daily=total.daily_target,
         covers_from=covers_from,
+        strategies=strategies,
+        metric=attr,
     )
 
 
@@ -167,6 +302,10 @@ class OverviewRow:
         )
 
     @property
+    def is_cancelled(self) -> bool:
+        return (self.order.status or "").strip().lower() in {"cancelled", "canceled"}
+
+    @property
     def total_health(self) -> str:
         return health(self.total.pacing_pct)
 
@@ -180,8 +319,13 @@ def overview(
     query: str | None = None,
     include_ended: bool = False,
     needs_terms: bool | None = None,
+    include_non_io: bool = False,
 ) -> list[OverviewRow]:
-    """One computed line per order, which is the summary tab."""
+    """One computed line per order, which is the summary tab.
+
+    Only Insertion Orders are paced. Other order types are on the books but
+    are not what the buying team works, so they are out unless asked for.
+    """
     as_of = as_of or latest_delivery_date(session) or dt.date.today()
     covers_from = earliest_delivery_date(session)
 
@@ -199,12 +343,18 @@ def overview(
     if query:
         like = f"%{query.strip()}%"
         stmt = stmt.where(Client.name.ilike(like) | Order.name.ilike(like))
+    if not include_non_io:
+        stmt = stmt.where(
+            func.lower(func.coalesce(Order.order_type, "")) == PACEABLE_ORDER_TYPE
+        )
+    # An order that never ran has nothing to pace and no delivery to show.
+    stmt = stmt.where(Order.active.is_(True))
     if not include_ended:
         stmt = stmt.where((Order.end_date.is_(None)) | (Order.end_date >= as_of))
 
     orders = list(session.execute(stmt).scalars())
     all_line_items = [li for o in orders for li in o.line_items]
-    daily = _daily_by_line_item(session, [li.id for li in all_line_items])
+    daily = _daily_by_line_item(session, all_line_items)
 
     out: list[OverviewRow] = []
     for order in orders:
@@ -221,6 +371,13 @@ def overview(
                 covers_from=covers_from,
             )
         )
+
+    # Cancelled orders are kept, but only the ones that ran before they were
+    # cancelled are worth a line - the rest never served at all.
+    out = [
+        r for r in out
+        if not r.is_cancelled or r.total.impressions or r.total.cost
+    ]
 
     if needs_terms is True:
         out = [r for r in out if r.total.needs_setup]
@@ -250,3 +407,41 @@ def filter_options(session) -> dict[str, list[str]]:
         )
     ]
     return {"buyers": sorted(buyers), "markets": sorted(markets)}
+
+
+def chart_series(view: "OrderView", limit: int = MAX_CHART_SERIES) -> dict:
+    """Flatten an order's strategies into something the chart can draw.
+
+    Categorical colour carries eight series; past that the tail folds into a
+    single "Other" rather than the palette being cycled, which would give two
+    strategies the same colour.
+    """
+    everything: list[StrategySeries] = []
+    for items in view.strategies.values():
+        everything.extend(items)
+    everything.sort(key=lambda s: -s.total)
+
+    dates = sorted({d for s in everything for d in s.by_date})
+    if not dates or not everything:
+        return {"dates": [], "series": [], "metric": view.metric}
+
+    head, tail = everything[:limit], everything[limit:]
+    series = [
+        {"label": s.label, "values": [s.by_date.get(d, 0.0) for d in dates]}
+        for s in head
+    ]
+    if tail:
+        series.append({
+            "label": f"Other ({len(tail)} strategies)",
+            "values": [sum(s.by_date.get(d, 0.0) for s in tail) for d in dates],
+        })
+
+    # Deliberately no daily-target line: the target is the whole order's,
+    # and drawing it against per-strategy lines invites reading a single
+    # strategy as "behind" when the order as a whole is fine. Pacing against
+    # the target is what the table above the chart is for.
+    return {
+        "dates": [d.isoformat() for d in dates],
+        "series": series,
+        "metric": view.metric,
+    }

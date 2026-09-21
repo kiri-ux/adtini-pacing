@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from ingest.normalize import file_date, normalize
-from orderbook import line_item_label, order_key, pacing_type_for
+from orderbook import is_paceable, line_item_label, never_ran, pacing_type_for
 
 HEADER = (
     "business_unit,client,impressions,clicks,ctr,internal_cpm,internal_cost,"
@@ -128,56 +128,30 @@ def test_line_item_label_reads_like_the_hand_kept_rows():
     assert line_item_label("Meta", None, "Client - Category Facebook", "Client") == "FB - Category Facebook"
 
 
-def test_order_key_prefers_the_order_number():
-    class Row:
-        external_order_id = "52753"
-        order_level_name = "Service One Credit Union #52753"
-        line_item_name = "x"
-
-    assert order_key(Row()) == ("52753", "Service One Credit Union #52753")
+def test_only_insertion_orders_are_paced():
+    assert is_paceable("Insertion Order")
+    assert is_paceable("insertion order")
+    assert not is_paceable("Estimate")
+    assert not is_paceable(None)
 
 
-def test_order_key_falls_back_to_the_name_for_beta_orders():
-    class Row:
-        external_order_id = None
-        order_level_name = "Grand Home Furnishings - Premium CTV - BETA v2"
-        line_item_name = "x"
-
-    external, name = order_key(Row())
-    assert external == ""
-    assert name == "Grand Home Furnishings - Premium CTV - BETA v2"
+def test_a_cancelled_order_is_not_treated_as_never_having_run():
+    """It may have delivered for months before it was cancelled."""
+    assert not never_ran("Cancelled")
+    assert never_ran("Draft")
+    assert never_ran("Declined")
 
 
-# --- labels ---------------------------------------------------------------
-def test_label_drops_the_client_prefix_the_feed_adds():
-    from orderbook import strip_client_prefix
-
-    assert strip_client_prefix(
-        "Chalfant Corporation - Volkswagen of Boise - Facebook/Instagram Premium",
-        "Chalfant Corporation - Volkswagen of Boise",
-    ) == "Facebook/Instagram Premium"
+def test_delivery_carries_the_line_item_id_it_joins_on():
+    out = normalize(frame(row(line_item_id="126397")))
+    assert out.iloc[0]["external_line_item_id"] == "126397"
 
 
-def test_label_keeps_the_whole_targeting_not_just_its_tail():
-    """`Premium` and `Premium Retargeting` are different rows."""
-    client = "Chalfant Corporation - Volkswagen of Boise"
-    plain = line_item_label("Meta", None, f"{client} - Facebook/Instagram Premium", client)
-    retarget = line_item_label(
-        "Meta", None, f"{client} - Facebook/Instagram Premium Retargeting", client
-    )
-    assert plain != retarget
-    assert plain == "FB - Facebook/Instagram Premium"
-    assert retarget == "FB - Facebook/Instagram Premium Retargeting"
-
-
-def test_label_does_not_repeat_a_product_code_already_in_the_name():
-    assert line_item_label("PPC", None, "Client - PPC Keywords", "Client") == "PPC Keywords"
-
-
-def test_two_strategies_sharing_a_name_get_told_apart():
-    from orderbook import unique_label
-
-    taken: set[str] = set()
-    assert unique_label("FB - Premium", taken) == "FB - Premium"
-    assert unique_label("FB - Premium", taken) == "FB - Premium (2)"
-    assert unique_label("FB - Premium", taken) == "FB - Premium (3)"
+def test_a_line_item_with_no_id_gets_a_key_of_its_own():
+    """Blank ids would otherwise collapse hundreds of orders into one."""
+    out = normalize(frame(
+        row(line_item_id="", line_item_name="Client - Audio"),
+        row(line_item_id="", line_item_name="Client - CTV", strategy_id="s2"),
+    ))
+    keys = set(out["external_line_item_id"])
+    assert keys == {"name:Client - Audio", "name:Client - CTV"}

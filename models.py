@@ -2,11 +2,14 @@
 
 Two halves that meet in the pacing engine:
 
-* the **order book** (`Client` / `Order` / `LineItem`) - what was sold. The
-  buying team owns this; the delivery feed never contains sold totals or end
-  dates, so it has to be maintained here.
+* the **order book** (`Client` / `Order` / `LineItem`) - what was sold.
+  Imported from the `orders*` drops, with `terms_locked` marking anything a
+  buyer has since adjusted by hand so the next import leaves it alone.
 * the **delivery feed** (`DailyDelivery` / `IngestedFile`) - what actually
-  ran. Rebuilt from the S3 drops, never hand-edited.
+  ran. Rebuilt from the `client-serve*` drops, never hand-edited.
+
+Both kinds of drop land in the same S3 prefix and are told apart by their
+filename.
 """
 from __future__ import annotations
 
@@ -66,11 +69,20 @@ class Order(Base):
     start_date: Mapped[dt.date | None] = mapped_column(Date)
     end_date: Mapped[dt.date | None] = mapped_column(Date)
     buyer: Mapped[str | None] = mapped_column(String(120))
+    # Straight from the orders file. Only Insertion Orders get a pacing page;
+    # a Cancelled order may still have run before it was cancelled, so it is
+    # kept and shown when it has delivery rather than dropped on sight.
+    order_type: Mapped[str | None] = mapped_column(String(60), index=True)
+    status: Mapped[str | None] = mapped_column(String(60), index=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     paused: Mapped[bool] = mapped_column(Boolean, default=False)
     notes: Mapped[str | None] = mapped_column(Text)
     last_adjusted_on: Mapped[dt.date | None] = mapped_column(Date)
     adjustment_note: Mapped[str | None] = mapped_column(String(300))
+    # A buyer has adjusted this order's dates or pacing type, so the orders
+    # import must not put them back. Mid-flight changes are the normal case,
+    # not the exception.
+    terms_locked: Mapped[bool] = mapped_column(Boolean, default=False)
 
     client: Mapped[Client] = relationship(back_populates="orders")
     line_items: Mapped[list["LineItem"]] = relationship(
@@ -79,13 +91,20 @@ class Order(Base):
 
 
 class LineItem(Base):
-    """One "Campaign Elements" row in the buying team's sheet.
+    """One line item on an order - a product, with what was sold on it.
+
+    This is the grain the orders file works in, and the grain the sheet's
+    "Campaign Elements" rows are read at. The delivery feed is finer (one row
+    per strategy within the line item), so several strategies roll up here.
 
     Sold amounts are stored per pacing type. Only the block matching the
     order's `pacing_type` is read by the engine; the others stay null.
     """
 
     __tablename__ = "line_items"
+    __table_args__ = (
+        UniqueConstraint("order_id", "external_id", name="uq_line_item_external"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
@@ -93,6 +112,11 @@ class LineItem(Base):
     product: Mapped[str | None] = mapped_column(String(120))
     strategy_type: Mapped[str | None] = mapped_column(String(120))
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    # The orders file's own line item id. Delivery joins to it, and the next
+    # import recognises the row by it rather than by its name.
+    external_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    # Sold terms here were edited by hand; the import leaves them alone.
+    terms_locked: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Flight dates default to the order's when null.
     start_date: Mapped[dt.date | None] = mapped_column(Date)
@@ -118,30 +142,6 @@ class LineItem(Base):
     total_events: Mapped[float | None] = mapped_column(Float)
 
     order: Mapped[Order] = relationship(back_populates="line_items")
-    mappings: Mapped[list["DeliveryMapping"]] = relationship(
-        back_populates="line_item", cascade="all, delete-orphan"
-    )
-
-
-class DeliveryMapping(Base):
-    """Ties a line item to the delivery rows that feed it.
-
-    The feed's own identifiers are messy (null order ids, reused campaign
-    ids), so matching is explicit rather than inferred at read time.
-    """
-
-    __tablename__ = "delivery_mappings"
-    __table_args__ = (
-        UniqueConstraint("data_source", "campaign_id", "strategy_id", name="uq_mapping_key"),
-    )
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    line_item_id: Mapped[int] = mapped_column(ForeignKey("line_items.id"), index=True)
-    data_source: Mapped[str] = mapped_column(String(120))
-    campaign_id: Mapped[str] = mapped_column(String(64))
-    strategy_id: Mapped[str] = mapped_column(String(64))
-
-    line_item: Mapped[LineItem] = relationship(back_populates="mappings")
 
 
 class DailyDelivery(Base):
@@ -165,6 +165,9 @@ class DailyDelivery(Base):
     business_unit: Mapped[str | None] = mapped_column(String(200))
     client_name: Mapped[str | None] = mapped_column(String(300))
     external_order_id: Mapped[str | None] = mapped_column(String(64))
+    # The orders file's line item id. This plus `external_order_id` is how a
+    # day of delivery finds the line item it was sold under.
+    external_line_item_id: Mapped[str | None] = mapped_column(String(64), index=True)
     order_level_name: Mapped[str | None] = mapped_column(String(400))
     line_item_name: Mapped[str | None] = mapped_column(String(400))
     strategy_name: Mapped[str | None] = mapped_column(String(400))
@@ -193,6 +196,8 @@ class IngestedFile(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     s3_key: Mapped[str] = mapped_column(String(600), unique=True, index=True)
+    # "delivery" or "orders", decided by the filename.
+    kind: Mapped[str] = mapped_column(String(20), default="delivery")
     etag: Mapped[str | None] = mapped_column(String(120))
     size_bytes: Mapped[int | None] = mapped_column(Integer)
     rows_read: Mapped[int | None] = mapped_column(Integer)
@@ -201,4 +206,8 @@ class IngestedFile(Base):
     max_date: Mapped[dt.date | None] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(20), default="ok")
     message: Mapped[str | None] = mapped_column(Text)
+    # Columns the file carried that the importer did not recognise. Surfaced
+    # on the Data page so a changed export is noticed rather than silently
+    # half-read.
+    unmapped_columns: Mapped[str | None] = mapped_column(Text)
     ingested_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())

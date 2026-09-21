@@ -39,6 +39,8 @@
   </select>
   <label class="endedbox"><input type="checkbox" name="ended" value="1"
     {% if args.get('ended')=='1' %}checked{% endif %}> Include ended</label>
+  <label class="endedbox"><input type="checkbox" name="allorders" value="1"
+    {% if args.get('allorders')=='1' %}checked{% endif %}> All order types</label>
   <button class="btn-cat" type="submit">Apply</button>
 </form>
 
@@ -62,7 +64,8 @@
         <td class="lnk clip" title="{{ r.client.name }}"><a
           href="{{ url_for('order_detail', order_id=r.order.id) }}">{{ r.client.name }}</a></td>
         <td class="ordname clip" title="{{ r.order.name }}">{{ r.order.name }}</td>
-        <td><span class="tag type-{{ r.order.pacing_type }}">{{ r.order.pacing_type[:4]|upper }}</span></td>
+        <td><span class="tag type-{{ r.order.pacing_type }}">{{ r.order.pacing_type[:4]|upper }}</span>
+          {% if r.is_cancelled %}<span class="partial" title="Cancelled, but it delivered before it was">cancelled</span>{% endif %}</td>
         <td class="num">{{ r.order.start_date.strftime('%-m/%-d/%y') if r.order.start_date else '—' }}</td>
         <td class="num">{{ r.order.end_date.strftime('%-m/%-d/%y') if r.order.end_date else '—' }}</td>
         <td class="num">{{ r.total.total_target|metric(r.total) }}</td>
@@ -96,7 +99,8 @@
 {% endif %}
 
 <p class="note">Negative pacing is over-delivering, positive is under. Within
-  &plusmn;10% counts as on pace. <b>partial</b> marks a flight that began before
+  &plusmn;10% counts as on pace. Only Insertion Orders are listed; a cancelled
+  order appears only if it delivered before it was cancelled. <b>partial</b> marks a flight that began before
   the delivery feed's earliest day &mdash; its life-of-flight figures are short
   until enough daily drops have accumulated.</p>
 {% endblock %}

@@ -26,6 +26,7 @@ COLUMN_MAP = {
     "data_source_name": "data_source",
     "date": "date",
     "line_item_name": "line_item_name",
+    "line_item_id": "external_line_item_id",
     "order_id": "external_order_id",
     "order_level_name": "order_level_name",
     "product": "product",
@@ -47,7 +48,8 @@ GRAIN = ["date", "data_source", "campaign_id", "strategy_id"]
 
 # Carried through on the first row of each group, for display only.
 ATTRS = [
-    "business_unit", "client_name", "external_order_id", "order_level_name",
+    "business_unit", "client_name", "external_order_id", "external_line_item_id",
+    "order_level_name",
     "line_item_name", "strategy_name", "strategy_type", "product",
     "campaign_name", "campaign_start_date", "goal_cpm",
 ]
@@ -94,7 +96,8 @@ def normalize(raw: pd.DataFrame) -> pd.DataFrame:
 
     df = raw[list(present)].rename(columns=present).copy()
 
-    for col in ("campaign_id", "strategy_id", "external_order_id"):
+    for col in ("campaign_id", "strategy_id", "external_order_id",
+                "external_line_item_id"):
         if col in df.columns:
             df[col] = df[col].map(_clean_id)
         else:
@@ -138,6 +141,20 @@ def normalize(raw: pd.DataFrame) -> pd.DataFrame:
             df["external_order_id"] != "",
             df["order_level_name"].fillna("").astype(str).str.strip(),
         ),
+    )
+
+    # A blank line item id is the join key to the orders file, so leaving it
+    # empty would collapse every unidentified line item in the feed into one
+    # bucket - 3% of rows, across hundreds of unrelated orders. Give it a
+    # deterministic key of its own instead, derived from the names the feed
+    # does carry, so it stays separable and `adopt_unmatched_delivery` can
+    # build the same key on the other side.
+    line_item_fallback = (
+        df["line_item_name"].fillna("").astype(str).str.strip()
+        .where(lambda s: s != "", df["order_level_name"].fillna("").astype(str).str.strip())
+    )
+    df["external_line_item_id"] = df["external_line_item_id"].where(
+        df["external_line_item_id"] != "", "name:" + line_item_fallback
     )
 
     agg = {col: "sum" for col in NUMERIC if col != "goal_cpm"}

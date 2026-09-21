@@ -10,7 +10,9 @@
 
 {% block body %}
 <p class="crumbs"><a href="/">Pacing</a> / <span class="crumbc">{{ o.name }}</span>
-  &middot; paced through {{ v.as_of.strftime('%-d %b %Y') }}</p>
+  &middot; paced through {{ v.as_of.strftime('%-d %b %Y') }}
+  {% if o.status %}&middot; {{ o.status }}{% endif %}
+  {% if o.order_type %}&middot; {{ o.order_type }}{% endif %}</p>
 
 {% if v.partial_history and not (t.needs_setup and not t.total_target) %}
 <p class="warnbar">This flight started {{ o.start_date.strftime('%-d %b %Y') }}, before the
@@ -186,6 +188,12 @@
  </div>
 
   <div class="cardfoot">
+    {% if o.terms_locked %}
+    <span class="lockmark" title="Edited by hand, so the orders import leaves these alone">
+      Buyer-maintained</span>
+    <button class="btn2 addprod" type="submit" formnovalidate
+      formaction="{{ url_for('order_unlock', order_id=o.id) }}">Hand back to orders file</button>
+    {% endif %}
     <button class="btn save" type="submit">Save terms</button>
   </div>
 </div>
@@ -195,6 +203,48 @@
   <input type="text" name="name" placeholder="New campaign element">
   <button class="btn2 addprod" type="submit">&#43; Add row</button>
 </form>
+
+
+{% if chart.series %}
+<div class="tablecard chartcard">
+  <div class="charthead">
+    <h3>Daily delivery by strategy</h3>
+    <span class="hint">{{ 'Impressions' if v.metric == 'impressions' else 'Spend' }} per day.
+      Hover for every strategy on a day.</span>
+  </div>
+  <div id="chartlegend" class="clegends"></div>
+  <div id="strategychart" class="chartbox"></div>
+  {# The chart reads its data from here rather than from inline script, so
+     strategy names - which arrive from the feed - are never concatenated into
+     executable JavaScript. #}
+  <script type="application/json" id="chartdata">{{ chart|tojson }}</script>
+</div>
+
+<details class="qfold strategytable">
+  <summary>Strategy totals</summary>
+  <div class="scroller">
+    <table class="daily">
+      <thead><tr><th>Strategy</th><th>Line item</th><th class="num">Total</th>
+        <th class="num">Days served</th><th class="num">Best day</th>
+        <th class="num">Flights</th></tr></thead>
+      <tbody>
+      {% for li_id, items in v.strategies.items() %}
+        {% for s in items %}
+        <tr>
+          <td class="elname">{{ s.label }}</td>
+          <td class="muted">{{ lineitem_names.get(li_id, '—') }}</td>
+          <td class="num">{{ s.total|metric(t) }}</td>
+          <td class="num">{{ s.by_date.values()|select|list|length }}</td>
+          <td class="num">{{ (s.by_date.values()|max if s.by_date else None)|metric(t) }}</td>
+          <td class="num muted" title="Strategy records in the feed under this targeting">{{ s.strategy_count }}</td>
+        </tr>
+        {% endfor %}
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endif %}
 
 {% if v.grid_dates %}
 <details class="qfold dailygrid" open>
@@ -220,3 +270,5 @@
 </details>
 {% endif %}
 {% endblock %}
+
+{% block scripts %}<script src="/static/chart.js" defer></script>{% endblock %}

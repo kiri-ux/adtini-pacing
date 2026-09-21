@@ -29,7 +29,7 @@ from config import get_settings
 from db import init_db, session_scope
 from ingest import loader
 from models import PACING_TYPES, Client, IngestedFile, LineItem, Order
-from orderbook import sync_from_delivery
+from orderbook import adopt_unmatched_delivery
 
 logging.basicConfig(level=logging.INFO)
 
@@ -149,6 +149,25 @@ def inject_globals():
     return {"build": settings.build, "today": dt.date.today()}
 
 
+def _unwrap(raw: bytes, filename: str) -> bytes:
+    """Take a CSV out of its wrapper, if it arrived in one."""
+    lowered = filename.lower()
+    if lowered.endswith(".gz"):
+        import gzip
+
+        return gzip.decompress(raw)
+    if lowered.endswith(".zip"):
+        import zipfile
+
+        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            names = [
+                n for n in archive.namelist()
+                if n.lower().endswith(".csv") and not n.startswith("__MACOSX/")
+            ]
+            return archive.read(names[0]) if names else b""
+    return raw
+
+
 def _as_of():
     raw = request.args.get("as_of")
     if not raw:
@@ -179,6 +198,7 @@ def overview():
             query=request.args.get("q") or None,
             include_ended=request.args.get("ended") == "1",
             needs_terms={"1": True, "0": False}.get(needs),
+            include_non_io=request.args.get("allorders") == "1",
         )
         options = views.filter_options(db)
         as_of = rows[0].as_of if rows else (views.latest_delivery_date(db) or dt.date.today())
@@ -214,7 +234,14 @@ def order_detail(order_id: int):
         view = views.order_view(db, order_id, as_of=_as_of())
         if view is None:
             abort(404)
-        return render_template("order.html", v=view, pacing_types=PACING_TYPES)
+        return render_template(
+            "order.html",
+            v=view,
+            t=view.total,
+            chart=views.chart_series(view),
+            lineitem_names={li.id: li.name for li in view.order.line_items},
+            pacing_types=PACING_TYPES,
+        )
 
 
 @app.route("/orders/<int:order_id>/save", methods=["POST"])
@@ -250,6 +277,10 @@ def order_save(order_id: int):
         order.paused = form.get("paused") == "on"
         order.last_adjusted_on = as_date("last_adjusted_on")
         order.adjustment_note = (form.get("adjustment_note") or "").strip() or None
+        # Saving by hand means these are the buyer's now: the next orders
+        # import leaves them alone. Budgets get adjusted mid-flight and the
+        # adjustment has to survive.
+        order.terms_locked = True
 
         for item in order.line_items:
             prefix = f"li-{item.id}-"
@@ -266,8 +297,27 @@ def order_save(order_id: int):
                 "monthly_events", "total_events",
             ):
                 setattr(item, field_name, as_float(prefix + field_name))
+            item.terms_locked = True
 
     flash("Saved.")
+    return redirect(url_for("order_detail", order_id=order_id))
+
+
+@app.route("/orders/<int:order_id>/unlock", methods=["POST"])
+@login_required
+def order_unlock(order_id: int):
+    """Hand an order back to the orders file.
+
+    The next import overwrites its terms with whatever the file says.
+    """
+    with session_scope() as db:
+        order = db.get(Order, order_id)
+        if order is None:
+            abort(404)
+        order.terms_locked = False
+        for item in order.line_items:
+            item.terms_locked = False
+    flash("Unlocked. The next orders import will overwrite these terms.")
     return redirect(url_for("order_detail", order_id=order_id))
 
 
@@ -315,29 +365,29 @@ def data_page():
         elif action == "upload":
             upload = request.files.get("file")
             if upload and upload.filename:
-                raw = upload.read()
-                if upload.filename.lower().endswith((".zip", ".gz")):
-                    import gzip
-                    import zipfile
-
-                    if upload.filename.lower().endswith(".gz"):
-                        raw = gzip.decompress(raw)
-                    else:
-                        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
-                            names = [
-                                n for n in archive.namelist()
-                                if n.lower().endswith(".csv")
-                                and not n.startswith("__MACOSX/")
-                            ]
-                            raw = archive.read(names[0]) if names else b""
+                raw = _unwrap(upload.read(), upload.filename)
+                # The same filename rule the S3 sweep uses, so an uploaded
+                # file behaves exactly as it would from the bucket.
+                kind = loader.classify(upload.filename)
                 with session_scope() as db:
-                    written, _ = loader.load_bytes(db, raw, upload.filename)
-                message = f"Loaded {written:,} rows from {upload.filename}."
+                    if kind == loader.ORDERS:
+                        imported, frame = loader.load_orders_bytes(db, raw, upload.filename)
+                        message = f"{upload.filename}: {imported.summary()}."
+                        if frame.unmapped_note:
+                            message += f" Unrecognised columns: {frame.unmapped_note}"
+                    elif kind == loader.DELIVERY:
+                        written, _ = loader.load_bytes(db, raw, upload.filename)
+                        message = f"Loaded {written:,} delivery rows from {upload.filename}."
+                    else:
+                        message = (
+                            f"{upload.filename} is not recognised. Delivery files "
+                            "start with 'client-serve' and order files with 'orders'."
+                        )
             else:
                 message = "Pick a file first."
-        elif action == "sync":
+        elif action == "adopt":
             with session_scope() as db:
-                message = "Order book: " + sync_from_delivery(db).summary()
+                message = adopt_unmatched_delivery(db).summary()
 
     with session_scope() as db:
         files = list(
@@ -368,7 +418,12 @@ def data_page():
 @login_required
 def export_overview():
     with session_scope() as db:
-        rows = views.overview(db, as_of=_as_of(), include_ended=request.args.get("ended") == "1")
+        rows = views.overview(
+            db,
+            as_of=_as_of(),
+            include_ended=request.args.get("ended") == "1",
+            include_non_io=request.args.get("allorders") == "1",
+        )
         book = exports.overview_workbook(rows)
     return _xlsx(book, "adtini-pacing-overview")
 

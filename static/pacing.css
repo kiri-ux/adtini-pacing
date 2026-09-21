@@ -166,3 +166,44 @@ body.loginpage{padding-left:0;display:flex;align-items:center;justify-content:ce
   margin:0 0 16px;padding:11px 15px}
 .pager a{color:var(--blue);font-weight:600;text-decoration:none}
 .pager a:hover{text-decoration:underline}
+
+/* ---- daily delivery chart ----------------------------------------------- */
+/* Colours live in chart.js, where the validator's output is recorded next to
+   them. Nothing here assigns a series colour. */
+.chartcard{margin-bottom:20px;padding:0 0 16px}
+.charthead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+  padding:16px 18px 10px}
+.charthead h3{margin:0;font-size:15px;font-weight:600}
+.clegends{display:flex;flex-wrap:wrap;gap:8px 18px;padding:0 18px 12px}
+.clegend{display:inline-flex;align-items:center;gap:7px;font-size:12px;
+  color:var(--muted)}
+.clegend i{width:11px;height:11px;border-radius:3px;flex:0 0 11px}
+.chartbox{position:relative;padding:0 8px}
+.chartbox svg{display:block;overflow:visible}
+/* Grid and axes recede; the lines are what is read. */
+.cgrid{stroke:#EDF0F3;stroke-width:1}
+.caxis{fill:var(--muted);font-size:10.5px;font-family:inherit}
+.cright{text-anchor:end}
+.cmid{text-anchor:middle}
+.cend{text-anchor:end}
+.ctarget{stroke:var(--muted);stroke-width:1.5;stroke-dasharray:5 4;opacity:.7}
+.chair{stroke:var(--navy);stroke-width:1;opacity:.35}
+.ctip{position:absolute;top:8px;background:var(--card);border:1px solid var(--line);
+  border-radius:10px;box-shadow:0 6px 20px rgba(11,36,64,.16);padding:9px 11px;
+  font-size:12px;pointer-events:none;min-width:190px;max-width:340px;z-index:5}
+.ctip[hidden]{display:none}
+.ctip b{display:block;margin-bottom:6px;font-size:11.5px;color:var(--navy)}
+.ctiprow{display:flex;align-items:center;gap:8px;padding:2px 0}
+.ctiprow i{width:9px;height:9px;border-radius:2px;flex:0 0 9px}
+.ctiprow span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  color:var(--text)}
+.ctiprow em{font-style:normal;font-weight:600;font-variant-numeric:tabular-nums;
+  color:var(--text)}
+.strategytable{background:var(--card);box-shadow:0 1px 3px rgba(16,40,70,.08);
+  margin-bottom:22px}
+.strategytable > summary{padding:14px 18px;font-size:13.5px;color:var(--navy)}
+.strategytable > *:not(summary){margin:0}
+table.daily td.muted{color:var(--muted)}
+.lockmark{margin-right:auto;background:#EAF2FE;color:var(--navy);border-radius:999px;
+  font-size:11px;font-weight:700;letter-spacing:.04em;padding:5px 11px;
+  text-transform:uppercase}
