@@ -43,3 +43,16 @@ def elapsed_days(as_of: dt.date, start: dt.date, end: dt.date) -> int:
     if as_of < start:
         return 0
     return min(inclusive_days(start, as_of), inclusive_days(start, end))
+
+
+def months_between(start: dt.date, end: dt.date) -> int:
+    """How many calendar months a flight touches, counting both ends.
+
+    1 May to 31 Dec is eight months, not seven: a flight that touches any
+    part of a month sells that month's impressions. This is the figure the
+    orders export calls `months_running`, and what the hand-kept sheet
+    multiplies a monthly goal by to reach a total.
+    """
+    if end < start:
+        return 0
+    return (end.year - start.year) * 12 + (end.month - start.month) + 1

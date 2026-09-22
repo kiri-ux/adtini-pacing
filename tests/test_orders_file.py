@@ -673,3 +673,103 @@ def test_a_total_below_one_month_of_itself_is_rejected_outright():
     orphan = LineItem(name="y", monthly_impressions=100_000.0, total_impressions=7.0)
     _fix_impossible_total(orphan, months=None)
     assert orphan.total_impressions is None
+
+
+# --- repairing what is derived, without re-reading any file ----------------
+def test_recompute_fills_the_cpm_and_rebuilds_a_broken_total():
+    """Neither of these comes from the export, so neither needs the export.
+
+    The rate card was not deployed for a while and several parser faults put
+    a ratio artifact where the total belongs. A sweep skips a file it has
+    already read, so without this the damaged rows would sit there until
+    gigabytes of exports were read again for two derived columns.
+    """
+    import datetime as dt
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from models import Base, Client, LineItem, Order
+    from orderbook import recompute_terms
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        client = Client(name="Keystone Payroll")
+        session.add(client)
+        session.flush()
+        order = Order(
+            client_id=client.id,
+            name="Keystone Payroll #26760",
+            pacing_type="impression",
+            start_date=dt.date(2026, 8, 1),
+            end_date=dt.date(2027, 1, 31),  # six months
+        )
+        session.add(order)
+        session.flush()
+        session.add(
+            LineItem(
+                order_id=order.id,
+                name="Display Ads",
+                product="Display Ads",
+                monthly_impressions=100_000.0,
+                total_impressions=0.999999999999,  # the artifact, as stored
+                goal_cpm=None,
+            )
+        )
+        session.flush()
+
+        recompute_terms(session)
+        item = session.query(LineItem).one()
+
+    assert item.goal_cpm == 2.5, "the setup CPM comes from the rate card"
+    assert item.goal_cpm_source == "rate card"
+    assert item.total_impressions == 600_000, "six months of the monthly figure"
+
+
+def test_recompute_leaves_hand_edited_terms_alone():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from models import Base, Client, LineItem, Order
+    from orderbook import recompute_terms
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        client = Client(name="X")
+        session.add(client)
+        session.flush()
+        order = Order(client_id=client.id, name="O", pacing_type="impression")
+        session.add(order)
+        session.flush()
+        session.add(
+            LineItem(
+                order_id=order.id,
+                name="Display Ads",
+                product="Display Ads",
+                monthly_impressions=100_000.0,
+                total_impressions=1.0,
+                goal_cpm=9.99,
+                terms_locked=True,
+            )
+        )
+        session.flush()
+
+        result = recompute_terms(session)
+        item = session.query(LineItem).one()
+
+    assert item.goal_cpm == 9.99
+    assert item.total_impressions == 1.0
+    assert result.locked_skipped == 1
+
+
+def test_months_between_counts_both_ends():
+    import datetime as dt
+
+    from pacing.calendar import months_between
+
+    assert months_between(dt.date(2026, 5, 1), dt.date(2026, 12, 31)) == 8
+    assert months_between(dt.date(2026, 8, 1), dt.date(2026, 8, 31)) == 1
+    assert months_between(dt.date(2026, 12, 1), dt.date(2027, 1, 31)) == 2
+    assert months_between(dt.date(2026, 12, 1), dt.date(2026, 11, 1)) == 0

@@ -17,10 +17,12 @@ import math
 from dataclasses import dataclass
 
 from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 
 import ratecard
 from ingest.normalize import bound_id, name_key
 from ingest.orders import spend_columns
+from pacing.calendar import months_between
 from models import (
     PACING_CLICK,
     PACING_EVENT,
@@ -272,7 +274,26 @@ def _fix_impossible_total(item: LineItem, months) -> None:
         months = None
     if months is not None and (math.isnan(months) or months <= 0):
         months = None
+    if months is None:
+        # The export did not say, so the flight says instead: a line item
+        # selling a monthly figure over six months has sold six of them.
+        months = _flight_months(item)
     item.total_impressions = monthly * months if months else None
+
+
+def _flight_months(item: LineItem) -> int | None:
+    """How many months the line item runs, from its dates.
+
+    Its own dates when it has them, otherwise the order's - a line item
+    without dates runs for the order's flight.
+    """
+    order = item.order
+    start = item.start_date or (order.start_date if order else None)
+    end = item.end_date or (order.end_date if order else None)
+    if start is None or end is None:
+        return None
+    months = months_between(start, end)
+    return months or None
 
 
 def _apply_sold_terms(item: LineItem, row, pacing_type: str) -> None:
@@ -551,4 +572,71 @@ def adopt_unmatched_delivery(session) -> AdoptResult:
         result.line_items_added += 1
 
     session.flush()
+    return result
+
+
+@dataclass
+class RecomputeResult:
+    line_items: int = 0
+    cpm_set: int = 0
+    totals_rebuilt: int = 0
+    totals_cleared: int = 0
+    locked_skipped: int = 0
+
+    def summary(self) -> str:
+        parts = [
+            f"{self.line_items} line items checked",
+            f"{self.cpm_set} CPMs set from the rate card",
+            f"{self.totals_rebuilt} totals rebuilt",
+        ]
+        if self.totals_cleared:
+            parts.append(f"{self.totals_cleared} cleared as unusable")
+        if self.locked_skipped:
+            parts.append(f"{self.locked_skipped} left alone (edited by hand)")
+        return ", ".join(parts)
+
+
+def recompute_terms(session) -> RecomputeResult:
+    """Re-derive what is computed rather than imported, without any file.
+
+    Two of the sold terms are not taken from the export, they are worked out
+    from it: the setup CPM comes from the rate card, and the total is the
+    monthly figure over the months the line item runs. Both have been wrong
+    in the stored data - the rate card was not deployed at all for a while,
+    and several parser faults put a ratio artifact where the total belongs.
+
+    Fixing the code only fixes what is imported next, and a sweep skips a
+    file it has already read, so the damaged rows would sit there until every
+    orders export - gigabytes of them - was read again for two columns that
+    do not come from the file in the first place. This recomputes them where
+    they stand.
+
+    Anything a buyer has edited by hand is left alone, as everywhere else.
+    """
+    result = RecomputeResult()
+    items = session.execute(
+        select(LineItem).options(selectinload(LineItem.order))
+    ).scalars()
+
+    for item in items:
+        result.line_items += 1
+        if item.terms_locked:
+            result.locked_skipped += 1
+            continue
+
+        cpm, source = resolve_goal_cpm(
+            item.product, bool(item.restricted), None, item.total_impressions
+        )
+        if cpm and cpm != item.goal_cpm:
+            item.goal_cpm, item.goal_cpm_source = cpm, source
+            result.cpm_set += 1
+
+        before = item.total_impressions
+        _fix_impossible_total(item, months=None)
+        if item.total_impressions != before:
+            if item.total_impressions is None:
+                result.totals_cleared += 1
+            else:
+                result.totals_rebuilt += 1
+
     return result

@@ -10,7 +10,7 @@ import datetime as dt
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from sqlalchemy import false, func, or_, select, tuple_
+from sqlalchemy import case, false, func, or_, select, tuple_
 from sqlalchemy.orm import selectinload
 
 from models import CampaignLink, Client, DailyDelivery, LineItem, Order, StrategyTerms
@@ -305,6 +305,7 @@ class OrderView:
     covers_from: dt.date | None = None
     strategies: dict[int, list["StrategySeries"]] = field(default_factory=dict)
     metric: str = "impressions"
+    daily_by_line_item: dict[int, list[DailyPoint]] = field(default_factory=dict)
 
     @property
     def health(self) -> str:
@@ -359,6 +360,10 @@ def order_view(session, order_id: int, as_of: dt.date | None = None) -> OrderVie
         for row in rows
         if row.line_item_id is not None
     }
+    # Kept so the linking section does not aggregate the same delivery again.
+    daily_by_line_item = {
+        row.line_item_id: row.daily for row in rows if row.line_item_id is not None
+    }
 
     return OrderView(
         order=order,
@@ -372,6 +377,7 @@ def order_view(session, order_id: int, as_of: dt.date | None = None) -> OrderVie
         covers_from=covers_from,
         strategies=strategies,
         metric=attr,
+        daily_by_line_item=daily_by_line_item,
     )
 
 
@@ -819,6 +825,12 @@ def campaign_candidates(
     # about it.
     month_start, _ = month_bounds(as_of)
 
+    # Month to date and lifetime in one pass. Two queries over a client's
+    # whole delivery to show one table was half the order page's wait.
+    in_month = (DailyDelivery.date >= month_start) & (DailyDelivery.date <= as_of)
+    month_impressions = case((in_month, DailyDelivery.impressions), else_=0.0)
+    month_cost = case((in_month, DailyDelivery.cost), else_=0.0)
+
     stmt = (
         select(
             DailyDelivery.data_source,
@@ -830,41 +842,26 @@ def campaign_candidates(
             func.sum(DailyDelivery.cost),
             func.min(DailyDelivery.date),
             func.max(DailyDelivery.date),
+            func.sum(month_impressions),
+            func.sum(month_cost),
         )
         .where(or_(*conditions))
         .group_by(DailyDelivery.data_source, DailyDelivery.campaign_id)
     )
-
-    month_stmt = (
-        select(
-            DailyDelivery.data_source,
-            DailyDelivery.campaign_id,
-            func.sum(DailyDelivery.impressions),
-            func.sum(DailyDelivery.cost),
-        )
-        .where(or_(*conditions))
-        .where(DailyDelivery.date >= month_start)
-        .where(DailyDelivery.date <= as_of)
-        .group_by(DailyDelivery.data_source, DailyDelivery.campaign_id)
-    )
-    month_totals: dict[tuple[str, str], tuple[float, float]] = {
-        (source, campaign): (float(impressions or 0), float(cost or 0))
-        for source, campaign, impressions, cost in session.execute(month_stmt)
-    }
 
     out: list[CampaignCandidate] = []
     for (
-        source, campaign, name, product, li_id, impressions, cost, first, last
+        source, campaign, name, product, li_id, impressions, cost, first, last,
+        month_impr, month_spend,
     ) in session.execute(stmt):
-        month = month_totals.get((source, campaign), (0.0, 0.0))
         candidate = CampaignCandidate(
             data_source=source,
             campaign_id=campaign,
             campaign_name=name,
             product=product,
             external_line_item_id=li_id,
-            month_impressions=month[0],
-            month_cost=month[1],
+            month_impressions=float(month_impr or 0),
+            month_cost=float(month_spend or 0),
             impressions=float(impressions or 0),
             cost=float(cost or 0),
             first_date=first,
@@ -882,11 +879,20 @@ def campaign_candidates(
     return out
 
 
-def linking_view(session, order: Order, as_of: dt.date | None = None) -> LinkingView:
+def linking_view(
+    session,
+    order: Order,
+    as_of: dt.date | None = None,
+    daily: dict[int, list[DailyPoint]] | None = None,
+) -> LinkingView:
     """What each line item is reading, and what is going unread.
 
     Non-paced products are left out here as everywhere else: there is no
     campaign to link a Live Chat line to.
+
+    `daily` is the per-line-item delivery the order page has already worked
+    out. Rebuilding it here meant every order page aggregated the same
+    delivery twice, for the same numbers.
     """
     as_of = as_of or latest_delivery_date(session) or dt.date.today()
     line_items = [
@@ -895,7 +901,8 @@ def linking_view(session, order: Order, as_of: dt.date | None = None) -> Linking
     ]
     join = _delivery_join(session, line_items)
     candidates = campaign_candidates(session, order, join, as_of)
-    daily = _daily_by_line_item(session, line_items)
+    if daily is None:
+        daily = _daily_by_line_item(session, line_items)
 
     links = {
         link.line_item_id: link

@@ -210,6 +210,9 @@ class DailyDelivery(Base):
         ),
         Index("ix_delivery_client_date", "client_name", "date"),
         Index("ix_delivery_order_date", "external_order_id", "date"),
+        # A hand-made link identifies delivery by this pair, and the unique
+        # constraint above leads with the date so it cannot answer for it.
+        Index("ix_delivery_campaign", "data_source", "campaign_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

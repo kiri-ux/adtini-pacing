@@ -24,7 +24,12 @@ from models import (
     LineItem,
     Order,
 )
-from pacing.calendar import elapsed_days, inclusive_days, month_window
+from pacing.calendar import (
+    elapsed_days,
+    inclusive_days,
+    month_bounds,
+    month_window,
+)
 
 
 # Retail on Performance Max is four times the internal cost. Orders that
@@ -208,6 +213,47 @@ def _sum(points: Iterable[DailyPoint], attr: str) -> float:
     return float(sum(getattr(p, attr) for p in points))
 
 
+class _Totals:
+    """The four metrics, summed."""
+
+    __slots__ = ("impressions", "clicks", "cost", "conversions")
+
+    def __init__(self) -> None:
+        self.impressions = self.clicks = self.cost = self.conversions = 0.0
+
+    def add(self, point: DailyPoint) -> None:
+        self.impressions += point.impressions
+        self.clicks += point.clicks
+        self.cost += point.cost
+        self.conversions += point.conversions
+
+    def of(self, attr: str) -> float:
+        return float(getattr(self, attr))
+
+
+def _bucket(
+    points: Sequence[DailyPoint],
+    flight: tuple[dt.date, dt.date] | None,
+    month: tuple[dt.date, dt.date] | None,
+) -> tuple[_Totals, _Totals, _Totals]:
+    """Everything, the flight, and the month - in one pass over the days.
+
+    Summed separately per metric and per window, this walked the same days
+    nine times. On the overview that is every line item on the book, and it
+    was most of the page's wait.
+    """
+    every, in_flight, in_month = _Totals(), _Totals(), _Totals()
+    for point in points:
+        every.add(point)
+        if flight and flight[0] <= point.date <= flight[1]:
+            in_flight.add(point)
+            if month and month[0] <= point.date <= month[1]:
+                in_month.add(point)
+        elif not flight and month and month[0] <= point.date <= month[1]:
+            in_month.add(point)
+    return every, in_flight, in_month
+
+
 def _primary_attr(pacing_type: str) -> str:
     return "impressions" if pacing_type == PACING_IMPRESSION else "cost"
 
@@ -262,26 +308,33 @@ def compute_row(
 
     points = sorted(daily, key=lambda p: p.date)
     row.daily = points
-    row.impressions = _sum(points, "impressions")
-    row.clicks = _sum(points, "clicks")
-    row.cost = _sum(points, "cost")
-    row.conversions = _sum(points, "conversions")
-    row.ctr = (row.clicks / row.impressions) if row.impressions else None
-
     attr = _primary_attr(pacing_type)
-    row.to_date = _sum(points, attr) * (
-        row.client_cost_ratio if pacing_type == PACING_EVENT else 1.0
-    )
+    gross = row.client_cost_ratio if pacing_type == PACING_EVENT else 1.0
+
+    paceable = bool(start and end and row.total_target)
+    flight = (start, end) if paceable else None
+    window = month_window(as_of, start, end) if paceable else None
+    if window:
+        month_bounds_used = (window[0], min(as_of, window[1]))
+    else:
+        month_bounds_used = month_bounds(as_of)
+
+    every, in_flight, in_month = _bucket(points, flight, month_bounds_used)
+    counted = in_flight if paceable else every
+
+    row.impressions = counted.impressions
+    row.clicks = counted.clicks
+    row.cost = counted.cost
+    row.conversions = counted.conversions
+    row.ctr = (row.clicks / row.impressions) if row.impressions else None
+    row.to_date = counted.of(attr) * gross
 
     # Without dates or a sold total there is nothing to pace against. Delivery
     # still shows, flagged so the order book can be filled in.
-    if not start or not end or not row.total_target:
+    if not paceable:
         row.needs_setup = True
         row.remaining = row.total_target - row.to_date
-        row.month_to_date = _sum(
-            [p for p in points if p.date.year == as_of.year and p.date.month == as_of.month],
-            attr,
-        ) * (row.client_cost_ratio if pacing_type == PACING_EVENT else 1.0)
+        row.month_to_date = in_month.of(attr) * gross
         _attach_effective_cost(row)
         _attach_rate_card(row, line_item)
         return row
@@ -297,16 +350,6 @@ def compute_row(
         row.daily_budget = row.daily_target
         row.total_budget = row.total_target
 
-    flight_points = [p for p in points if start <= p.date <= end]
-    row.to_date = _sum(flight_points, attr) * (
-        row.client_cost_ratio if pacing_type == PACING_EVENT else 1.0
-    )
-    row.impressions = _sum(flight_points, "impressions")
-    row.clicks = _sum(flight_points, "clicks")
-    row.cost = _sum(flight_points, "cost")
-    row.conversions = _sum(flight_points, "conversions")
-    row.ctr = (row.clicks / row.impressions) if row.impressions else None
-
     row.remaining = row.total_target - row.to_date
     row.days_elapsed = elapsed_days(as_of, start, end)
     row.days_left = max(inclusive_days(start, end) - row.days_elapsed, 0)
@@ -314,7 +357,6 @@ def compute_row(
     row.pacing_delta = row.to_date - row.on_pace
     row.pacing_pct = _pct(row.on_pace, row.to_date)
 
-    window = month_window(as_of, start, end)
     if window:
         w_start, w_end = window
         row.month_days = inclusive_days(w_start, w_end)
@@ -323,9 +365,7 @@ def compute_row(
         row.month_daily_target = (
             row.monthly_target / row.month_days if row.month_days else 0.0
         )
-        row.month_to_date = _sum(
-            [p for p in flight_points if w_start <= p.date <= min(as_of, w_end)], attr
-        ) * (row.client_cost_ratio if pacing_type == PACING_EVENT else 1.0)
+        row.month_to_date = in_month.of(attr) * gross
         row.month_on_pace = row.month_daily_target * elapsed_days(as_of, w_start, w_end)
         row.month_pacing_delta = row.month_to_date - row.month_on_pace
         row.month_pacing_pct = _pct(row.month_on_pace, row.month_to_date)

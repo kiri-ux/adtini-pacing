@@ -43,7 +43,7 @@ from models import (
     LineItem,
     Order,
 )
-from orderbook import adopt_unmatched_delivery
+from orderbook import adopt_unmatched_delivery, recompute_terms
 
 logging.basicConfig(level=logging.INFO)
 
@@ -413,7 +413,10 @@ def order_detail(order_id: int):
             t=view.total,
             chart=views.chart_series(view),
             strategy_rows=views.strategy_pacing(db, view),
-            linking=views.linking_view(db, view.order, as_of=view.as_of),
+            linking=views.linking_view(
+                db, view.order, as_of=view.as_of,
+                daily=view.daily_by_line_item,
+            ),
             lineitem_names={li.id: li.name for li in view.order.line_items},
             pacing_types=PACING_TYPES,
         )
@@ -685,6 +688,9 @@ def data_action():
     elif action == "adopt":
         with session_scope() as db:
             message = adopt_unmatched_delivery(db).summary()
+    elif action == "recompute":
+        with session_scope() as db:
+            message = recompute_terms(db).summary()
 
     if message:
         flash(message)

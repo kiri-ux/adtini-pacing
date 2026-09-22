@@ -55,6 +55,21 @@
 
   <div class="datarow">
     <form method="post" action="{{ url_for('data_action') }}">
+      <input type="hidden" name="action" value="recompute">
+      <div>
+        <h4>Recompute terms</h4>
+        <p class="hint">Sets the setup CPM from the rate card and rebuilds any
+          sold total that is smaller than one month of itself. Neither comes
+          from the export, so this needs no file and takes seconds. Never
+          touches terms entered by hand.</p>
+      </div>
+      <button class="btn2 addprod" type="submit"
+        {% if sweep_running %}disabled{% endif %}>Recompute</button>
+    </form>
+  </div>
+
+  <div class="datarow">
+    <form method="post" action="{{ url_for('data_action') }}">
       <input type="hidden" name="action" value="adopt">
       <div>
         <h4>Adopt unmatched delivery</h4>
