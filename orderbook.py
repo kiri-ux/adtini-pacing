@@ -50,6 +50,30 @@ NEVER_RAN_STATUSES = {"draft", "declined", "rejected", "deleted"}
 
 # Short product codes, matching how rows are labelled by hand.
 PRODUCT_ABBR = {
+    # As the orders export names them.
+    "Display Ads": "D",
+    "Native Display Ads": "ND",
+    "Social Mirror Ads": "SM",
+    "Social Mirror CTV Ads": "SM CTV",
+    "Native Video Ads": "NV",
+    "Video Ads": "V",
+    "Connected TV Ads": "CTV",
+    "CTV + Video Ads": "CTV+V",
+    "Online Audio Ads": "OA",
+    "Mobile Conquesting Display & Video Ads": "MC",
+    "Mobile Conquesting Event/Political Display & Video Ads": "MC EV",
+    "Meta Display & Video Ads": "META",
+    "Meta Lead Display & Video Ads": "META LEAD",
+    "Amazon Premium Display Ads": "AMZ D",
+    "Amazon Premium Video Ads": "AMZ V",
+    "Amazon Premium CTV Ads": "AMZ CTV",
+    "Youtube+ Video Ads": "YT+",
+    "YouTube TV Video Ads (bids)": "YTTV",
+    "TikTok Display & Video Ads": "TT",
+    "Digital Out-Of-Home (DOOH) Display & Video Ads": "DOOH",
+    "Dynamic Display Ads": "DYN",
+    "Geo-Framing Display Ads": "GF",
+    # As the delivery feed names them.
     "Display": "D", "Mobile": "M", "Video": "V", "Native Display": "ND",
     "Native Video": "NV", "CTV": "CTV", "Online Audio": "OA",
     "Social Mirror": "SM", "Social Mirror CTV": "SM CTV", "Meta": "FB",

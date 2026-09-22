@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_meter.html" import meter %}
 {% set nav = 'overview' %}
 {% set o = v.order %}
 {% set t = v.total %}
@@ -56,8 +57,7 @@
     <b>{{ t.to_date|money }}</b>
     <u>of {{ t.total_target|money }} billed &middot;
       platform spend &times;{{ '%.2f'|format(t.client_cost_ratio) }}
-      {%- if t.google_total_spend %}{% else %} (retail default){% endif %}
-      {%- endif %}</u></div>
+      {%- if not t.google_total_spend %} (retail default){% endif %}</u></div>
   {% endif %}
   <div class="qtile"><small>Setup {{ 'CPM' if o.pacing_type=='impression' else ('CPC' if o.pacing_type=='click' else 'CPE') }}</small>
     <b>{{ t.unit_cost|money }}</b>
@@ -223,6 +223,47 @@
   <input type="text" name="name" placeholder="New campaign element">
   <button class="btn2 addprod" type="submit">&#43; Add row</button>
 </form>
+
+
+
+<div class="tablecard breakoutcard">
+  <div class="charthead">
+    <h3>Line item pacing</h3>
+    <span class="hint">Each product on the order against what it should have
+      served by now. 100% is on pace; the tick on the bar is the target.</span>
+  </div>
+  <div class="scroller">
+    <table class="overview breakout">
+      <thead><tr>
+        <th>Status</th><th>Line Item ID</th><th>Product</th>
+        <th class="num">Monthly Serve / Goal</th><th class="meterhead">Monthly Pacing</th>
+        <th class="num">Total Serve / Goal</th><th class="meterhead">Total Pacing</th>
+        <th class="num">Avg Daily / Needed</th><th class="num">Clicks</th>
+        <th class="num">CTR</th><th class="num">Conv</th><th class="num">Days Left</th>
+      </tr></thead>
+      <tbody>
+      {% for r in v.rows %}
+        <tr>
+          <td><span class="pace {{ 'on-pace' if o.status == 'IO Live' else 'unknown' }}">{{ o.status or '—' }}</span></td>
+          <td class="num orderid">{{ r.line_item.external_id if r.line_item and r.line_item.external_id and not r.line_item.external_id.startswith('name:') else '—' }}</td>
+          <td class="clip" title="{{ r.label }}">{{ r.label }}</td>
+          <td class="num pair">{{ r.month_to_date|metric(r) }} <i>/ {{ r.monthly_target|metric(r) }}</i></td>
+          <td>{{ meter(r.month_to_date, r.month_on_pace, r.monthly_target,
+                       r.month_delivery_ratio, r.month_pacing_pct|paceclass, r.is_money) }}</td>
+          <td class="num pair">{{ r.to_date|metric(r) }} <i>/ {{ r.total_target|metric(r) }}</i></td>
+          <td>{{ meter(r.to_date, r.on_pace, r.total_target,
+                       r.delivery_ratio, r.pacing_pct|paceclass, r.is_money) }}</td>
+          <td class="num pair">{{ r.avg_daily|metric(r) }} <i>/ {{ r.daily_needed|metric(r) }}</i></td>
+          <td class="num">{{ r.clicks|num }}</td>
+          <td class="num">{{ r.ctr|pct }}</td>
+          <td class="num">{{ r.conversions|num }}</td>
+          <td class="num">{{ r.days_left if r.flight_days else '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 
 
 {% if strategy_rows %}

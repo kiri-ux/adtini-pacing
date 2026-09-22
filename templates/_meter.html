@@ -1,0 +1,23 @@
+{# A pacing meter: the bar fills to how much of the goal has run, and the
+   tick marks where it should be by now. The number beside it is the ratio of
+   the two, so 100% is on pace. Both are needed - a bar alone cannot say
+   whether 60% is early or late. #}
+{% macro meter(served, expected, goal, ratio, health, is_money) -%}
+{% set fill = ((served / goal) if goal else 0) %}
+{% set mark = ((expected / goal) if goal else 0) %}
+<div class="meter" role="img"
+  aria-label="{{ '%.0f'|format(served) }} of {{ '%.0f'|format(goal) }}, {{ '%.0f'|format(expected) }} expected by now">
+  <span class="mtrack">
+    <span class="mfill {{ health }}" style="width:{{ [fill * 100, 100]|min|round(1) }}%"></span>
+    {% if mark > 0 %}
+      <span class="mmark" style="left:{{ [mark * 100, 100]|min|round(1) }}%"></span>
+    {% endif %}
+  </span>
+  <span class="mval pace {{ health }}">{{ ratio|pct(2) if ratio is not none else '—' }}</span>
+  <span class="mtip">
+    <b>{{ '{:,.0f}'.format(served) if not is_money else '${:,.2f}'.format(served) }}</b> served<br>
+    <b>{{ '{:,.0f}'.format(expected) if not is_money else '${:,.2f}'.format(expected) }}</b> expected by now<br>
+    <b>{{ '{:,.0f}'.format(goal) if not is_money else '${:,.2f}'.format(goal) }}</b> goal
+  </span>
+</div>
+{%- endmacro %}

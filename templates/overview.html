@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_meter.html" import meter %}
 {% set nav = 'overview' %}
 {% block heading %}Pacing{% endblock %}
 {% block headactions %}
@@ -21,7 +22,7 @@
     {% endfor %}
   </select>
   <select name="market" class="filtersel">
-    <option value="">All markets</option>
+    <option value="">All partners</option>
     {% for m in options.markets %}
       <option value="{{ m }}" {% if args.get('market')==m %}selected{% endif %}>{{ m }}</option>
     {% endfor %}
@@ -49,41 +50,74 @@
   <table class="overview">
     <thead>
       <tr>
-        <th>Buyer</th><th>Market</th><th>Client</th><th>Order</th><th>Type</th>
-        <th>Start</th><th>End</th>
-        <th class="num">Sold Total</th><th class="num">Mon. Sold</th><th class="num">CTR</th>
-        <th class="num">Total TD</th><th class="num">Total On Pace</th><th class="num">Total Pacing</th>
-        <th class="num">Mon. TD</th><th class="num">Mon. On Pace</th><th class="num pacecol">Mon. Pacing</th>
+        <th class="rowacts"></th>
+        <th>Buyer</th><th>Partner</th><th>Client</th><th>Order ID</th><th>Products</th>
+        <th class="num">Monthly Serve / Goal</th><th class="meterhead">Monthly Pacing</th>
+        <th class="num">Total Serve / Goal</th><th class="meterhead">Total Pacing</th>
+        <th class="num">Avg Daily Serve / Needed</th><th class="num">Days Left</th>
       </tr>
     </thead>
     <tbody>
     {% for r in rows %}
+      {% set t = r.total %}
       <tr>
-        <td>{{ r.order.buyer or '—' }}</td>
+        <td class="rowacts">
+          <a href="{{ url_for('order_detail', order_id=r.order.id) }}" title="Order pacing"
+            aria-label="Order pacing for {{ r.client.name }}">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"
+              fill="none" stroke="currentColor" stroke-width="2"/>
+              <path d="M12 7v5l3.5 2" fill="none" stroke="currentColor" stroke-width="2"/></svg></a>
+          <a href="{{ url_for('export_order', order_id=r.order.id) }}" title="Export"
+            aria-label="Export {{ r.client.name }}" class="secondary">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20h14v-2H5z"/>
+              <path d="M11 4h2v8h3l-4 5-4-5h3z"/></svg></a>
+        </td>
+        <td class="clip">{{ r.order.buyer or '—' }}</td>
         <td class="clip" title="{{ r.client.market or '' }}">{{ r.client.market or '—' }}</td>
         <td class="lnk clip" title="{{ r.client.name }}"><a
           href="{{ url_for('order_detail', order_id=r.order.id) }}">{{ r.client.name }}</a></td>
-        <td class="ordname clip" title="{{ r.order.name }}">{{ r.order.name }}</td>
-        <td><span class="tag type-{{ r.order.pacing_type }}">{{ r.order.pacing_type[:4]|upper }}</span>
-          {% if r.is_cancelled %}<span class="partial" title="Cancelled, but it delivered before it was">cancelled</span>{% endif %}</td>
-        <td class="num">{{ r.order.start_date.strftime('%-m/%-d/%y') if r.order.start_date else '—' }}</td>
-        <td class="num">{{ r.order.end_date.strftime('%-m/%-d/%y') if r.order.end_date else '—' }}</td>
-        <td class="num">{{ r.total.total_target|metric(r.total) }}</td>
-        <td class="num">{{ r.total.monthly_target|metric(r.total) }}</td>
-        <td class="num">{{ r.total.ctr|pct }}</td>
-        <td class="num">{{ r.total.to_date|metric(r.total) }}</td>
-        <td class="num">{{ r.total.on_pace|metric(r.total) }}</td>
-        <td class="num">{{ r.total.pacing_delta|metric(r.total) }}</td>
-        <td class="num">{{ r.total.month_to_date|metric(r.total) }}</td>
-        <td class="num">{{ r.total.month_on_pace|metric(r.total) }}</td>
-        <td class="num pacecol"><span class="pace {{ r.health }}">{{ r.total.month_pacing_pct|pct }}</span>
+        <td class="num orderid">{{ r.order.external_order_id or '—' }}</td>
+        <td class="pills">
+          {% for p in r.products[:5] %}
+            <span class="pill-prod {{ p.health }}">{{ p.code }}
+              <span class="mtip"><b>{{ p.name }}</b><br>
+                Served: {{ p.served|metric(t) }}<br>
+                Expected: {{ p.expected|metric(t) }}</span></span>
+          {% endfor %}
+          {% if r.products|length > 5 %}<span class="pill-more">+{{ r.products|length - 5 }}</span>{% endif %}
+        </td>
+        <td class="num pair">{{ t.month_to_date|metric(t) }} <i>/ {{ t.monthly_target|metric(t) }}</i></td>
+        <td>{{ meter(t.month_to_date, t.month_on_pace, t.monthly_target,
+                     t.month_delivery_ratio, r.health, t.is_money) }}</td>
+        <td class="num pair">{{ t.to_date|metric(t) }} <i>/ {{ t.total_target|metric(t) }}</i></td>
+        <td>{{ meter(t.to_date, t.on_pace, t.total_target,
+                     t.delivery_ratio, r.total_health, t.is_money) }}
           {% if r.partial_history %}<span class="partial" title="This flight started before the delivery feed's earliest day, so the life-of-flight figures are short by whatever ran earlier.">partial</span>{% endif %}</td>
+        <td class="num pair">{{ t.avg_daily|metric(t) }} <i>/ {{ t.daily_needed|metric(t) }}</i></td>
+        <td class="num">{{ t.days_left if t.flight_days else '—' }}</td>
       </tr>
     {% else %}
-      <tr><td colspan="16" class="empty">Nothing to pace yet. Load a delivery file on the
+      <tr><td colspan="12" class="empty">Nothing to pace yet. Load a delivery file on the
         <a href="/data">Data</a> page.</td></tr>
     {% endfor %}
     </tbody>
+    {% if rows %}
+    <tfoot>
+      <tr class="totalrow">
+        <td class="rowacts"></td>
+        <td colspan="5">Pacing total &middot; {{ rows|length }} orders on this page</td>
+        <td class="num pair">{{ page_total.month_to_date|num }} <i>/ {{ page_total.monthly_target|num }}</i></td>
+        <td>{{ meter(page_total.month_to_date, page_total.month_on_pace,
+                     page_total.monthly_target, page_total.month_delivery_ratio,
+                     page_total.month_health, false) }}</td>
+        <td class="num pair">{{ page_total.to_date|num }} <i>/ {{ page_total.total_target|num }}</i></td>
+        <td>{{ meter(page_total.to_date, page_total.on_pace, page_total.total_target,
+                     page_total.delivery_ratio, page_total.health, false) }}</td>
+        <td class="num pair">{{ page_total.avg_daily|num }} <i>/ {{ page_total.daily_needed|num }}</i></td>
+        <td></td>
+      </tr>
+    </tfoot>
+    {% endif %}
   </table>
  </div>
 </div>
@@ -98,9 +132,9 @@
 </div>
 {% endif %}
 
-<p class="note">Negative pacing is over-delivering, positive is under. Within
+<p class="note">Pacing is what has served against what should have served by
+  now, so 100% is on pace and the bar's tick is where it should be. Within
   &plusmn;10% counts as on pace. Only Insertion Orders are listed; a cancelled
-  order appears only if it delivered before it was cancelled. <b>partial</b> marks a flight that began before
-  the delivery feed's earliest day &mdash; its life-of-flight figures are short
-  until enough daily drops have accumulated.</p>
+  order appears only if it delivered before it was cancelled. <b>partial</b>
+  marks a flight that began before the delivery feed's earliest day.</p>
 {% endblock %}

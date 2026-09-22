@@ -24,14 +24,8 @@
 /* ---- overview ----------------------------------------------------------- */
 /* Month pacing is the column the whole page is for, so it stays on screen:
    the table is trimmed to fit and the column is pinned to the right edge. */
-/* Wide enough that the browser always offers horizontal scroll, so the
-   pinned pacing column has somewhere to scroll out from over rather than
-   permanently covering the column beneath it. */
-table.overview{min-width:1620px}
-table.overview th.pacecol,table.overview td.pacecol{position:sticky;right:0;
-  background:var(--card);box-shadow:-6px 0 8px -6px rgba(16,40,70,.16)}
-table.overview thead th.pacecol{background:var(--navy)}
-table.overview tbody tr:hover td.pacecol{background:#FAFBFC}
+/* Wide enough for every column at its natural size; the card scrolls. */
+table.overview{min-width:1760px}
 /* One order is one line. A wrapped client name turns a scannable list into
    a ragged one, so the long ones clip and carry their full text as a title. */
 table.overview td.clip{max-width:168px;overflow:hidden;text-overflow:ellipsis;
@@ -51,7 +45,9 @@ table.overview td.ordname{color:var(--muted);max-width:280px;overflow:hidden;
 /* Same story: `form input[type=text]` wins over `.search input`, and took the
    room the magnifier sits in. */
 .controls .search input{padding-left:40px;min-height:0}
-.controls .btn-cat{flex:0 0 auto}
+.controls .btn-cat{flex:0 0 auto;margin-left:auto}
+.controls .filtersel{min-width:132px}
+.controls .search{flex:0 1 250px;min-width:180px}
 .endedbox{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;
   font-weight:500;color:var(--muted)}
 .endedbox input{accent-color:var(--blue);width:15px;height:15px}
@@ -216,3 +212,69 @@ table.daily td.muted{color:var(--muted)}
 .datarow .forcebox input[type=text]{background:var(--fill);border:1px solid transparent;
   border-radius:8px;padding:4px 7px;font-family:inherit;font-size:12.5px;width:52px;
   text-align:right;margin:0 4px}
+
+/* ---- pacing meters ------------------------------------------------------ */
+/* The bar fills to how much of the goal has run; the tick is where it should
+   be by now. Neither alone answers the question - a bar at 60% is early or
+   late depending on the date. */
+.meter{position:relative;display:flex;align-items:center;gap:9px;min-width:190px}
+.mtrack{position:relative;flex:1;height:8px;border-radius:999px;background:#E6E9ED;
+  overflow:visible}
+.mfill{position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:var(--blue)}
+.mfill.on-pace{background:#2E9E62}
+.mfill.under{background:#C6362E}
+.mfill.over{background:#D9922B}
+.mfill.unknown{background:#BFC6CF}
+/* The target. Dark and full height so it reads against any fill colour. */
+.mmark{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--navy);
+  border-radius:1px;transform:translateX(-1px)}
+.mval{flex:0 0 auto;min-width:62px;justify-content:flex-end;background:none;padding:0;
+  font-size:12px;font-variant-numeric:tabular-nums}
+.mval.on-pace{color:#17603A;background:none}
+.mval.under{color:#B3261E;background:none}
+.mval.over{color:#7A4C09;background:none}
+.mval.unknown{color:var(--muted);background:none}
+table.overview th.meterhead{min-width:200px}
+
+/* ---- hover readouts ----------------------------------------------------- */
+/* Markup, not a title attribute: a title cannot hold three lines and does
+   not appear on focus. */
+/* Below, not above: above it covered the header on the first row, which is
+   the row most likely to be read. */
+.mtip{position:absolute;top:calc(100% + 7px);left:0;z-index:20;
+  background:var(--navy);color:#fff;border-radius:8px;padding:8px 10px;
+  font-size:11.5px;line-height:1.55;white-space:nowrap;pointer-events:none;
+  opacity:0;visibility:hidden;transition:opacity .12s;
+  box-shadow:0 6px 18px rgba(11,36,64,.28)}
+.mtip b{font-weight:600}
+.meter:hover .mtip,.meter:focus-within .mtip,
+.pill-prod:hover .mtip,.pill-prod:focus .mtip{opacity:1;visibility:visible}
+
+/* ---- product pills ------------------------------------------------------ */
+.pills{display:flex;gap:5px;flex-wrap:wrap;align-items:center;min-width:130px}
+.pill-prod{position:relative;display:inline-flex;align-items:center;justify-content:center;
+  border-radius:999px;font-size:10.5px;font-weight:700;letter-spacing:.02em;
+  padding:3px 9px;color:#fff;background:var(--navy);cursor:default;white-space:nowrap}
+.pill-prod.on-pace{background:#2E9E62}
+.pill-prod.under{background:#C6362E}
+.pill-prod.over{background:#D9922B}
+.pill-prod.unknown{background:#8A93A3}
+.pill-more{font-size:10.5px;font-weight:700;color:var(--muted)}
+
+/* ---- row actions -------------------------------------------------------- */
+td.rowacts,th.rowacts{width:58px;white-space:nowrap;padding-left:14px}
+td.rowacts a{display:inline-block;color:var(--blue);margin-right:6px}
+td.rowacts a.secondary{color:var(--muted)}
+td.rowacts a:hover{color:var(--navy)}
+td.rowacts svg{width:16px;height:16px;fill:currentColor;vertical-align:middle}
+
+/* ---- paired figures ----------------------------------------------------- */
+td.pair{font-variant-numeric:tabular-nums;white-space:nowrap}
+td.pair i{font-style:normal;color:var(--muted)}
+td.orderid{color:var(--muted);font-variant-numeric:tabular-nums}
+table.overview tfoot td{background:var(--fill);font-weight:600;
+  border-top:1px solid var(--line)}
+table.overview tfoot td.pair i{font-weight:400}
+.breakoutcard{margin-bottom:20px;padding-bottom:6px}
+table.breakout{min-width:1520px}
+table.breakout td.clip{max-width:230px}

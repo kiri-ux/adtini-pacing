@@ -310,6 +310,7 @@ def overview():
         return render_template(
             "overview.html",
             rows=window,
+            page_total=views.page_total(window),
             total_rows=total_rows,
             page=page,
             pages=pages,

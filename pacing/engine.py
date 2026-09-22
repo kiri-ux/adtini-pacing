@@ -104,11 +104,74 @@ class PacingRow:
     margin: float | None = None
     goal_cpm_source: str | None = None
 
+    # Where the flight is up to, for the daily-rate columns.
+    days_elapsed: int = 0
+    days_left: int = 0
+
     needs_setup: bool = False
     daily: list[DailyPoint] = field(default_factory=list)
     # The row's sold terms, so a template can read fields the engine does not
     # promote (client budgets and event counts on the Performance Max sheet).
     line_item: object | None = None
+
+    # --- the figures the pacing table reads ---------------------------
+    #
+    # Two different percentages, and they answer different questions.
+    # `goal_ratio` is how much of what was sold has run, which is what the
+    # bar fills to. `delivery_ratio` is how that compares with where it
+    # should be by now, which is the number beside it - 100% is on pace,
+    # under is behind, over is ahead.
+
+    @property
+    def goal_ratio(self) -> float | None:
+        if not self.total_target:
+            return None
+        return self.to_date / self.total_target
+
+    @property
+    def month_goal_ratio(self) -> float | None:
+        if not self.monthly_target:
+            return None
+        return self.month_to_date / self.monthly_target
+
+    @property
+    def expected_ratio(self) -> float | None:
+        """Where the bar's marker sits - what should have run by now."""
+        if not self.total_target:
+            return None
+        return self.on_pace / self.total_target
+
+    @property
+    def month_expected_ratio(self) -> float | None:
+        if not self.monthly_target:
+            return None
+        return self.month_on_pace / self.monthly_target
+
+    @property
+    def delivery_ratio(self) -> float | None:
+        if not self.on_pace:
+            return None
+        return self.to_date / self.on_pace
+
+    @property
+    def month_delivery_ratio(self) -> float | None:
+        if not self.month_on_pace:
+            return None
+        return self.month_to_date / self.month_on_pace
+
+    @property
+    def avg_daily(self) -> float | None:
+        """What it has actually been serving a day."""
+        if not self.days_elapsed:
+            return None
+        return self.to_date / self.days_elapsed
+
+    @property
+    def daily_needed(self) -> float | None:
+        """What it has to serve a day from here to finish on goal."""
+        if not self.days_left:
+            return None
+        return max(self.remaining, 0.0) / self.days_left
 
     @property
     def metric_label(self) -> str:
@@ -244,7 +307,9 @@ def compute_row(
     row.ctr = (row.clicks / row.impressions) if row.impressions else None
 
     row.remaining = row.total_target - row.to_date
-    row.on_pace = row.daily_target * elapsed_days(as_of, start, end)
+    row.days_elapsed = elapsed_days(as_of, start, end)
+    row.days_left = max(inclusive_days(start, end) - row.days_elapsed, 0)
+    row.on_pace = row.daily_target * row.days_elapsed
     row.pacing_delta = row.to_date - row.on_pace
     row.pacing_pct = _pct(row.on_pace, row.to_date)
 
@@ -320,6 +385,8 @@ def total_row(rows: Sequence[PacingRow], pacing_type: str) -> PacingRow:
 
     total.flight_days = max((r.flight_days for r in rows), default=0)
     total.month_days = max((r.month_days for r in rows), default=0)
+    total.days_elapsed = max((r.days_elapsed for r in rows), default=0)
+    total.days_left = max((r.days_left for r in rows), default=0)
     total.pacing_delta = total.to_date - total.on_pace
     total.pacing_pct = _pct(total.on_pace, total.to_date)
     total.month_pacing_delta = total.month_to_date - total.month_on_pace

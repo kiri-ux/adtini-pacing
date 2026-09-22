@@ -114,6 +114,28 @@ Each line item records where its rate came from, so the page can say "from
 rate card" rather than leaving a buyer to guess which of the three they are
 looking at.
 
+### The pacing table
+
+The homepage is one line per order: buyer, partner, client, order id, a pill
+per product, then monthly and total serve against goal, the daily rate
+against what is needed from here, and days left. A `Pacing total` line sums
+the page - impression orders only, since adding dollars to impressions gives
+a number that means nothing.
+
+Each pacing cell carries two figures, because one cannot answer the question
+on its own. The **bar fills** to how much of the goal has run and its **tick**
+marks where it should be by now; the **number** beside it is the ratio of the
+two, so 100% is on pace, under is behind and over is ahead. A bar at 60% is
+early or late depending on the date.
+
+Hovering a bar gives served, expected and goal; hovering a product pill gives
+that product's served and expected without opening the order. Both are
+markup rather than `title` attributes, so they hold more than one line and
+appear on keyboard focus.
+
+Opening an order gives the same columns per line item, plus clicks, CTR and
+conversions.
+
 ### Seeing the strategies apart
 
 The order page charts delivery per strategy per day, so retargeting behaving

@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 
 from models import Client, DailyDelivery, LineItem, Order, StrategyTerms
 import sheets
-from orderbook import PACEABLE_ORDER_TYPE, line_item_label
+from orderbook import PACEABLE_ORDER_TYPE, PRODUCT_ABBR, line_item_label
 from pacing.engine import DailyPoint, PacingRow, compute_row, health, total_row
 
 
@@ -283,11 +283,40 @@ def order_view(session, order_id: int, as_of: dt.date | None = None) -> OrderVie
 
 
 @dataclass
+class ProductChip:
+    """One product on an order, as the pill in the Products column.
+
+    Carries its own served and expected so hovering the pill answers
+    "how is this one doing" without opening the order.
+    """
+
+    code: str
+    name: str
+    served: float = 0.0
+    expected: float = 0.0
+    goal: float = 0.0
+    is_money: bool = False
+
+    @property
+    def ratio(self) -> float | None:
+        return (self.served / self.expected) if self.expected else None
+
+    @property
+    def health(self) -> str:
+        if self.ratio is None:
+            return "unknown"
+        # Same tolerance as everywhere else, read the other way round: the
+        # ratio is 1.0 on pace rather than 0.0.
+        return health(1.0 - self.ratio)
+
+
+@dataclass
 class OverviewRow:
     order: Order
     client: Client
     total: PacingRow
     as_of: dt.date
+    products: list[ProductChip] = field(default_factory=list)
     covers_from: dt.date | None = None
 
     @property
@@ -359,16 +388,33 @@ def overview(
 
     out: list[OverviewRow] = []
     for order in orders:
-        rows = [
-            compute_row(li, order, daily.get(li.id, []), as_of)
-            for li in sorted(order.line_items, key=lambda li: (li.sort_order, li.id))
-        ]
+        line_items = sorted(order.line_items, key=lambda li: (li.sort_order, li.id))
+        rows = [compute_row(li, order, daily.get(li.id, []), as_of) for li in line_items]
+        total = total_row(rows, order.pacing_type)
+
+        # One pill per product, summing the line items that share it.
+        chips: dict[str, ProductChip] = {}
+        for item, row in zip(line_items, rows):
+            name = item.product or "Other"
+            chip = chips.get(name)
+            if chip is None:
+                chip = ProductChip(
+                    code=PRODUCT_ABBR.get(name, name[:4].upper()),
+                    name=name,
+                    is_money=row.is_money,
+                )
+                chips[name] = chip
+            chip.served += row.to_date
+            chip.expected += row.on_pace
+            chip.goal += row.total_target
+
         out.append(
             OverviewRow(
                 order=order,
                 client=order.client,
-                total=total_row(rows, order.pacing_type),
+                total=total,
                 as_of=as_of,
+                products=sorted(chips.values(), key=lambda c: -c.goal),
                 covers_from=covers_from,
             )
         )
@@ -393,6 +439,61 @@ def overview(
             -abs(r.total.month_pacing_pct or 0),
         )
     )
+    return out
+
+
+@dataclass
+class PageTotal:
+    """The `Pacing total` line under the table."""
+
+    month_to_date: float = 0.0
+    month_on_pace: float = 0.0
+    monthly_target: float = 0.0
+    to_date: float = 0.0
+    on_pace: float = 0.0
+    total_target: float = 0.0
+    avg_daily: float = 0.0
+    daily_needed: float = 0.0
+
+    @property
+    def delivery_ratio(self) -> float | None:
+        return (self.to_date / self.on_pace) if self.on_pace else None
+
+    @property
+    def month_delivery_ratio(self) -> float | None:
+        return (self.month_to_date / self.month_on_pace) if self.month_on_pace else None
+
+    @property
+    def health(self) -> str:
+        r = self.delivery_ratio
+        return health(1.0 - r) if r is not None else "unknown"
+
+    @property
+    def month_health(self) -> str:
+        r = self.month_delivery_ratio
+        return health(1.0 - r) if r is not None else "unknown"
+
+
+def page_total(rows: list[OverviewRow]) -> PageTotal:
+    """Sum a page of orders.
+
+    Impression and spend orders are summed separately in real life, but the
+    table mixes them, so this counts only the impression ones - adding
+    dollars to impressions would produce a number that means nothing.
+    """
+    out = PageTotal()
+    for item in rows:
+        t = item.total
+        if t.is_money:
+            continue
+        out.month_to_date += t.month_to_date
+        out.month_on_pace += t.month_on_pace
+        out.monthly_target += t.monthly_target
+        out.to_date += t.to_date
+        out.on_pace += t.on_pace
+        out.total_target += t.total_target
+        out.avg_daily += t.avg_daily or 0.0
+        out.daily_needed += t.daily_needed or 0.0
     return out
 
 

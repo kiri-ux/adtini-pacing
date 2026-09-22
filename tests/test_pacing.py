@@ -375,3 +375,57 @@ def test_event_pacing_without_a_platform_figure_uses_the_retail_multiple():
                       dt.date(2026, 9, 1))
     assert row.client_cost_ratio == 4.0
     assert row.to_date == 120.0
+
+
+# --- the figures the pacing table reads ------------------------------------
+def test_the_table_separates_how_much_has_run_from_whether_it_is_on_pace():
+    """A bar at 60% is early or late depending on the date, so the table
+    carries both: the fill is progress toward goal, the number beside it is
+    progress against where it should be."""
+    order = Order(id=300, client_id=1, name="Acme", pacing_type="impression",
+                  start_date=dt.date(2026, 9, 1), end_date=dt.date(2026, 9, 30))
+    item = LineItem(id=300, order_id=300, name="D", monthly_impressions=140_000,
+                    total_impressions=140_000, goal_cpm=2.5)
+    row = compute_row(item, order, days(dt.date(2026, 9, 1), dt.date(2026, 9, 20), 5_000),
+                      dt.date(2026, 9, 20))
+
+    assert row.to_date == 100_000
+    assert round(row.goal_ratio, 4) == round(100_000 / 140_000, 4)      # the fill
+    assert round(row.expected_ratio, 4) == round(20 / 30, 4)            # the tick
+    assert round(row.delivery_ratio, 4) == round(100_000 / 93_333.33, 4)  # the number
+    assert row.delivery_ratio > 1                                       # ahead
+
+
+def test_daily_serve_against_what_is_needed_from_here():
+    order = Order(id=301, client_id=1, name="Acme", pacing_type="impression",
+                  start_date=dt.date(2026, 9, 1), end_date=dt.date(2026, 9, 30))
+    item = LineItem(id=301, order_id=301, name="D", monthly_impressions=140_000,
+                    total_impressions=140_000, goal_cpm=2.5)
+    row = compute_row(item, order, days(dt.date(2026, 9, 1), dt.date(2026, 9, 20), 5_000),
+                      dt.date(2026, 9, 20))
+
+    assert row.days_elapsed == 20
+    assert row.days_left == 10
+    assert row.avg_daily == 5_000                    # what it has been doing
+    assert row.daily_needed == 4_000                 # 40,000 left over 10 days
+
+
+def test_a_finished_flight_needs_nothing_more_a_day():
+    order = Order(id=302, client_id=1, name="Acme", pacing_type="impression",
+                  start_date=dt.date(2026, 9, 1), end_date=dt.date(2026, 9, 30))
+    item = LineItem(id=302, order_id=302, name="D", monthly_impressions=100,
+                    total_impressions=100, goal_cpm=2.5)
+    row = compute_row(item, order, [], dt.date(2026, 10, 15))
+    assert row.days_left == 0
+    assert row.daily_needed is None
+
+
+def test_over_delivery_never_asks_for_a_negative_daily_rate():
+    order = Order(id=303, client_id=1, name="Acme", pacing_type="impression",
+                  start_date=dt.date(2026, 9, 1), end_date=dt.date(2026, 9, 30))
+    item = LineItem(id=303, order_id=303, name="D", monthly_impressions=10_000,
+                    total_impressions=10_000, goal_cpm=2.5)
+    row = compute_row(item, order, days(dt.date(2026, 9, 1), dt.date(2026, 9, 20), 5_000),
+                      dt.date(2026, 9, 20))
+    assert row.remaining < 0
+    assert row.daily_needed == 0.0
