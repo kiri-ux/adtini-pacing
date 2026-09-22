@@ -5,8 +5,6 @@
 {% block body %}
 <p class="crumbs"><a href="/">Pacing</a> / <span class="crumbc">Data</span></p>
 
-{% if message %}<p class="flash">{{ message }}</p>{% endif %}
-
 <div class="qtiles">
   <div class="qtile"><small>Delivery through</small>
     <b>{{ latest.strftime('%-d %b') if latest else '—' }}</b>
@@ -18,7 +16,7 @@
 
 <div class="tablecard datacard">
   <div class="datarow">
-    <form method="post">
+    <form method="post" action="{{ url_for('data_action') }}">
       <input type="hidden" name="action" value="ingest">
       <div>
         <h4>Pull from S3</h4>
@@ -28,12 +26,13 @@
           files arrive below. The nightly job does the same thing on its own.</p>
       </div>
       <label class="forcebox"><input type="checkbox" name="force"> Re-read files already loaded</label>
-      <button class="btn preview" type="submit">Run sweep</button>
+      <button class="btn preview" type="submit" {% if sweep_running %}disabled{% endif %}>
+        {{ 'Sweep running…' if sweep_running else 'Run sweep' }}</button>
     </form>
   </div>
 
   <div class="datarow">
-    <form method="post" enctype="multipart/form-data">
+    <form method="post" action="{{ url_for('data_action') }}" enctype="multipart/form-data">
       <input type="hidden" name="action" value="upload">
       <div>
         <h4>Upload a file</h4>
@@ -47,7 +46,7 @@
   </div>
 
   <div class="datarow">
-    <form method="post">
+    <form method="post" action="{{ url_for('data_action') }}">
       <input type="hidden" name="action" value="adopt">
       <div>
         <h4>Adopt unmatched delivery</h4>

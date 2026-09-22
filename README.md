@@ -242,7 +242,7 @@ it skips the login gate. To work without S3 access, drop a CSV or zip on the
 **Data** page - it takes the same file the bucket does.
 
 ```bash
-python -m pytest tests/ -q    # 64 tests
+python -m pytest tests/ -q    # 67 tests
 python scripts/ingest.py      # what the cron job runs
 ```
 
@@ -300,6 +300,11 @@ away; the page shows files arriving as they land. Run inside the request it
 took the whole service down - Render restarted the instance for exceeding
 its memory limit and every open page got a 502. Measured during a sweep now:
 114 MB for the web worker plus 188 MB for the ingest, against a 512 MB limit.
+
+Starting a sweep redirects rather than rendering the page, so refreshing -
+which the page asks you to do - does not re-post the form and start a second
+one. A sweep already running refuses a second anyway, checked by pid so a
+stale lock from a container restart does not wedge the button.
 
 A sweep is resumable, so a restart mid-run loses nothing: files already
 loaded are skipped by their ETag. The nightly cron job runs the same script

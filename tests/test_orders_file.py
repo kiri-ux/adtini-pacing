@@ -244,3 +244,62 @@ def test_the_ingest_script_actually_runs(tmp_path):
     assert "ModuleNotFoundError" not in output, output[-600:]
     assert "ImportError" not in output, output[-600:]
     assert "sweep starting" in output
+
+
+def _client(tmp_path):
+    import importlib
+    import subprocess
+    import sys
+
+    url = f"sqlite:///{tmp_path}/m.db"
+    subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        env={**os.environ, "DATABASE_URL": url}, check=True, capture_output=True,
+    )
+    os.environ["DATABASE_URL"] = url
+    import config
+
+    config.get_settings.cache_clear()
+    import db as db_module
+
+    importlib.reload(db_module)
+    import app as application
+
+    importlib.reload(application)
+    application.SWEEP_LOCK.unlink(missing_ok=True)
+    return application, application.app.test_client()
+
+
+def test_an_action_redirects_so_a_refresh_does_not_repeat_it(tmp_path):
+    """The page tells you to refresh, and refreshing re-posted the form.
+
+    Accepting the browser's resubmission prompt would have started a second
+    sweep on top of the first - two ingests plus the worker, back over the
+    memory limit.
+    """
+    _, client = _client(tmp_path)
+    response = client.post("/data", data={"action": "ingest"})
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/data")
+    assert client.get("/data").status_code == 200
+
+
+def test_a_second_sweep_is_refused_while_one_is_running(tmp_path):
+    import subprocess
+    import sys
+
+    application, client = _client(tmp_path)
+    holder = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        application.SWEEP_LOCK.write_text(str(holder.pid))
+        assert application._sweep_running()
+        body = client.post(
+            "/data", data={"action": "ingest"}, follow_redirects=True
+        ).data.decode()
+        assert "already running" in body
+    finally:
+        holder.kill()
+        holder.wait()
+    # A pid that has gone is not a running sweep, so a stale lock from a
+    # container restart does not wedge the button forever.
+    assert not application._sweep_running()

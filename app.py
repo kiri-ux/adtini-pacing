@@ -10,6 +10,7 @@ import functools
 import io
 import logging
 import os
+import tempfile
 from pathlib import Path
 
 from flask import (
@@ -155,6 +156,26 @@ def inject_globals():
     return {"build": settings.build, "today": dt.date.today()}
 
 
+SWEEP_LOCK = Path(tempfile.gettempdir()) / "adtini-pacing-sweep.pid"
+
+
+def _sweep_running() -> bool:
+    """Whether a sweep started from here is still going.
+
+    A stale lock from a container restart is not a running sweep, so the pid
+    is checked rather than trusted.
+    """
+    try:
+        pid = int(SWEEP_LOCK.read_text().strip())
+    except (OSError, ValueError):
+        return False
+    try:
+        os.kill(pid, 0)          # signal 0 only tests that it exists
+    except OSError:
+        return False
+    return True
+
+
 def _start_sweep(force: bool = False) -> str:
     """Kick off an S3 sweep outside this process, and return immediately.
 
@@ -170,6 +191,9 @@ def _start_sweep(force: bool = False) -> str:
     import subprocess
     import sys
 
+    if _sweep_running():
+        return "A sweep is already running. Refresh to see files arrive below."
+
     command = [sys.executable, str(Path(__file__).parent / "scripts" / "ingest.py")]
     if force:
         command.append("--force")
@@ -178,7 +202,10 @@ def _start_sweep(force: bool = False) -> str:
         # in the service log. A sweep that cannot reach the bucket writes no
         # file rows at all, so with its output thrown away the page would sit
         # empty with nothing anywhere saying why.
-        subprocess.Popen(command, cwd=str(Path(__file__).parent), start_new_session=True)
+        process = subprocess.Popen(
+            command, cwd=str(Path(__file__).parent), start_new_session=True
+        )
+        SWEEP_LOCK.write_text(str(process.pid))
     except Exception as exc:
         app.logger.exception("could not start the sweep")
         return f"Could not start the sweep: {exc}"
@@ -410,58 +437,72 @@ def line_item_delete(order_id: int, line_item_id: int):
 # --------------------------------------------------------------------------
 # Data
 # --------------------------------------------------------------------------
-@app.route("/data", methods=["GET", "POST"])
+@app.route("/data", methods=["POST"])
+@login_required
+def data_action():
+    """Do the thing, then redirect.
+
+    Rendering the page straight from the POST left the browser offering to
+    resubmit on every refresh - and the page tells you to refresh. Accepting
+    that offer would start a second sweep on top of the first, which is two
+    ingests plus the worker and back over the memory limit.
+    """
+    message = None
+    action = request.form.get("action")
+    if action == "ingest":
+        message = _start_sweep(force=request.form.get("force") == "on")
+    elif action == "upload":
+        upload = request.files.get("file")
+        if upload and upload.filename:
+            # The same filename rule the S3 sweep uses, so an uploaded
+            # file behaves exactly as it would from the bucket.
+            kind = loader.classify(upload.filename)
+            if kind is None:
+                message = (
+                    f"{upload.filename} is not recognised. Delivery files "
+                    "start with 'client-serve' and order files with 'orders'."
+                )
+            else:
+                # To disk, not through memory: a 69MB drop read whole
+                # costs more than a worker has.
+                path = _spool(upload)
+                try:
+                    with session_scope() as db:
+                        if kind == loader.ORDERS:
+                            with open(path, "rb") as handle:
+                                imported, frame = loader.load_orders_bytes(
+                                    db, handle.read(), upload.filename
+                                )
+                            message = f"{upload.filename}: {imported.summary()}."
+                            if frame.unmapped_note:
+                                message += (
+                                    f" Unrecognised columns: {frame.unmapped_note}"
+                                )
+                        else:
+                            written, _ = loader.load_delivery_file(
+                                db, path, upload.filename
+                            )
+                            message = (
+                                f"Loaded {written:,} delivery rows "
+                                f"from {upload.filename}."
+                            )
+                finally:
+                    if os.path.exists(path):
+                        os.unlink(path)
+        else:
+            message = "Pick a file first."
+    elif action == "adopt":
+        with session_scope() as db:
+            message = adopt_unmatched_delivery(db).summary()
+
+    if message:
+        flash(message)
+    return redirect(url_for("data_page"))
+
+
+@app.route("/data")
 @login_required
 def data_page():
-    message = None
-    if request.method == "POST":
-        action = request.form.get("action")
-        if action == "ingest":
-            message = _start_sweep(force=request.form.get("force") == "on")
-        elif action == "upload":
-            upload = request.files.get("file")
-            if upload and upload.filename:
-                # The same filename rule the S3 sweep uses, so an uploaded
-                # file behaves exactly as it would from the bucket.
-                kind = loader.classify(upload.filename)
-                if kind is None:
-                    message = (
-                        f"{upload.filename} is not recognised. Delivery files "
-                        "start with 'client-serve' and order files with 'orders'."
-                    )
-                else:
-                    # To disk, not through memory: a 69MB drop read whole
-                    # costs more than a worker has.
-                    path = _spool(upload)
-                    try:
-                        with session_scope() as db:
-                            if kind == loader.ORDERS:
-                                with open(path, "rb") as handle:
-                                    imported, frame = loader.load_orders_bytes(
-                                        db, handle.read(), upload.filename
-                                    )
-                                message = f"{upload.filename}: {imported.summary()}."
-                                if frame.unmapped_note:
-                                    message += (
-                                        f" Unrecognised columns: {frame.unmapped_note}"
-                                    )
-                            else:
-                                written, _ = loader.load_delivery_file(
-                                    db, path, upload.filename
-                                )
-                                message = (
-                                    f"Loaded {written:,} delivery rows "
-                                    f"from {upload.filename}."
-                                )
-                    finally:
-                        if os.path.exists(path):
-                            os.unlink(path)
-            else:
-                message = "Pick a file first."
-        elif action == "adopt":
-            with session_scope() as db:
-                message = adopt_unmatched_delivery(db).summary()
-
     with session_scope() as db:
         files = list(
             db.execute(
@@ -478,7 +519,7 @@ def data_page():
         files=files,
         latest=latest,
         counts=counts,
-        message=message,
+        sweep_running=_sweep_running(),
         bucket=settings.s3_bucket,
         prefix=settings.s3_prefix,
     )
