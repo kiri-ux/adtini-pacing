@@ -229,6 +229,13 @@ def _keep(item: LineItem, field: str, value) -> None:
     """
     if isinstance(value, float) and math.isnan(value):
         value = None
+    # Zero is not a sold term either. Nothing is sold at zero impressions or
+    # zero budget, so a zero is a blank the export wrote as a number - and
+    # letting one win replaced a real figure from a fuller export with a
+    # goal of nothing. The page already reads 0 as unset when a buyer types
+    # it, so this only makes the import agree.
+    if value == 0:
+        value = None
     current = getattr(item, field)
     if isinstance(current, float) and math.isnan(current):
         # A NaN already on the row is damage, not a figure worth protecting.
@@ -238,11 +245,42 @@ def _keep(item: LineItem, field: str, value) -> None:
     setattr(item, field, value)
 
 
+def _fix_impossible_total(item: LineItem, months) -> None:
+    """A total below the monthly figure is not a total.
+
+    Several orders exports describe the same line item and they do not agree:
+    `total_campaign_impressions` is a ratio artifact in some, a month count in
+    others, a real total in the rest. Each file's own parse rejects a total it
+    can see is wrong, but a file only sees its own rows - whichever export
+    lands last wins at the point of storage, and one carrying a month count
+    put a sold total of 34 against a monthly goal of 6.5 million. Total pacing
+    then read 1,909,747%.
+
+    So the rule is applied again here, where every file meets: a total smaller
+    than one month of it is the wrong number whatever supplied it, and the
+    months the line item runs are what say what the total should be. With no
+    month count to rebuild from, the total is cleared - "not known yet" reads
+    as a dash and is obviously unset, where a wrong number reads as a fact.
+    """
+    monthly = item.monthly_impressions
+    total = item.total_impressions
+    if monthly is None or total is None or not monthly or total >= monthly:
+        return
+    try:
+        months = float(months) if months is not None else None
+    except (TypeError, ValueError):
+        months = None
+    if months is not None and (math.isnan(months) or months <= 0):
+        months = None
+    item.total_impressions = monthly * months if months else None
+
+
 def _apply_sold_terms(item: LineItem, row, pacing_type: str) -> None:
     """Copy the sold terms for the sheet this line item paces on."""
     if pacing_type == PACING_IMPRESSION:
-        _keep(item, "total_impressions", row.get("total_impressions"))
         _keep(item, "monthly_impressions", row.get("monthly_impressions"))
+        _keep(item, "total_impressions", row.get("total_impressions"))
+        _fix_impossible_total(item, row.get("months_running"))
         item.goal_cpm, item.goal_cpm_source = resolve_goal_cpm(
             row.get("product"),
             bool(item.restricted),

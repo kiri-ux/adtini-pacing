@@ -260,13 +260,17 @@ def normalize(raw: pd.DataFrame) -> OrdersFrame:
     # over the months the line item runs, which is what the hand-kept sheet
     # computes too. A value that is at least the monthly one is believable
     # and kept; anything smaller is not a total.
-    monthly = out["monthly_impressions"]
-    months = out["months_running"]
+    #
+    # Coerced to numbers first. These columns are object dtype whenever a
+    # blank got turned into None, and comparing a float against a None in an
+    # object column raises - so an export whose monthly column happened to be
+    # empty did not merely lose its totals, it failed to load at all.
+    monthly = pd.to_numeric(out["monthly_impressions"], errors="coerce")
+    months = pd.to_numeric(out["months_running"], errors="coerce")
+    total = pd.to_numeric(out["total_impressions"], errors="coerce")
     computed = monthly * months
-    believable = out["total_impressions"].notna() & (out["total_impressions"] >= monthly)
-    out["total_impressions"] = out["total_impressions"].where(
-        believable, computed
-    )
+    believable = total.notna() & monthly.notna() & (total >= monthly)
+    out["total_impressions"] = total.where(believable, computed)
 
     out = out[out["client_name"].notna() & out["external_order_id"].notna()]
 

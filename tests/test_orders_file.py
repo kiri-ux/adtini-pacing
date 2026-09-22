@@ -571,3 +571,105 @@ def test_a_nan_is_treated_as_a_blank_even_if_one_gets_through():
     assert fresh.monthly_impressions is None or not math.isnan(
         fresh.monthly_impressions
     )
+
+
+# --- several exports describe the same line item, and disagree -------------
+# Its own header, because this is about `months_running` and the fixture
+# above has no such column.
+MHEAD = (
+    "client_business_unit,orders_status,client,orders_id,product,id,status,"
+    "orders_start_date,start_date,end_date,orders_end_date,"
+    "monthly_campaign_impressions,total_campaign_impressions,months_running,"
+    "total_campaign_budget,campaign_manager,order_type"
+)
+
+
+def mline(monthly="100000", total="0.999999999999", months="7") -> str:
+    return ",".join([
+        "7 Mountains PA", "Approved", "Win-River", "22778", "Connected TV Ads",
+        "126000", "Approved", "2026-05-01 21:00:00", "2026-05-01 21:00:00",
+        "2026-12-31 21:00:00", "2026-12-31 21:00:00",
+        monthly, total, months, "13000.00", "N A (n@x.com)", "Insertion Order",
+    ])
+
+
+def mcsv(*rows) -> str:
+    return "\n".join([MHEAD] + list(rows))
+
+
+def _import(*later):
+    """Import a full export, then any later ones, and hand back the line item."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from models import Base, LineItem
+    from orderbook import import_orders
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    session = Session(engine)
+    import_orders(session, normalize(csv(mcsv(mline()))))
+    item = next(
+        o for o in session.identity_map.values() if isinstance(o, LineItem)
+    )
+    for text in later:
+        import_orders(session, normalize(csv(text)))
+    return item
+
+
+def test_a_total_is_built_from_the_monthly_figure_and_the_months():
+    """`total_campaign_impressions` is a ratio artifact, not a total."""
+    item = _import()
+    assert item.monthly_impressions == 100_000
+    assert item.total_impressions == 700_000  # 100,000 over 7 months
+
+
+def test_an_export_with_no_monthly_figure_still_loads():
+    """It used to raise, so the whole file failed rather than one column.
+
+    These columns are object dtype once a blank has become None, and
+    comparing a float against a None in an object column raises TypeError.
+    """
+    frame = normalize(csv(mcsv(mline(monthly="", total=""))))
+    assert len(frame.rows) == 1
+
+
+def test_a_months_shaped_total_does_not_replace_a_real_one():
+    """What put a sold total of 34 against a monthly goal of 6.5 million.
+
+    Exports disagree about `total_campaign_impressions` - a ratio artifact in
+    some, a month count in others - and whichever landed last won. Total
+    pacing then read 1,909,747%.
+    """
+    item = _import(mcsv(mline(monthly="", total="7")))
+    assert item.monthly_impressions == 100_000
+    assert item.total_impressions == 700_000
+
+
+def test_zero_is_a_blank_the_export_wrote_as_a_number():
+    """Nothing is sold at zero impressions, so a zero must not win."""
+    item = _import(mcsv(mline(monthly="0", total="0")))
+    assert item.monthly_impressions == 100_000
+    assert item.total_impressions == 700_000
+
+
+def test_a_real_mid_flight_increase_still_applies():
+    """The guards must not freeze a line item at its first import."""
+    item = _import(mcsv(mline(monthly="200000", total="1400000")))
+    assert item.monthly_impressions == 200_000
+    assert item.total_impressions == 1_400_000
+
+
+def test_a_total_below_one_month_of_itself_is_rejected_outright():
+    from models import LineItem
+    from orderbook import _fix_impossible_total
+
+    item = LineItem(name="x", monthly_impressions=100_000.0, total_impressions=7.0)
+    _fix_impossible_total(item, months=7)
+    assert item.total_impressions == 700_000
+
+    # With no month count there is nothing to rebuild from, and a dash reads
+    # as unset where a wrong number reads as a fact.
+    orphan = LineItem(name="y", monthly_impressions=100_000.0, total_impressions=7.0)
+    _fix_impossible_total(orphan, months=None)
+    assert orphan.total_impressions is None

@@ -178,21 +178,79 @@ def inject_globals():
 
 
 SWEEP_LOCK = Path(tempfile.gettempdir()) / "adtini-pacing-sweep.pid"
+# A sweep is minutes of work. A lock older than this is wreckage from a
+# restart, and the pid written in it may belong to something else by now.
+SWEEP_LOCK_MAX_AGE = dt.timedelta(hours=6)
+
+
+def _clear_sweep_lock() -> None:
+    SWEEP_LOCK.unlink(missing_ok=True)
+
+
+def _reap() -> None:
+    """Clear finished children, so they stop looking like running ones.
+
+    A subprocess nothing ever waits on becomes a zombie, and a zombie keeps
+    its pid: `os.kill(pid, 0)` reports it alive for as long as the worker
+    lives. That is how the lock below wedged the Data page - the sweep
+    finished normally, the zombie stayed, `_sweep_running` answered True
+    forever, and every Load button sat disabled with nothing on the page
+    saying why. Clicking them did nothing at all.
+    """
+    try:
+        while os.waitpid(-1, os.WNOHANG)[0] != 0:
+            pass
+    except (ChildProcessError, OSError):
+        return
+
+
+def _is_zombie(pid: int) -> bool:
+    """Whether the pid is a finished child that has not been cleared yet.
+
+    `_reap` handles the ordinary case. This covers the pid being reaped
+    elsewhere - the worker runs threads, and only the thread that called
+    `waitpid` sees the result.
+    """
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        return False
+    # The command sits in brackets and may itself contain spaces, so the
+    # state is the first field after the closing bracket - not the third
+    # whitespace-separated token.
+    tail = stat.rsplit(") ", 1)[-1].split(maxsplit=1)
+    return bool(tail) and tail[0] == "Z"
 
 
 def _sweep_running() -> bool:
     """Whether a sweep started from here is still going.
 
-    A stale lock from a container restart is not a running sweep, so the pid
-    is checked rather than trusted.
+    Answering True when nothing is running is not a harmless error: it
+    disables the sweep and every per-file Load button, so the page offers no
+    way to load anything and no way to say so. Every branch that cannot
+    prove a sweep is alive clears the lock and answers False.
     """
     try:
         pid = int(SWEEP_LOCK.read_text().strip())
     except (OSError, ValueError):
         return False
+
+    try:
+        started = dt.datetime.fromtimestamp(SWEEP_LOCK.stat().st_mtime)
+    except OSError:
+        started = dt.datetime.now()
+    if dt.datetime.now() - started > SWEEP_LOCK_MAX_AGE:
+        _clear_sweep_lock()
+        return False
+
+    _reap()
     try:
         os.kill(pid, 0)          # signal 0 only tests that it exists
     except OSError:
+        _clear_sweep_lock()
+        return False
+    if _is_zombie(pid):
+        _clear_sweep_lock()
         return False
     return True
 
