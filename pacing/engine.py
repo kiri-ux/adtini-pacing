@@ -213,7 +213,7 @@ def _sum(points: Iterable[DailyPoint], attr: str) -> float:
     return float(sum(getattr(p, attr) for p in points))
 
 
-class _Totals:
+class Totals:
     """The four metrics, summed."""
 
     __slots__ = ("impressions", "clicks", "cost", "conversions")
@@ -235,14 +235,14 @@ def _bucket(
     points: Sequence[DailyPoint],
     flight: tuple[dt.date, dt.date] | None,
     month: tuple[dt.date, dt.date] | None,
-) -> tuple[_Totals, _Totals, _Totals]:
+) -> tuple[Totals, Totals, Totals]:
     """Everything, the flight, and the month - in one pass over the days.
 
     Summed separately per metric and per window, this walked the same days
     nine times. On the overview that is every line item on the book, and it
     was most of the page's wait.
     """
-    every, in_flight, in_month = _Totals(), _Totals(), _Totals()
+    every, in_flight, in_month = Totals(), Totals(), Totals()
     for point in points:
         every.add(point)
         if flight and flight[0] <= point.date <= flight[1]:
@@ -258,13 +258,33 @@ def _primary_attr(pacing_type: str) -> str:
     return "impressions" if pacing_type == PACING_IMPRESSION else "cost"
 
 
+@dataclass
+class DeliveryTotals:
+    """Delivery already summed into the three windows a row needs.
+
+    The overview paces every line item on the book, and fetching each one's
+    days to add them up here meant pulling a third of a million rows to show
+    a hundred and fifty. Where the database can sum them instead, it hands
+    the answer over in this shape and the row skips the bucketing entirely.
+    """
+
+    every: Totals
+    in_flight: Totals
+    in_month: Totals
+
+
 def compute_row(
     line_item: LineItem,
     order: Order,
     daily: Sequence[DailyPoint],
     as_of: dt.date,
+    totals: DeliveryTotals | None = None,
 ) -> PacingRow:
-    """Compute one pacing row from its sold terms and its delivery."""
+    """Compute one pacing row from its sold terms and its delivery.
+
+    `totals` is the same sums worked out in the database. When it is given,
+    `daily` is not read - the caller has nothing to show day by day.
+    """
     pacing_type = order.pacing_type or PACING_IMPRESSION
     start = line_item.start_date or order.start_date
     end = line_item.end_date or order.end_date
@@ -306,7 +326,7 @@ def compute_row(
                 line_item.client_total_budget / line_item.google_total_spend
             )
 
-    points = sorted(daily, key=lambda p: p.date)
+    points = sorted(daily, key=lambda p: p.date) if totals is None else []
     row.daily = points
     attr = _primary_attr(pacing_type)
     gross = row.client_cost_ratio if pacing_type == PACING_EVENT else 1.0
@@ -319,7 +339,12 @@ def compute_row(
     else:
         month_bounds_used = month_bounds(as_of)
 
-    every, in_flight, in_month = _bucket(points, flight, month_bounds_used)
+    if totals is None:
+        every, in_flight, in_month = _bucket(points, flight, month_bounds_used)
+    else:
+        every, in_flight, in_month = (
+            totals.every, totals.in_flight, totals.in_month
+        )
     counted = in_flight if paceable else every
 
     row.impressions = counted.impressions

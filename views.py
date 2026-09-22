@@ -18,7 +18,15 @@ import products
 import sheets
 from orderbook import PACEABLE_ORDER_TYPE, line_item_label
 from pacing.calendar import month_bounds
-from pacing.engine import DailyPoint, PacingRow, compute_row, health, total_row
+from pacing.engine import (
+    DailyPoint,
+    DeliveryTotals,
+    PacingRow,
+    Totals,
+    compute_row,
+    health,
+    total_row,
+)
 
 
 def latest_delivery_date(session) -> dt.date | None:
@@ -487,7 +495,12 @@ def overview(
     all_line_items = [
         li for o in orders for li in o.line_items if products.is_paced(li.product)
     ]
-    daily = _daily_by_line_item(session, all_line_items)
+    # Summed in the database: this page never shows a day, and fetching every
+    # day of every line item to add them up here was most of its wait.
+    totals, spilled = _totals_by_line_item(session, all_line_items, as_of)
+    # Whatever ran outside its own flight still has to be worked out day by
+    # day, because only that can tell the two apart.
+    daily = _daily_by_line_item(session, spilled) if spilled else {}
 
     out: list[OverviewRow] = []
     for order in orders:
@@ -495,7 +508,12 @@ def overview(
             li for li in sorted(order.line_items, key=lambda li: (li.sort_order, li.id))
             if products.is_paced(li.product)
         ]
-        rows = [compute_row(li, order, daily.get(li.id, []), as_of) for li in line_items]
+        rows = [
+            compute_row(
+                li, order, daily.get(li.id, []), as_of, totals=totals.get(li.id)
+            )
+            for li in line_items
+        ]
         total = total_row(rows, order.pacing_type)
 
         # One pill per product, summing the line items that share it.
@@ -936,3 +954,113 @@ def linking_view(
         )
 
     return LinkingView(rows=rows, candidates=candidates, as_of=as_of)
+
+
+# --------------------------------------------------------------------------
+# Summed delivery, for pages that never show a day
+# --------------------------------------------------------------------------
+def _totals_by_line_item(
+    session, line_items: list[LineItem], as_of: dt.date
+) -> tuple[dict[int, DeliveryTotals], list[LineItem]]:
+    """Per line item: lifetime and month-to-date, summed by the database.
+
+    The overview shows no daily figures at all, so fetching each line item's
+    days to add them up in Python was a third of a million rows to render a
+    page of a hundred and fifty orders. Summed here, it is one row per line
+    item.
+
+    A row also has to know its delivery inside the flight, and the flight
+    differs per line item so the database cannot window it in the same pass.
+    It does not have to: where everything a line item ran falls inside its
+    flight - which is the ordinary case - the flight sums are the lifetime
+    sums, and the month-window sums are the calendar month's. Whatever ran
+    outside its flight is handed back as the second return value, for the
+    caller to work out day by day the slow way. Correct either way; the fast
+    path just covers almost everything.
+    """
+    join = _delivery_join(session, line_items)
+    if not join:
+        return {}, []
+
+    month_start, _ = month_bounds(as_of)
+    in_month = (DailyDelivery.date >= month_start) & (DailyDelivery.date <= as_of)
+
+    def month_of(column):
+        return func.sum(case((in_month, column), else_=0.0))
+
+    stmt = (
+        select(
+            DailyDelivery.external_order_id,
+            DailyDelivery.external_line_item_id,
+            DailyDelivery.data_source,
+            DailyDelivery.campaign_id,
+            func.sum(DailyDelivery.impressions),
+            func.sum(DailyDelivery.clicks),
+            func.sum(DailyDelivery.cost),
+            func.sum(DailyDelivery.conversions),
+            month_of(DailyDelivery.impressions),
+            month_of(DailyDelivery.clicks),
+            month_of(DailyDelivery.cost),
+            month_of(DailyDelivery.conversions),
+            func.min(DailyDelivery.date),
+            func.max(DailyDelivery.date),
+        )
+        .where(join.where())
+        .group_by(
+            DailyDelivery.external_order_id,
+            DailyDelivery.external_line_item_id,
+            DailyDelivery.data_source,
+            DailyDelivery.campaign_id,
+        )
+    )
+
+    gathered: dict[int, list] = {}
+    for (
+        order_id, li_id, source, campaign,
+        impressions, clicks, cost, conversions,
+        m_impressions, m_clicks, m_cost, m_conversions,
+        first, last,
+    ) in session.execute(stmt):
+        target = join.resolve(order_id, li_id, source, campaign)
+        if target is None:
+            continue
+        bucket = gathered.get(target)
+        if bucket is None:
+            bucket = gathered[target] = [Totals(), Totals(), None, None]
+        bucket[0].impressions += float(impressions or 0)
+        bucket[0].clicks += float(clicks or 0)
+        bucket[0].cost += float(cost or 0)
+        bucket[0].conversions += float(conversions or 0)
+        bucket[1].impressions += float(m_impressions or 0)
+        bucket[1].clicks += float(m_clicks or 0)
+        bucket[1].cost += float(m_cost or 0)
+        bucket[1].conversions += float(m_conversions or 0)
+        if first is not None:
+            bucket[2] = first if bucket[2] is None else min(bucket[2], first)
+        if last is not None:
+            bucket[3] = last if bucket[3] is None else max(bucket[3], last)
+
+    by_id = {li.id: li for li in line_items}
+    out: dict[int, DeliveryTotals] = {}
+    spilled: list[LineItem] = []
+    for line_item_id, (every, month, first, last) in gathered.items():
+        item = by_id.get(line_item_id)
+        if item is None:
+            continue
+        order = item.order
+        start = item.start_date or order.start_date
+        end = item.end_date or order.end_date
+        inside = (
+            start is None
+            or end is None
+            or first is None
+            or last is None
+            or (start <= first and last <= end)
+        )
+        if not inside:
+            spilled.append(item)
+            continue
+        out[line_item_id] = DeliveryTotals(
+            every=every, in_flight=every, in_month=month
+        )
+    return out, spilled
