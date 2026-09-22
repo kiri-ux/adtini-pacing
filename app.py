@@ -10,6 +10,7 @@ import functools
 import io
 import logging
 import os
+from pathlib import Path
 
 from flask import (
     Flask,
@@ -152,6 +153,41 @@ def metric_filter(value, row):
 @app.context_processor
 def inject_globals():
     return {"build": settings.build, "today": dt.date.today()}
+
+
+def _start_sweep(force: bool = False) -> str:
+    """Kick off an S3 sweep outside this process, and return immediately.
+
+    A sweep is minutes of work and hundreds of megabytes. Run inside the web
+    worker it took the whole service down: the instance exceeded its memory
+    limit, Render restarted it, and every open page got a 502. A separate
+    process keeps that cost off the worker serving pages, and the worker is
+    free again the moment this returns.
+
+    The sweep is resumable, so a container restart mid-run loses nothing -
+    files already loaded are skipped by their ETag on the next run.
+    """
+    import subprocess
+    import sys
+
+    command = [sys.executable, str(Path(__file__).parent / "scripts" / "ingest.py")]
+    if force:
+        command.append("--force")
+    try:
+        subprocess.Popen(
+            command,
+            cwd=str(Path(__file__).parent),
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as exc:
+        app.logger.exception("could not start the sweep")
+        return f"Could not start the sweep: {exc}"
+    return (
+        "Sweep started. It runs in the background - refresh this page to see "
+        "files arrive below. A delivery file takes about a minute."
+    )
 
 
 def _spool(upload) -> str:
@@ -383,10 +419,7 @@ def data_page():
     if request.method == "POST":
         action = request.form.get("action")
         if action == "ingest":
-            result = loader.run(force=request.form.get("force") == "on")
-            message = f"S3 sweep: {result.summary()}"
-            if result.errors:
-                message += " — " + "; ".join(result.errors[:3])
+            message = _start_sweep(force=request.form.get("force") == "on")
         elif action == "upload":
             upload = request.files.get("file")
             if upload and upload.filename:

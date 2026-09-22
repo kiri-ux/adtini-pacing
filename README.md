@@ -242,7 +242,7 @@ it skips the login gate. To work without S3 access, drop a CSV or zip on the
 **Data** page - it takes the same file the bucket does.
 
 ```bash
-python -m pytest tests/ -q    # 63 tests
+python -m pytest tests/ -q    # 64 tests
 python scripts/ingest.py      # what the cron job runs
 ```
 
@@ -294,9 +294,20 @@ folded into `daily_delivery` in one grouped upsert. Aggregating per chunk
 would let a grain that straddles a chunk boundary be counted from only its
 last chunk.
 
-A full sweep is about a minute per delivery file, so the nightly cron job is
-the normal path; the button on the **Data** page is for one or two files, and
-a browser request will time out before a large backlog finishes.
+**The sweep does not run in the web service.** The button on the **Data**
+page starts `scripts/ingest.py` as a separate process and returns straight
+away; the page shows files arriving as they land. Run inside the request it
+took the whole service down - Render restarted the instance for exceeding
+its memory limit and every open page got a 502. Measured during a sweep now:
+114 MB for the web worker plus 188 MB for the ingest, against a 512 MB limit.
+
+A sweep is resumable, so a restart mid-run loses nothing: files already
+loaded are skipped by their ETag. The nightly cron job runs the same script
+on its own instance, and is the normal path - the button is for a backfill
+you do not want to wait a day for.
+
+Uploading a file still runs in the web worker, one file at a time, which the
+chunked reader keeps inside about 190 MB. Use the sweep for a backlog.
 
 ## Things worth knowing
 

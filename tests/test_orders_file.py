@@ -191,3 +191,25 @@ def test_a_migrated_database_can_take_a_bulk_insert(tmp_path):
         )
         stored = conn.execute(select(DailyDelivery.__table__)).first()
     assert stored.updated_at is not None
+
+
+def test_the_sweep_does_not_run_inside_the_web_worker():
+    """Render restarted the instance for exceeding its memory limit.
+
+    A sweep is minutes of work and a couple of hundred megabytes. Run inside
+    the request it took the whole service down, so the route must hand it to
+    another process and return - never call the loader itself.
+    """
+    import ast
+    import pathlib
+
+    tree = ast.parse(pathlib.Path("app.py").read_text())
+    route = next(
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "data_page"
+    )
+    called = {
+        node.func.attr for node in ast.walk(route)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    assert "run" not in called, "data_page must not run the sweep in-request"
