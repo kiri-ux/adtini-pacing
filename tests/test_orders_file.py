@@ -303,3 +303,69 @@ def test_a_second_sweep_is_refused_while_one_is_running(tmp_path):
     # A pid that has gone is not a running sweep, so a stale lock from a
     # container restart does not wedge the button forever.
     assert not application._sweep_running()
+
+
+def test_each_file_commits_on_its_own(tmp_path):
+    """The sweep ran in one transaction that committed only at the end.
+
+    So nothing appeared until it finished - on a page that tells you to
+    refresh to watch files arrive - and a restart rolled back every file
+    including the log rows that make the next run skip them, which meant the
+    sweep was not resumable despite being described as such.
+    """
+    import importlib
+    import subprocess
+    import sys
+    from unittest import mock
+
+    from sqlalchemy import func, select
+
+    url = f"sqlite:///{tmp_path}/m.db"
+    subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        env={**os.environ, "DATABASE_URL": url}, check=True, capture_output=True,
+    )
+    os.environ["DATABASE_URL"] = url
+    import config
+
+    config.get_settings.cache_clear()
+    import db as db_module
+
+    importlib.reload(db_module)
+    from ingest import loader, s3
+
+    importlib.reload(loader)
+    from models import IngestedFile, Order
+
+    good = s3.S3Object(key="orders/orders-a.csv", etag="1", size=10)
+    bad = s3.S3Object(key="orders/orders-b.csv", etag="2", size=10)
+    sample = str(tmp_path / "orders.csv")
+    with open(sample, "w") as handle:
+        handle.write(HEAD + "\n" + line())
+
+    def fetch(key, bucket=None):
+        if key.endswith("orders-b.csv"):
+            raise RuntimeError("boom")
+        return sample
+
+    with mock.patch.object(s3, "list_objects", return_value=[good, bad]), \
+         mock.patch.object(s3, "fetch_csv_file", side_effect=fetch):
+        result = loader.run()
+
+    with db_module.session_scope() as session:
+        statuses = dict(
+            session.execute(select(IngestedFile.s3_key, IngestedFile.status)).all()
+        )
+        orders = session.execute(select(func.count()).select_from(Order)).scalar()
+
+    # The file that loaded is durable even though a later one blew up.
+    assert orders == 1
+    assert statuses["orders/orders-a.csv"] == "ok"
+    assert statuses["orders/orders-b.csv"] == "error"
+    assert result.errors
+
+    # And because its log row committed, a second run skips it.
+    with mock.patch.object(s3, "list_objects", return_value=[good]), \
+         mock.patch.object(s3, "fetch_csv_file", side_effect=fetch):
+        again = loader.run()
+    assert again.files_skipped == 1

@@ -249,27 +249,36 @@ def run(force: bool = False, limit: int | None = None) -> IngestResult:
         ordered += [(kind, o) for o in objects if classify(o.key) == kind]
     result.files_unknown = len(objects) - len(ordered)
 
+    # One transaction per file, not one for the sweep. A single transaction
+    # around the whole run meant nothing was visible until it finished - the
+    # page sat empty for its duration - and a restart rolled back every file
+    # including the log rows that make the next run skip them, so the sweep
+    # was not resumable at all.
     with session_scope() as session:
         seen = {
-            row.s3_key: row
+            row.s3_key: (row.etag, row.status)
             for row in session.execute(select(IngestedFile)).scalars().all()
         }
 
-        for kind, obj in ordered:
-            prior = seen.get(obj.key)
-            if prior and prior.etag == obj.etag and prior.status == "ok" and not force:
-                result.files_skipped += 1
-                continue
+    for kind, obj in ordered:
+        etag, status = seen.get(obj.key, (None, None))
+        if etag == obj.etag and status == "ok" and not force:
+            result.files_skipped += 1
+            continue
 
-            path = None
-            try:
-                path = s3.fetch_csv_file(obj.key)
+        path = None
+        try:
+            # Logged before the work, not after: a delivery file is about a
+            # minute and logging only on completion looks like a stall.
+            log.info("reading %s (%s, %.1f MB)", obj.key, kind, obj.size / 1e6)
+            path = s3.fetch_csv_file(obj.key)
+            with session_scope() as session:
                 if kind == DELIVERY:
                     written, summary = load_delivery_file(session, path, obj.key)
                     result.delivery_loaded += 1
                     result.rows_written += written
                     _log_file(
-                        session, prior, obj, kind=kind, status="ok",
+                        session, obj, kind=kind, status="ok",
                         rows_read=summary["rows_read"], rows_written=written,
                         min_date=summary["min_date"], max_date=summary["max_date"],
                     )
@@ -278,27 +287,31 @@ def run(force: bool = False, limit: int | None = None) -> IngestResult:
                         imported, frame = load_orders_bytes(session, handle.read(), obj.key)
                     result.orders_loaded += 1
                     _log_file(
-                        session, prior, obj, kind=kind, status="ok",
+                        session, obj, kind=kind, status="ok",
                         rows_read=len(frame.rows),
                         rows_written=imported.line_items_added + imported.line_items_updated,
                         message=imported.summary(),
                         unmapped=frame.unmapped_note,
                     )
-            except Exception as exc:
-                log.exception("ingest failed for %s", obj.key)
-                result.errors.append(f"{obj.key}: {exc}")
-                _log_file(session, prior, obj, kind=kind, status="error", message=str(exc))
-                continue
-            finally:
-                if path and os.path.exists(path):
-                    os.unlink(path)
+        except Exception as exc:
+            log.exception("ingest failed for %s", obj.key)
+            result.errors.append(f"{obj.key}: {exc}")
+            # Its own transaction, so the failure is recorded even though the
+            # one that was loading it rolled back.
+            with session_scope() as session:
+                _log_file(session, obj, kind=kind, status="error", message=str(exc))
+            continue
+        finally:
+            if path and os.path.exists(path):
+                os.unlink(path)
 
-            result.files_loaded += 1
+        result.files_loaded += 1
 
-        # Delivery with no order record still has to be visible.
-        if result.rows_written:
-            from orderbook import adopt_unmatched_delivery
+    # Delivery with no order record still has to be visible.
+    if result.rows_written:
+        from orderbook import adopt_unmatched_delivery
 
+        with session_scope() as session:
             result.order_book = adopt_unmatched_delivery(session).summary()
 
     return result
@@ -306,7 +319,6 @@ def run(force: bool = False, limit: int | None = None) -> IngestResult:
 
 def _log_file(
     session,
-    prior: IngestedFile | None,
     obj: s3.S3Object,
     *,
     kind: str,
@@ -318,7 +330,11 @@ def _log_file(
     max_date: dt.date | None = None,
     unmapped: str | None = None,
 ) -> None:
-    record = prior or IngestedFile(s3_key=obj.key)
+    # Looked up in this session rather than carried in: the row read when the
+    # sweep started belongs to a transaction that has since closed.
+    record = session.execute(
+        select(IngestedFile).where(IngestedFile.s3_key == obj.key)
+    ).scalar_one_or_none() or IngestedFile(s3_key=obj.key)
     record.kind = kind
     record.unmapped_columns = unmapped
     record.etag = obj.etag
