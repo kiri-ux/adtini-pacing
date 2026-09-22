@@ -357,7 +357,18 @@ produces several rows for a day, which are summed. A blank `line_item_id` gets
 a deterministic key of its own, because leaving it empty collapsed 3% of rows
 across hundreds of unrelated orders into one bucket.
 
-For orders (`ingest/orders.py`): ids arrive as HTML
+For orders (`ingest/orders.py`): **`total_campaign_impressions` does not
+hold a total** - it carries `0.999999999999` on every row of the real
+exports, some ratio artifact, and the other three copies of the column are
+empty. Read straight through it made every sold total 1, so every impression
+order showed a $0.00 budget and a meaningless pacing percent. The total is
+`monthly_campaign_impressions x months_running`, which is what the hand-kept
+sheet computes too; a value at least as large as the monthly one is believed
+and kept. `months_running` is the line item's own - not
+`client_months_running`, which is how long they have been a client (140 for
+an order whose line ran 70).
+
+Also: ids arrive as HTML
 (`<a href="...viewOrder/2873">2873</a>`), header names repeat (`start_date`
 twice, `total_campaign_impressions` four times, `months_running`
 thirty-four times) with the value in whichever copy happens to carry it, dates

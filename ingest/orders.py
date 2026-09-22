@@ -44,6 +44,10 @@ ALIASES: dict[str, tuple[str, ...]] = {
     # Impression pacing.
     "total_impressions": ("totalcampaignimpressions",),
     "monthly_impressions": ("monthlycampaignimpressions",),
+    # How many months the line item runs for. Not `client_months_running`,
+    # which is how long the client has been a client, nor
+    # `orders_months_running`, which counts the order rather than this line.
+    "months_running": ("monthsrunning",),
     "total_campaign_budget": ("totalcampaignbudget",),
     "monthly_budget": ("monthlybudget", "budgetcombined"),
 
@@ -68,7 +72,8 @@ REQUIRED = ("client_name", "external_order_id")
 
 DATE_FIELDS = ("start_date", "end_date")
 NUMERIC_FIELDS = (
-    "total_impressions", "monthly_impressions", "total_campaign_budget",
+    "total_impressions", "monthly_impressions", "months_running",
+    "total_campaign_budget",
     "monthly_budget", "total_ppc_spend", "monthly_ppc_spend",
     "total_linkedin_spend", "monthly_linkedin_spend", "total_pm_spend",
     "monthly_pm_spend", "total_meta_spend", "monthly_meta_spend",
@@ -229,6 +234,21 @@ def normalize(raw: pd.DataFrame) -> OrdersFrame:
     for fieldname in list(DATE_FIELDS) + list(NUMERIC_FIELDS) + list(TEXT_FIELDS):
         if fieldname not in out.columns:
             out[fieldname] = None
+
+    # `total_campaign_impressions` does not hold a total. In the exports seen
+    # it carries 0.999999999999 on every row - some ratio artifact - which
+    # read straight through as a sold total of 1 and made every impression
+    # figure on the page meaningless. The real total is the monthly figure
+    # over the months the line item runs, which is what the hand-kept sheet
+    # computes too. A value that is at least the monthly one is believable
+    # and kept; anything smaller is not a total.
+    monthly = out["monthly_impressions"]
+    months = out["months_running"]
+    computed = monthly * months
+    believable = out["total_impressions"].notna() & (out["total_impressions"] >= monthly)
+    out["total_impressions"] = out["total_impressions"].where(
+        believable, computed
+    )
 
     out = out[out["client_name"].notna() & out["external_order_id"].notna()]
 

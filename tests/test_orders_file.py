@@ -369,3 +369,48 @@ def test_each_file_commits_on_its_own(tmp_path):
          mock.patch.object(s3, "fetch_csv_file", side_effect=fetch):
         again = loader.run()
     assert again.files_skipped == 1
+
+
+def test_the_total_impressions_column_is_not_a_total():
+    """It carries 0.999999999999 on every row in the real exports.
+
+    Read straight through it made every sold total 1, which put a $0.00
+    budget and a meaningless pacing percent on every impression order. The
+    real total is the monthly figure over the months the line item runs -
+    which is what the hand-kept sheet computes as well.
+    """
+    head = (
+        "client,orders_id,id,product,orders_start_date,orders_end_date,"
+        "monthly_campaign_impressions,total_campaign_impressions,months_running,"
+        "order_type,orders_status"
+    )
+    body = (
+        "W&L Subaru,14885,27919,Meta Display & Video Ads,2020-08-10 21:00:00,"
+        "2026-12-31 22:00:00,60000,0.999999999999,70,Insertion Order,IO Live"
+    )
+    row = normalize(csv(head + "\n" + body)).rows.iloc[0]
+    assert row["monthly_impressions"] == 60_000
+    assert row["months_running"] == 70
+    assert row["total_impressions"] == 4_200_000
+
+
+def test_a_believable_total_is_kept_as_it_is():
+    """Only a figure smaller than the monthly one is rejected as not a total."""
+    head = (
+        "client,orders_id,id,product,monthly_campaign_impressions,"
+        "total_campaign_impressions,months_running"
+    )
+    row = normalize(csv(head + "\nAcme,1,2,Display Ads,60000,500000,70")).rows.iloc[0]
+    assert row["total_impressions"] == 500_000
+
+
+def test_months_running_is_not_the_client_tenure():
+    """`client_months_running` is how long they have been a client - 140 for
+    an order whose own line ran 70."""
+    head = (
+        "client,orders_id,id,product,monthly_campaign_impressions,"
+        "months_running,client_months_running"
+    )
+    frame = normalize(csv(head + "\nAcme,1,2,Display Ads,60000,70,140"))
+    assert frame.rows.iloc[0]["months_running"] == 70
+    assert "client_months_running" in frame.unmapped
