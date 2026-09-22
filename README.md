@@ -266,6 +266,7 @@ ingest/
   orders.py         the orders export's quirks, and its alias table
   loader.py         routes by filename, upserts, ingest log
 
+sheets.py           parses the hand-kept pacing sheets
 ratecard.py         setup CPM, goal CTR/VR and partner cost per product
 data/rate_card.csv  the card itself, versioned
 orderbook.py        imports orders; classification and labelling rules
@@ -276,6 +277,29 @@ scripts/ingest.py   the cron entrypoint
 ```
 
 ---
+
+## The strategy split
+
+The orders drop stops at the product line item; the delivery drop is per
+strategy; only the buying team's hand-kept sheets say how a line item's sold
+impressions are split across its strategies. Those are parsed by `sheets.py`
+into `data/strategy_seed.csv` and applied by
+`scripts/import_strategy_seed.py` (`--dry-run` to see what would match).
+
+A seed, not a feed. The sheets are hand-kept, so reading them on a schedule
+would have them fighting the nightly orders import; what lands is the tool's
+afterwards.
+
+Sections match an order by its order number where the sheet carries one, and
+by client name and flight dates where it does not. Anything matching nothing
+is reported rather than dropped.
+
+Sold rows pair with delivery on the **targeting** (behavioral, retargeting,
+AI, geo-fencing...), not the whole label, because the two name products
+differently - "FB/IG - Category" against "FB - Category Facebook". One
+consequence is visible on the page: where a sheet splits one targeting across
+two products, both rows show that targeting's whole delivery rather than a
+share of it.
 
 ## Memory
 

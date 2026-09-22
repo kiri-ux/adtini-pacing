@@ -390,11 +390,10 @@ def adopt_unmatched_delivery(session) -> AdoptResult:
     ).all()
 
     clients = {c.name: c for c in session.execute(select(Client)).scalars()}
-    adopted: dict[tuple[int, str], Order] = {}
-    for order in session.execute(
-        select(Order).where(Order.external_order_id.is_(None))
-    ).scalars():
-        adopted[(order.client_id, order.name)] = order
+    adopted: dict[tuple[int, str], Order] = {
+        (order.client_id, order.name): order
+        for order in session.execute(select(Order)).scalars()
+    }
 
     for row in rows:
         client_name = (row.client_name or "").strip()
@@ -420,7 +419,11 @@ def adopt_unmatched_delivery(session) -> AdoptResult:
         if order is None:
             order = Order(
                 client_id=client.id,
-                external_order_id=None,
+                # Kept, not discarded. Delivery often carries an order id that
+                # simply has no orders row yet; throwing it away meant the
+                # orders file later created a second order for the same thing,
+                # and nothing else could match on it either.
+                external_order_id=(row.external_order_id or "").strip() or None,
                 name=name,
                 pacing_type=pacing_type_for(row.product),
                 start_date=row.start_date,

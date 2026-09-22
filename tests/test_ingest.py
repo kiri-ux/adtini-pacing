@@ -241,3 +241,57 @@ def test_a_grain_split_across_chunks_is_summed_not_overwritten(tmp_path):
     assert written == 1
     assert rows == 1
     assert total == 600, "all six rows must be summed, not just the last chunk's"
+
+
+def test_delivery_carries_the_join_key_all_the_way_into_the_table(tmp_path):
+    """The merge's column list left out external_line_item_id.
+
+    Nothing wrote the key that ties a day of delivery to the line item it
+    ran under, so every order read as having delivered nothing - empty daily
+    grids and a zero to-date on pages whose delivery was sitting in the
+    table the whole time.
+    """
+    import subprocess
+    import sys
+
+    from sqlalchemy import create_engine, func, select
+
+    from models import DailyDelivery
+
+    csv = "\n".join([HEADER, row(line_item_id="126397")])
+    path = tmp_path / "client-serve_20260101_0000_0.csv"
+    path.write_text(csv)
+
+    url = f"sqlite:///{tmp_path}/m.db"
+    subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        env={**os.environ, "DATABASE_URL": url}, check=True, capture_output=True,
+    )
+
+    import importlib
+
+    import config
+    import db as db_module
+
+    os.environ["DATABASE_URL"] = url
+    config.get_settings.cache_clear()
+    importlib.reload(db_module)
+    from ingest import loader
+
+    importlib.reload(loader)
+
+    with db_module.session_scope() as session:
+        loader.load_delivery_file(session, str(path), "test")
+
+    engine = create_engine(url)
+    with engine.connect() as conn:
+        stored = conn.execute(
+            select(DailyDelivery.__table__.c.external_line_item_id)
+        ).scalar()
+        nulls = conn.execute(
+            select(func.count()).select_from(DailyDelivery.__table__)
+            .where(DailyDelivery.__table__.c.external_line_item_id.is_(None))
+        ).scalar()
+
+    assert stored == "126397"
+    assert nulls == 0

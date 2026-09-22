@@ -217,6 +217,41 @@
 </form>
 
 
+{% if strategy_rows %}
+<div class="tablecard strategycard">
+  <div class="charthead">
+    <h3>Strategy split</h3>
+    <span class="hint">What was sold per strategy, from the buying team's
+      sheet, against what has run. Paired on the targeting, so a row with no
+      match either has not served or is named differently in the feed. Where
+      the sheet splits one targeting across two products, both rows show that
+      targeting's whole delivery.</span>
+  </div>
+  <div class="scroller">
+    <table class="elements">
+      <thead><tr><th>Strategy</th><th class="num">Mon. Sold</th>
+        <th class="num">Tot. Sold</th><th class="num">CPM</th>
+        <th class="num">Delivered</th><th class="num">Left</th>
+        <th class="num">Share run</th><th>Matched to</th></tr></thead>
+      <tbody>
+      {% for r in strategy_rows %}
+        <tr>
+          <td class="elname">{{ r.label }}</td>
+          <td class="num ro">{{ r.monthly_target|num }}</td>
+          <td class="num ro">{{ r.total_target|num }}</td>
+          <td class="num ro">{{ r.rate|money }}</td>
+          <td class="num ro">{{ r.delivered|num }}</td>
+          <td class="num ro">{{ r.remaining|num }}</td>
+          <td class="num ro">{{ r.share|pct(1) }}</td>
+          <td class="muted">{{ r.matched_labels|join(', ') if r.matched_labels else '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
 {% if chart.series %}
 <div class="tablecard chartcard">
   <div class="charthead">

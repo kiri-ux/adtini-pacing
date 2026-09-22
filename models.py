@@ -88,6 +88,9 @@ class Order(Base):
     line_items: Mapped[list["LineItem"]] = relationship(
         back_populates="order", cascade="all, delete-orphan"
     )
+    strategy_terms: Mapped[list["StrategyTerms"]] = relationship(
+        back_populates="order", cascade="all, delete-orphan"
+    )
 
 
 class LineItem(Base):
@@ -194,6 +197,37 @@ class DailyDelivery(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+
+
+class StrategyTerms(Base):
+    """How a line item's sold impressions are split across its strategies.
+
+    Seeded from the buying team's hand-kept sheets, which are the only place
+    this split exists - the orders drop stops at the product line item and
+    the delivery drop only says what ran. Owned by the tool once seeded; the
+    sheets are not read again.
+    """
+
+    __tablename__ = "strategy_terms"
+    __table_args__ = (
+        UniqueConstraint("order_id", "label", name="uq_strategy_terms_label"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
+    label: Mapped[str] = mapped_column(String(300))
+    # The targeting on its own, normalised, so a sold row finds the delivery
+    # that ran under it despite the two naming products differently.
+    match_key: Mapped[str | None] = mapped_column(String(120), index=True)
+
+    monthly_target: Mapped[float | None] = mapped_column(Float)
+    total_target: Mapped[float | None] = mapped_column(Float)
+    rate: Mapped[float | None] = mapped_column(Float)
+
+    source: Mapped[str | None] = mapped_column(String(200))
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+    order: Mapped["Order"] = relationship(back_populates="strategy_terms")
 
 
 class DeliveryStaging(Base):

@@ -325,6 +325,7 @@ def order_detail(order_id: int):
             v=view,
             t=view.total,
             chart=views.chart_series(view),
+            strategy_rows=views.strategy_pacing(db, view),
             lineitem_names={li.id: li.name for li in view.order.line_items},
             pacing_types=PACING_TYPES,
         )

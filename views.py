@@ -13,7 +13,8 @@ from dataclasses import dataclass, field
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
-from models import Client, DailyDelivery, LineItem, Order
+from models import Client, DailyDelivery, LineItem, Order, StrategyTerms
+import sheets
 from orderbook import PACEABLE_ORDER_TYPE, line_item_label
 from pacing.engine import DailyPoint, PacingRow, compute_row, health, total_row
 
@@ -445,3 +446,72 @@ def chart_series(view: "OrderView", limit: int = MAX_CHART_SERIES) -> dict:
         "series": series,
         "metric": view.metric,
     }
+
+
+@dataclass
+class StrategyPacing:
+    """A strategy's sold split beside what actually ran under it.
+
+    The sold side comes from the seeded sheets, the delivered side from the
+    feed. They are paired on the targeting rather than the whole label,
+    because the two name products differently - "FB/IG - Category" against
+    "FB - Category Facebook".
+    """
+
+    label: str
+    match_key: str | None
+    monthly_target: float | None
+    total_target: float | None
+    rate: float | None
+    delivered: float = 0.0
+    matched_labels: list[str] = field(default_factory=list)
+
+    @property
+    def remaining(self) -> float | None:
+        if self.total_target is None:
+            return None
+        return self.total_target - self.delivered
+
+    @property
+    def share(self) -> float | None:
+        """How much of what was sold has run."""
+        if not self.total_target:
+            return None
+        return self.delivered / self.total_target
+
+
+def strategy_pacing(session, view: "OrderView") -> list[StrategyPacing]:
+    """The order's sold strategy split, with delivery matched onto it."""
+    terms = sorted(
+        session.execute(
+            select(StrategyTerms).where(StrategyTerms.order_id == view.order.id)
+        ).scalars(),
+        key=lambda t: (t.sort_order, t.id),
+    )
+    if not terms:
+        return []
+
+    # Delivered, keyed by the targeting that ran it.
+    delivered: dict[str, float] = defaultdict(float)
+    labels: dict[str, list[str]] = defaultdict(list)
+    for items in view.strategies.values():
+        for series in items:
+            key = sheets.match_key(series.label)
+            if key:
+                delivered[key] += series.total
+                labels[key].append(series.label)
+
+    out = []
+    for term in terms:
+        out.append(
+            StrategyPacing(
+                label=term.label,
+                match_key=term.match_key,
+                monthly_target=term.monthly_target,
+                total_target=term.total_target,
+                rate=term.rate,
+                delivered=delivered.get(term.match_key or "", 0.0),
+                matched_labels=sorted(set(labels.get(term.match_key or "", []))),
+            )
+        )
+    return out
