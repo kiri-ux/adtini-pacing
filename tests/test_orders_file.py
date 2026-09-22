@@ -213,3 +213,34 @@ def test_the_sweep_does_not_run_inside_the_web_worker():
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
     }
     assert "run" not in called, "data_page must not run the sweep in-request"
+
+
+def test_the_ingest_script_actually_runs(tmp_path):
+    """It is the cron job's entrypoint and nothing imported it.
+
+    Python puts the script's own directory on sys.path rather than the
+    working directory, so `python scripts/ingest.py` could not see the app
+    beside it - and the script still imported a function deleted two commits
+    earlier. Both only show up by running it, which nothing did.
+    """
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "scripts/ingest.py"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env={
+            **os.environ,
+            "DATABASE_URL": f"sqlite:///{tmp_path}/m.db",
+            # Deliberately unusable, so the run reaches the S3 call and stops
+            # there rather than touching a real bucket.
+            "AWS_ACCESS_KEY_ID": "test",
+            "AWS_SECRET_ACCESS_KEY": "test",
+        },
+    )
+    output = result.stdout + result.stderr
+    assert "ModuleNotFoundError" not in output, output[-600:]
+    assert "ImportError" not in output, output[-600:]
+    assert "sweep starting" in output

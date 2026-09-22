@@ -174,13 +174,11 @@ def _start_sweep(force: bool = False) -> str:
     if force:
         command.append("--force")
     try:
-        subprocess.Popen(
-            command,
-            cwd=str(Path(__file__).parent),
-            start_new_session=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        # Output is inherited, not discarded, so the sweep's own logging lands
+        # in the service log. A sweep that cannot reach the bucket writes no
+        # file rows at all, so with its output thrown away the page would sit
+        # empty with nothing anywhere saying why.
+        subprocess.Popen(command, cwd=str(Path(__file__).parent), start_new_session=True)
     except Exception as exc:
         app.logger.exception("could not start the sweep")
         return f"Could not start the sweep: {exc}"
