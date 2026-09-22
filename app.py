@@ -176,7 +176,8 @@ def _sweep_running() -> bool:
     return True
 
 
-def _start_sweep(force: bool = False) -> str:
+def _start_sweep(force: bool = False, only: str | None = None,
+                 max_mb: float | None = None) -> str:
     """Kick off an S3 sweep outside this process, and return immediately.
 
     A sweep is minutes of work and hundreds of megabytes. Run inside the web
@@ -197,6 +198,10 @@ def _start_sweep(force: bool = False) -> str:
     command = [sys.executable, str(Path(__file__).parent / "scripts" / "ingest.py")]
     if force:
         command.append("--force")
+    if only:
+        command += ["--only", only]
+    elif max_mb:
+        command += ["--max-mb", str(max_mb)]
     try:
         # Output is inherited, not discarded, so the sweep's own logging lands
         # in the service log. A sweep that cannot reach the bucket writes no
@@ -209,6 +214,8 @@ def _start_sweep(force: bool = False) -> str:
     except Exception as exc:
         app.logger.exception("could not start the sweep")
         return f"Could not start the sweep: {exc}"
+    if only:
+        return f"Loading {only.rsplit('/', 1)[-1]}. Refresh to see it arrive below."
     return (
         "Sweep started. It runs in the background - refresh this page to see "
         "files arrive below. A delivery file takes about a minute."
@@ -451,7 +458,12 @@ def data_action():
     message = None
     action = request.form.get("action")
     if action == "ingest":
-        message = _start_sweep(force=request.form.get("force") == "on")
+        message = _start_sweep(
+            force=request.form.get("force") == "on",
+            max_mb=float(request.form["max_mb"]) if request.form.get("max_mb") else None,
+        )
+    elif action == "load-one":
+        message = _start_sweep(only=request.form.get("key"), force=True)
     elif action == "upload":
         upload = request.files.get("file")
         if upload and upload.filename:
@@ -511,13 +523,34 @@ def data_page():
             ).scalars()
         )
         latest = views.latest_delivery_date(db)
+        loaded = {row.s3_key: row for row in db.execute(select(IngestedFile)).scalars()}
         counts = {
             "clients": db.execute(select(func.count()).select_from(Client)).scalar(),
             "orders": db.execute(select(func.count()).select_from(Order)).scalar(),
         }
+    bucket_files = []
+    try:
+        from ingest import s3
+
+        for obj in s3.list_objects():
+            record = loaded.get(obj.key)
+            bucket_files.append({
+                "key": obj.key,
+                "name": obj.key.rsplit("/", 1)[-1],
+                "kind": loader.classify(obj.key) or "unknown",
+                "mb": obj.size / 1e6,
+                "status": (record.status if record and record.etag == obj.etag
+                           else ("stale" if record else "")),
+                "rows": record.rows_written if record else None,
+            })
+    except Exception as exc:
+        app.logger.warning("could not list the bucket: %s", exc)
+        bucket_files = []
+
     return render_template(
         "data.html",
         files=files,
+        bucket_files=bucket_files,
         latest=latest,
         counts=counts,
         sweep_running=_sweep_running(),

@@ -414,3 +414,67 @@ def test_months_running_is_not_the_client_tenure():
     frame = normalize(csv(head + "\nAcme,1,2,Display Ads,60000,70,140"))
     assert frame.rows.iloc[0]["months_running"] == 70
     assert "client_months_running" in frame.unmapped
+
+
+def test_a_single_file_can_be_loaded_on_its_own(tmp_path):
+    """5.7GB of bulk exports should not stand between you and testing one
+    campaign."""
+    import importlib
+    import subprocess
+    import sys
+    from unittest import mock
+
+    url = f"sqlite:///{tmp_path}/m.db"
+    subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        env={**os.environ, "DATABASE_URL": url}, check=True, capture_output=True,
+    )
+    os.environ["DATABASE_URL"] = url
+    import config
+
+    config.get_settings.cache_clear()
+    import db as db_module
+
+    importlib.reload(db_module)
+    from ingest import loader, s3
+
+    importlib.reload(loader)
+
+    # A fresh file per fetch: the loader owns what it downloads and deletes
+    # it afterwards, so handing it the same path twice would not work.
+    counter = {"n": 0}
+
+    def fetch(key, bucket=None):
+        counter["n"] += 1
+        path = tmp_path / f"orders-{counter['n']}.csv"
+        path.write_text(HEAD + "\n" + line())
+        return str(path)
+
+    wanted = s3.S3Object(key="orders/orders-db-anne_1.csv", etag="a", size=10)
+    huge = s3.S3Object(key="orders/orders-db-all-1_1.csv", etag="b", size=800_000_000)
+
+    with mock.patch.object(s3, "list_objects", return_value=[wanted, huge]), \
+         mock.patch.object(s3, "fetch_csv_file", side_effect=fetch):
+        picked = loader.run(only=wanted.key)
+    assert picked.orders_loaded == 1
+    assert picked.files_seen == 2
+    assert not picked.errors
+
+    # And a sweep with a size limit leaves the bulk export alone.
+    with mock.patch.object(s3, "list_objects", return_value=[wanted, huge]), \
+         mock.patch.object(s3, "fetch_csv_file", side_effect=fetch):
+        swept = loader.run(force=True, max_bytes=50_000_000)
+    assert swept.files_too_big == 1
+    assert swept.orders_loaded == 1
+    assert not swept.errors
+
+
+def test_asking_for_a_file_that_is_not_there_says_so():
+    from unittest import mock
+
+    from ingest import loader, s3
+
+    with mock.patch.object(s3, "list_objects", return_value=[]):
+        result = loader.run(only="orders/nope.csv")
+    assert result.errors
+    assert "no such file" in result.errors[0]

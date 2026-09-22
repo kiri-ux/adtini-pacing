@@ -239,22 +239,33 @@ def _apply_sold_terms(item: LineItem, row, pacing_type: str) -> None:
         _keep(item, "google_monthly_spend", row.get(columns[1]))
 
 
-def import_orders(session, frame) -> ImportResult:
+def import_orders(session, frame, cache: dict | None = None) -> ImportResult:
     """Upsert an orders export into the order book.
 
     Anything a buyer has marked `terms_locked` is left exactly as it is -
     budgets get adjusted mid-flight and those adjustments must survive the
     next import.
+
+    `cache` holds the client and order lookups across the chunks of one file.
+    Rebuilding them per chunk meant a 600MB export re-read the whole order
+    book thirty times over and held every row it touched.
     """
     result = ImportResult()
 
-    clients = {c.name: c for c in session.execute(select(Client)).scalars()}
-    orders = {
-        o.external_order_id: o
-        for o in session.execute(
-            select(Order).where(Order.external_order_id.isnot(None))
-        ).scalars()
-    }
+    if cache is None:
+        cache = {}
+    if "clients" not in cache:
+        cache["clients"] = {
+            c.name: c for c in session.execute(select(Client)).scalars()
+        }
+        cache["orders"] = {
+            o.external_order_id: o
+            for o in session.execute(
+                select(Order).where(Order.external_order_id.isnot(None))
+            ).scalars()
+        }
+    clients = cache["clients"]
+    orders = cache["orders"]
 
     for row in frame.rows.to_dict("records"):
         client_name = row.get("client_name")

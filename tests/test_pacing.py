@@ -363,13 +363,15 @@ def test_performance_max_paces_the_client_budget_against_client_cost():
     assert row.to_date == 2_250.0               # platform cost grossed up
 
 
-def test_event_pacing_without_a_platform_figure_compares_like_for_like():
-    """No ratio to apply, so the delivered cost is shown as it comes."""
+def test_event_pacing_without_a_platform_figure_uses_the_retail_multiple():
+    """Retail is four times internal, so an order that carries no platform
+    figure is still grossed up rather than compared against a cost the
+    client was never billed."""
     order = Order(id=203, client_id=1, name="PMax", pacing_type="event",
                   start_date=dt.date(2026, 9, 1), end_date=dt.date(2026, 9, 30))
     item = LineItem(id=203, order_id=203, name="PMax",
                     client_monthly_budget=900.0, client_total_budget=900.0)
     row = compute_row(item, order, [DailyPoint(date=dt.date(2026, 9, 1), cost=30.0)],
                       dt.date(2026, 9, 1))
-    assert row.client_cost_ratio == 1.0
-    assert row.to_date == 30.0
+    assert row.client_cost_ratio == 4.0
+    assert row.to_date == 120.0

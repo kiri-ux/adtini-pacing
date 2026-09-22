@@ -54,10 +54,10 @@
   {% if o.pacing_type == 'event' %}
   <div class="qtile"><small>Client cost</small>
     <b>{{ t.to_date|money }}</b>
-    <u>of {{ t.total_target|money }} billed
-      {%- if t.client_cost_ratio and t.client_cost_ratio != 1.0 %} &middot;
+    <u>of {{ t.total_target|money }} billed &middot;
       platform spend &times;{{ '%.2f'|format(t.client_cost_ratio) }}
-      {%- else %} &middot; platform cost as reported{% endif %}</u></div>
+      {%- if t.google_total_spend %}{% else %} (retail default){% endif %}
+      {%- endif %}</u></div>
   {% endif %}
   <div class="qtile"><small>Setup {{ 'CPM' if o.pacing_type=='impression' else ('CPC' if o.pacing_type=='click' else 'CPE') }}</small>
     <b>{{ t.unit_cost|money }}</b>

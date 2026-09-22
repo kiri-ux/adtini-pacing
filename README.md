@@ -332,6 +332,15 @@ folded into `daily_delivery` in one grouped upsert. Aggregating per chunk
 would let a grain that straddles a chunk boundary be counted from only its
 last chunk.
 
+**Load one file at a time while you are testing.** The **Data** page lists
+what is in the bucket with its size and whether it has been loaded, and each
+row has its own Load button. The sweep skips anything over a size limit
+(50MB by default), so the multi-gigabyte bulk exports stay out of the way
+until you ask for one: `orders-db-all-*` alone is 3.3GB against 2.4MB for all
+the per-unit files put together, and they largely say the same thing.
+
+Under it: `python scripts/ingest.py --only <key>` and `--max-mb N`.
+
 **The sweep does not run in the web service.** The button on the **Data**
 page starts `scripts/ingest.py` as a separate process and returns straight
 away; the page shows files arriving as they land. Run inside the request it

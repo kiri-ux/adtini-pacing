@@ -212,3 +212,7 @@ table.daily td.muted{color:var(--muted)}
 .strategycard table.elements{min-width:980px}
 .strategycard td.muted{color:var(--muted);font-size:12px;max-width:320px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.inlineform{display:inline}
+.datarow .forcebox input[type=text]{background:var(--fill);border:1px solid transparent;
+  border-radius:8px;padding:4px 7px;font-family:inherit;font-size:12.5px;width:52px;
+  text-align:right;margin:0 4px}

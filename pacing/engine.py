@@ -26,6 +26,12 @@ from models import (
 from pacing.calendar import elapsed_days, inclusive_days, month_window
 
 
+# Retail on Performance Max is four times the internal cost. Orders that
+# carry both figures get their own ratio; the rest take this, which is what
+# they would be priced at anyway.
+DEFAULT_CLIENT_COST_RATIO = 4.0
+
+
 @dataclass
 class DailyPoint:
     date: dt.date
@@ -75,9 +81,9 @@ class PacingRow:
     client_total_budget: float = 0.0
     google_monthly_spend: float = 0.0
     google_total_spend: float = 0.0
-    # Platform cost -> client cost. 1.0 when the order does not say, and the
-    # page then shows the comparison for what it is.
-    client_cost_ratio: float = 1.0
+    # Platform cost -> client cost. Derived per order where the figures are
+    # there, and 4x where they are not, which is what retail runs at.
+    client_cost_ratio: float = DEFAULT_CLIENT_COST_RATIO
     monthly_events: float = 0.0
     total_events: float = 0.0
 
@@ -185,9 +191,9 @@ def compute_row(
         row.total_events = line_item.total_events or 0.0
         # The feed reports platform cost. What the client is charged is that
         # grossed up by the same ratio the order sold it at.
-        if line_item.google_total_spend:
+        if line_item.google_total_spend and line_item.client_total_budget:
             row.client_cost_ratio = (
-                (line_item.client_total_budget or 0.0) / line_item.google_total_spend
+                line_item.client_total_budget / line_item.google_total_spend
             )
 
     points = sorted(daily, key=lambda p: p.date)
@@ -358,7 +364,7 @@ def total_row(rows: Sequence[PacingRow], pacing_type: str) -> PacingRow:
 
     # The order's own platform-to-client ratio, from its summed figures, so
     # the page can say what the delivered side has been turned into.
-    if total.google_total_spend:
+    if total.google_total_spend and total.client_total_budget:
         total.client_cost_ratio = total.client_total_budget / total.google_total_spend
 
     return total

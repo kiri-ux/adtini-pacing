@@ -23,9 +23,12 @@
         <p class="hint">Reads every new drop under <code>{{ bucket }}/{{ prefix }}</code>.
           Days already loaded are replaced with the newer numbers. Runs in the
           background, about a minute per delivery file &mdash; refresh to see
-          files arrive below. The nightly job does the same thing on its own.</p>
+          files arrive below. Leave the size limit on to skip the multi-gigabyte
+          bulk exports; load those one at a time below when you want them.</p>
       </div>
       <label class="forcebox"><input type="checkbox" name="force"> Re-read files already loaded</label>
+      <label class="forcebox">Skip files over
+        <input type="text" name="max_mb" value="50" size="4"> MB</label>
       <button class="btn preview" type="submit" {% if sweep_running %}disabled{% endif %}>
         {{ 'Sweep running…' if sweep_running else 'Run sweep' }}</button>
     </form>
@@ -58,6 +61,40 @@
     </form>
   </div>
 </div>
+
+{% if bucket_files %}
+<h3 class="products">In the bucket</h3>
+<div class="tablecard">
+ <div class="scroller">
+  <table>
+    <thead><tr><th>File</th><th>Kind</th><th class="num">Size</th>
+      <th>Loaded</th><th class="num">Rows</th><th></th></tr></thead>
+    <tbody>
+    {% for f in bucket_files %}
+      <tr>
+        <td class="lnk">{{ f.name }}</td>
+        <td><span class="tag type-{{ 'impression' if f.kind == 'delivery' else ('event' if f.kind == 'orders' else 'click') }}">{{ f.kind }}</span></td>
+        <td class="num">{{ '%.1f'|format(f.mb) }} MB</td>
+        <td>{% if f.status == 'ok' %}<span class="pace on-pace">loaded</span>
+            {% elif f.status == 'error' %}<span class="pace under">failed</span>
+            {% elif f.status == 'stale' %}<span class="pace over">changed</span>
+            {% else %}<span class="pace unknown">not loaded</span>{% endif %}</td>
+        <td class="num">{{ f.rows|num if f.rows else '—' }}</td>
+        <td class="num">
+          <form method="post" action="{{ url_for('data_action') }}" class="inlineform">
+            <input type="hidden" name="action" value="load-one">
+            <input type="hidden" name="key" value="{{ f.key }}">
+            <button class="btn-pub" type="submit"
+              {% if sweep_running %}disabled{% endif %}>Load</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+ </div>
+</div>
+{% endif %}
 
 <h3 class="products">Recent files</h3>
 <div class="tablecard">

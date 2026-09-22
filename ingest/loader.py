@@ -74,6 +74,7 @@ class IngestResult:
     files_loaded: int = 0
     files_skipped: int = 0
     files_unknown: int = 0
+    files_too_big: int = 0
     rows_written: int = 0
     delivery_loaded: int = 0
     orders_loaded: int = 0
@@ -88,6 +89,8 @@ class IngestResult:
         ]
         if self.files_unknown:
             parts.append(f"{self.files_unknown} unrecognised")
+        if self.files_too_big:
+            parts.append(f"{self.files_too_big} over the size limit")
         if self.order_book:
             parts.append(self.order_book)
         if self.errors:
@@ -230,13 +233,14 @@ def load_orders_file(session, path, source_label: str = "upload"):
     mapped: dict = {}
     unmapped: list = []
     rows_read = 0
+    cache: dict = {}
 
     for chunk in pd.read_csv(path, dtype=str, low_memory=False, chunksize=CHUNK_ROWS):
         frame = orders_file.normalize(chunk)
         if not mapped:
             mapped, unmapped = frame.mapped, frame.unmapped
         rows_read += len(frame.rows)
-        result = import_orders(session, frame)
+        result = import_orders(session, frame, cache)
         for field_name in (
             "clients_added", "orders_added", "orders_updated", "line_items_added",
             "line_items_updated", "locked_skipped",
@@ -244,6 +248,10 @@ def load_orders_file(session, path, source_label: str = "upload"):
             setattr(total, field_name,
                     getattr(total, field_name) + getattr(result, field_name))
         del frame, chunk
+        # Push the chunk's writes out and let go of everything the session is
+        # still holding for them. Without this the identity map grows for the
+        # whole file and a large export runs the process out of memory.
+        session.flush()
 
     summary = orders_file.OrdersFrame(
         rows=pd.DataFrame(), mapped=mapped, unmapped=unmapped
@@ -264,8 +272,18 @@ def load_orders_bytes(session, raw_csv: bytes, source_label: str = "upload"):
         os.unlink(path)
 
 
-def run(force: bool = False, limit: int | None = None) -> IngestResult:
+def run(
+    force: bool = False,
+    limit: int | None = None,
+    only: str | None = None,
+    max_bytes: int | None = None,
+) -> IngestResult:
     """Sweep the bucket and load anything new.
+
+    `only` loads a single key and nothing else, which is how a file gets
+    tried on its own. `max_bytes` skips anything larger, so a sweep is not
+    held up by the multi-gigabyte bulk exports when the per-unit files say
+    the same thing.
 
     Orders are loaded before delivery so a line item exists for delivery to
     join to on the same sweep. A file already logged with the same ETag is
@@ -280,6 +298,17 @@ def run(force: bool = False, limit: int | None = None) -> IngestResult:
         return result
 
     result.files_seen = len(objects)
+    if only:
+        objects = [o for o in objects if o.key == only]
+        if not objects:
+            result.errors.append(f"no such file in the bucket: {only}")
+            return result
+    elif max_bytes:
+        skipped = [o for o in objects if o.size > max_bytes]
+        for obj in skipped:
+            log.info("skipping %s (%.0f MB, over the size limit)", obj.key, obj.size / 1e6)
+        objects = [o for o in objects if o.size <= max_bytes]
+        result.files_too_big = len(skipped)
     if limit:
         objects = objects[-limit:]
 
