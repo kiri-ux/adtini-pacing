@@ -773,3 +773,68 @@ def test_months_between_counts_both_ends():
     assert months_between(dt.date(2026, 8, 1), dt.date(2026, 8, 31)) == 1
     assert months_between(dt.date(2026, 12, 1), dt.date(2027, 1, 31)) == 2
     assert months_between(dt.date(2026, 12, 1), dt.date(2026, 11, 1)) == 0
+
+
+def test_recompute_does_not_hold_the_whole_book_in_memory():
+    """The 502: recompute pulled every line item and order into one session.
+
+    On the real book that was +231MB in a single request, on an instance
+    with 512MB that is also serving pages - so the worker was OOM-killed and
+    the page came back a Bad Gateway. Batched, the same run grows by 8MB.
+
+    Checked by the identity map rather than by measuring memory, so it fails
+    for a reason rather than on a threshold: what must hold is that the
+    session is let go of as it goes, not that some number stayed under some
+    other number.
+    """
+    import datetime as dt
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    import orderbook
+    from models import Base, Client, LineItem, Order
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    rows = orderbook.RECOMPUTE_BATCH * 3
+
+    with Session(engine) as session:
+        client = Client(name="Big")
+        session.add(client)
+        session.flush()
+        order = Order(
+            client_id=client.id,
+            name="Big #1",
+            pacing_type="impression",
+            start_date=dt.date(2026, 8, 1),
+            end_date=dt.date(2027, 1, 31),
+        )
+        session.add(order)
+        session.flush()
+        session.add_all(
+            LineItem(
+                order_id=order.id,
+                name=f"LI {n}",
+                product="Display Ads",
+                monthly_impressions=100_000.0,
+                total_impressions=0.999999999999,
+            )
+            for n in range(rows)
+        )
+        session.commit()
+        session.expunge_all()
+
+        result = orderbook.recompute_terms(session)
+
+        assert result.line_items == rows
+        assert result.totals_rebuilt == rows
+        assert len(session.identity_map) <= orderbook.RECOMPUTE_BATCH + 2, (
+            "the session must be let go of between batches, not accumulated"
+        )
+        session.commit()
+
+    with Session(engine) as check:
+        item = check.query(LineItem).first()
+        assert item.goal_cpm == 2.5
+        assert item.total_impressions == 600_000

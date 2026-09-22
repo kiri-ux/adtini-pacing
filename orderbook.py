@@ -17,7 +17,7 @@ import math
 from dataclasses import dataclass
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 import ratecard
 from ingest.normalize import bound_id, name_key
@@ -596,6 +596,11 @@ class RecomputeResult:
         return ", ".join(parts)
 
 
+# Line items per batch. The worker has 512MB and shares it with whatever
+# else is being served, so the book is walked a piece at a time.
+RECOMPUTE_BATCH = 1000
+
+
 def recompute_terms(session) -> RecomputeResult:
     """Re-derive what is computed rather than imported, without any file.
 
@@ -614,29 +619,47 @@ def recompute_terms(session) -> RecomputeResult:
     Anything a buyer has edited by hand is left alone, as everywhere else.
     """
     result = RecomputeResult()
-    items = session.execute(
-        select(LineItem).options(selectinload(LineItem.order))
-    ).scalars()
+    last_id = 0
 
-    for item in items:
-        result.line_items += 1
-        if item.terms_locked:
-            result.locked_skipped += 1
-            continue
-
-        cpm, source = resolve_goal_cpm(
-            item.product, bool(item.restricted), None, item.total_impressions
+    while True:
+        batch = list(
+            session.execute(
+                select(LineItem)
+                .options(joinedload(LineItem.order))
+                .where(LineItem.id > last_id)
+                .order_by(LineItem.id)
+                .limit(RECOMPUTE_BATCH)
+            ).scalars()
         )
-        if cpm and cpm != item.goal_cpm:
-            item.goal_cpm, item.goal_cpm_source = cpm, source
-            result.cpm_set += 1
+        if not batch:
+            break
 
-        before = item.total_impressions
-        _fix_impossible_total(item, months=None)
-        if item.total_impressions != before:
-            if item.total_impressions is None:
-                result.totals_cleared += 1
-            else:
-                result.totals_rebuilt += 1
+        for item in batch:
+            result.line_items += 1
+            if item.terms_locked:
+                result.locked_skipped += 1
+                continue
+
+            cpm, source = resolve_goal_cpm(
+                item.product, bool(item.restricted), None, item.total_impressions
+            )
+            if cpm and cpm != item.goal_cpm:
+                item.goal_cpm, item.goal_cpm_source = cpm, source
+                result.cpm_set += 1
+
+            before = item.total_impressions
+            _fix_impossible_total(item, months=None)
+            if item.total_impressions != before:
+                if item.total_impressions is None:
+                    result.totals_cleared += 1
+                else:
+                    result.totals_rebuilt += 1
+
+        last_id = batch[-1].id
+        # Written out and let go of. Holding every line item on the book and
+        # every order behind it in one session is what took the worker down:
+        # the page came back a 502 and the service with it.
+        session.flush()
+        session.expunge_all()
 
     return result
