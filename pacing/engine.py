@@ -13,6 +13,7 @@ means over-delivering, positive means under-delivering.
 from __future__ import annotations
 
 import datetime as dt
+import math
 from dataclasses import dataclass, field, asdict
 from typing import Iterable, Sequence
 
@@ -442,7 +443,10 @@ def health(pacing_pct: float | None, tolerance: float = 0.10) -> str:
 
     Inside +/- tolerance is on pace. Beyond it, under or over.
     """
-    if pacing_pct is None:
+    # NaN is not a pacing percent. Left alone it bucketed as "over", because
+    # every comparison against a NaN is false and the last branch won - so a
+    # row with no usable number was coloured as if it were a real problem.
+    if pacing_pct is None or math.isnan(pacing_pct):
         return "unknown"
     if abs(pacing_pct) <= tolerance:
         return "on-pace"

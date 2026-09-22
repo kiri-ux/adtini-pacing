@@ -9,6 +9,7 @@ import datetime as dt
 import functools
 import io
 import logging
+import math
 import os
 import tempfile
 from pathlib import Path
@@ -92,12 +93,28 @@ def logout():
 # --------------------------------------------------------------------------
 # Template helpers
 # --------------------------------------------------------------------------
-def _num(value, places=0):
+def _real(value) -> float | None:
+    """A value as a number, or None for anything that is not one.
+
+    NaN counts as not one. A NaN reaching a template used to render as the
+    literal "nan" in every money and count column, and `entry` went further
+    and raised on `int(nan)`, which took the whole order page down with
+    "cannot convert float NaN to integer". Formatting is the last place that
+    should decide a page cannot be shown, so a value it cannot make sense of
+    renders as a dash and the rest of the page still loads.
+    """
     if value is None:
-        return "—"
+        return None
     try:
         value = float(value)
     except (TypeError, ValueError):
+        return None
+    return None if math.isnan(value) or math.isinf(value) else value
+
+
+def _num(value, places=0):
+    value = _real(value)
+    if value is None:
         return "—"
     if value < 0:
         return f"({abs(value):,.{places}f})"
@@ -111,11 +128,8 @@ def num_filter(value, places=0):
 
 @app.template_filter("money")
 def money_filter(value, places=2):
+    value = _real(value)
     if value is None:
-        return "—"
-    try:
-        value = float(value)
-    except (TypeError, ValueError):
         return "—"
     if value < 0:
         return f"(${abs(value):,.{places}f})"
@@ -124,9 +138,10 @@ def money_filter(value, places=2):
 
 @app.template_filter("pct")
 def pct_filter(value, places=2):
+    value = _real(value)
     if value is None:
         return "—"
-    return f"{float(value) * 100:,.{places}f}%"
+    return f"{value * 100:,.{places}f}%"
 
 
 @app.template_filter("entry")
@@ -137,11 +152,8 @@ def entry_filter(value):
     700,000. Whole numbers lose the decimal; the rest keep two places, and an
     unset term stays an empty box rather than a 0 that reads as sold.
     """
-    if value in (None, 0, 0.0):
-        return ""
-    try:
-        value = float(value)
-    except (TypeError, ValueError):
+    value = _real(value)
+    if not value:
         return ""
     return f"{value:,.0f}" if value == int(value) else f"{value:,.2f}"
 

@@ -264,3 +264,38 @@ def test_every_page_renders(site):
 
     for path in ("/", "/data", f"/orders/{order_id}", "/healthz"):
         assert client.get(path).status_code == 200, path
+
+
+# --- a stray NaN must never take a page down -------------------------------
+def test_a_nan_sold_term_does_not_break_the_order_page(site):
+    """What the live site did: "cannot convert float NaN to integer".
+
+    `entry` called `int(value)` to decide whether to show decimals, and
+    `int(nan)` raises - so one damaged row took the whole order page with it,
+    error screen and all. Formatting is the last place that should be able to
+    decide a page cannot be shown.
+
+    Written against Postgres behaviour rather than SQLite's: SQLite will not
+    store a NaN, so the value is put on the object and rendered directly.
+    """
+    app_module, order_id = site
+    from models import LineItem
+
+    import db as db_module
+
+    with db_module.session_scope() as session:
+        item = (
+            session.query(LineItem).filter(LineItem.order_id == order_id).first()
+        )
+        item.monthly_impressions = float("nan")
+        item.total_impressions = float("nan")
+        item.goal_cpm = float("nan")
+        session.flush()
+
+        # Rendered straight from the object, the way the live page saw it.
+        page = app_module.app.jinja_env.from_string(
+            "{{ v|entry }}|{{ v|num }}|{{ v|money }}|{{ v|pct }}|{{ v|paceclass }}"
+        ).render(v=float("nan"))
+
+    assert page == "|—|—|—|unknown", page
+    assert app_module.app.test_client().get(f"/orders/{order_id}").status_code == 200
