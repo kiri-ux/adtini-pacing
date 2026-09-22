@@ -28,10 +28,43 @@ from pathlib import Path
 
 CSV_PATH = Path(__file__).parent / "data" / "rate_card.csv"
 
-# The delivery feed's `product` -> the card's base rate name.
+# Product -> the card's base rate name. Two vocabularies arrive here and both
+# have to resolve: the delivery feed uses short names ("Meta", "Display"),
+# while the orders export uses the rate sheet's own ("Meta Display & Video
+# Ads"). Mapping only the first left every order-sourced line item without a
+# CPM, which is what emptied the budget columns.
 # PPC, LinkedIn and PMax are absent on purpose: they are bought on spend, not
 # on a CPM, so there is no rate to look up.
 PRODUCT_TO_RATE = {
+    # --- as the orders export names them -------------------------------
+    "Display Ads": "Display",
+    "Native Display Ads": "Native Display",
+    "Social Mirror Ads": "Social Mirror",
+    "Native Video Ads": "Native Video",
+    "Video Ads": "Video",
+    "Connected TV Ads": "Connected TV",
+    "CTV + Video Ads": "CTV + Video",
+    "Social Mirror CTV Ads": "Social Mirror CTV",
+    "Online Audio Ads": "Online Audio",
+    "Mobile Conquesting Display & Video Ads": "Mobile Conquesting",
+    "Mobile Conquesting Event/Political Display & Video Ads":
+        "Mobile Conquesting Event",
+    "Meta Display & Video Ads": "Meta",
+    "Meta Lead Display & Video Ads": "Meta Lead",
+    "Amazon Premium Display Ads": "Amazon Display",
+    "Amazon Premium Video Ads": "Amazon Video",
+    "Amazon Premium CTV Ads": "Amazon OTT",
+    "Amazon Prime CTV Ads": "Amazon Prime OTT",
+    "Amazon Premium CTV + Video Ads": "Amazon OTT",
+    "Youtube+ Video Ads": "Youtube+",
+    "YouTube TV Video Ads (bids)": "YouTube TV (bids)",
+    "YouTube TV Video Ads (actuals)": "YouTube TV (actual YT TV CPM)",
+    "TikTok Display & Video Ads": "TikTok",
+    "Digital Out-Of-Home (DOOH) Display & Video Ads": "DOOH",
+    "Dynamic Display Ads": "Dynamic",
+    "Geo-Framing Display Ads": "Geo-Framing",
+
+    # --- as the delivery feed names them -------------------------------
     "Display": "Display",
     "Native Display": "Native Display",
     "Social Mirror": "Social Mirror",

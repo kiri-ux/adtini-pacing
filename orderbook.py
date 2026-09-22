@@ -112,11 +112,23 @@ def line_item_label(
     return f"{code} - {strategy}"
 
 
-def unique_label(label: str, taken: set[str]) -> str:
-    """Keep two same-named rows apart on the same order."""
+def unique_label(label: str, taken: set[str], external_id: str | None = None) -> str:
+    """Keep two same-named rows apart on the same order.
+
+    Two line items of the same product are the normal case, and they differ
+    by their line item id - so that is what distinguishes them, rather than a
+    counter that says only "this is the second one".
+    """
     if label not in taken:
         taken.add(label)
         return label
+
+    if external_id and not str(external_id).startswith("name:"):
+        candidate = f"{label} · {external_id}"
+        if candidate not in taken:
+            taken.add(candidate)
+            return candidate
+
     n = 2
     while f"{label} ({n})" in taken:
         n += 1
@@ -178,11 +190,23 @@ class ImportResult:
         return ", ".join(parts)
 
 
+def _keep(item: LineItem, field: str, value) -> None:
+    """Set a sold term, unless that would replace a figure with a blank.
+
+    The export repeats a line item across its rows and chunks, and the
+    repeats are not equally complete. Letting a sparser copy win would empty
+    terms that a fuller copy had already supplied.
+    """
+    if value is None and getattr(item, field) is not None:
+        return
+    setattr(item, field, value)
+
+
 def _apply_sold_terms(item: LineItem, row, pacing_type: str) -> None:
     """Copy the sold terms for the sheet this line item paces on."""
     if pacing_type == PACING_IMPRESSION:
-        item.total_impressions = row.get("total_impressions")
-        item.monthly_impressions = row.get("monthly_impressions")
+        _keep(item, "total_impressions", row.get("total_impressions"))
+        _keep(item, "monthly_impressions", row.get("monthly_impressions"))
         item.goal_cpm, item.goal_cpm_source = resolve_goal_cpm(
             row.get("product"),
             bool(item.restricted),
@@ -198,16 +222,16 @@ def _apply_sold_terms(item: LineItem, row, pacing_type: str) -> None:
     monthly = row.get(monthly_key)
 
     if pacing_type == PACING_CLICK:
-        item.total_spend = total
-        item.monthly_spend = monthly
+        _keep(item, "total_spend", total)
+        _keep(item, "monthly_spend", monthly)
         # The orders file prices clicks by budget, not by a CPC, so the goal
         # rate is left for a buyer to set where they want one.
         return
 
-    item.google_total_spend = total
-    item.google_monthly_spend = monthly
-    item.client_total_budget = row.get("client_total_budget")
-    item.client_monthly_budget = row.get("client_monthly_budget")
+    _keep(item, "google_total_spend", total)
+    _keep(item, "google_monthly_spend", monthly)
+    _keep(item, "client_total_budget", row.get("client_total_budget"))
+    _keep(item, "client_monthly_budget", row.get("client_monthly_budget"))
 
 
 def import_orders(session, frame) -> ImportResult:
@@ -289,7 +313,9 @@ def import_orders(session, frame) -> ImportResult:
             item = LineItem(
                 order_id=order.id,
                 external_id=external_line_item_id,
-                name=unique_label(line_item_label(product), taken),
+                name=unique_label(
+                    line_item_label(product), taken, external_line_item_id
+                ),
                 product=product,
                 sort_order=len(order.line_items),
             )
@@ -418,7 +444,7 @@ def adopt_unmatched_delivery(session) -> AdoptResult:
         item = LineItem(
             order_id=order.id,
             external_id=key,
-            name=unique_label(line_item_label(row.product), taken),
+            name=unique_label(line_item_label(row.product), taken, key),
             product=row.product,
             restricted=restricted,
             goal_cpm=cpm,

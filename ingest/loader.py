@@ -209,19 +209,55 @@ def load_bytes(session, raw_csv: bytes, source_label: str = "upload"):
         os.unlink(path)
 
 
-def load_orders_bytes(session, raw_csv: bytes, source_label: str = "upload"):
-    """Parse and store one orders CSV's bytes.
+def load_orders_file(session, path, source_label: str = "upload"):
+    """Read an orders CSV from disk in chunks and import it.
 
-    Returns (import result, normalized frame) - the frame carries which
-    columns were recognised, for the Data page.
+    Chunked for the same reason delivery is: these run to 830MB, and reading
+    one whole took the container out. Chunking is safe here because a line
+    item is upserted on its id - the same row arriving in two chunks updates
+    itself twice rather than duplicating - and the import never overwrites a
+    value it has with a blank.
+
+    Returns (import result, a frame-shaped summary) - never the frame.
     """
-    from orderbook import import_orders
+    from orderbook import ImportResult, import_orders
 
-    raw = pd.read_csv(io.BytesIO(raw_csv), dtype=str, low_memory=False)
-    frame = orders_file.normalize(raw)
-    result = import_orders(session, frame)
-    log.info("%s: %s rows -> %s", source_label, len(frame.rows), result.summary())
-    return result, frame
+    total = ImportResult()
+    mapped: dict = {}
+    unmapped: list = []
+    rows_read = 0
+
+    for chunk in pd.read_csv(path, dtype=str, low_memory=False, chunksize=CHUNK_ROWS):
+        frame = orders_file.normalize(chunk)
+        if not mapped:
+            mapped, unmapped = frame.mapped, frame.unmapped
+        rows_read += len(frame.rows)
+        result = import_orders(session, frame)
+        for field_name in (
+            "clients_added", "orders_added", "orders_updated", "line_items_added",
+            "line_items_updated", "locked_skipped",
+        ):
+            setattr(total, field_name,
+                    getattr(total, field_name) + getattr(result, field_name))
+        del frame, chunk
+
+    summary = orders_file.OrdersFrame(
+        rows=pd.DataFrame(), mapped=mapped, unmapped=unmapped
+    )
+    log.info("%s: %s rows -> %s", source_label, rows_read, total.summary())
+    return total, summary, rows_read
+
+
+def load_orders_bytes(session, raw_csv: bytes, source_label: str = "upload"):
+    """Kept for tests and small in-memory loads."""
+    with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as handle:
+        handle.write(raw_csv)
+        path = handle.name
+    try:
+        result, summary, _ = load_orders_file(session, path, source_label)
+        return result, summary
+    finally:
+        os.unlink(path)
 
 
 def run(force: bool = False, limit: int | None = None) -> IngestResult:
@@ -283,15 +319,16 @@ def run(force: bool = False, limit: int | None = None) -> IngestResult:
                         min_date=summary["min_date"], max_date=summary["max_date"],
                     )
                 else:
-                    with open(path, "rb") as handle:
-                        imported, frame = load_orders_bytes(session, handle.read(), obj.key)
+                    imported, summary, rows_read = load_orders_file(
+                        session, path, obj.key
+                    )
                     result.orders_loaded += 1
                     _log_file(
                         session, obj, kind=kind, status="ok",
-                        rows_read=len(frame.rows),
+                        rows_read=rows_read,
                         rows_written=imported.line_items_added + imported.line_items_updated,
                         message=imported.summary(),
-                        unmapped=frame.unmapped_note,
+                        unmapped=summary.unmapped_note,
                     )
         except Exception as exc:
             log.exception("ingest failed for %s", obj.key)
