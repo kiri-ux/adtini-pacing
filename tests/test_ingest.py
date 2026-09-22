@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import io
 
+import os
+
 import pandas as pd
 import pytest
 
@@ -154,4 +156,88 @@ def test_a_line_item_with_no_id_gets_a_key_of_its_own():
         row(line_item_id="", line_item_name="Client - CTV", strategy_id="s2"),
     ))
     keys = set(out["external_line_item_id"])
-    assert keys == {"name:Client - Audio", "name:Client - CTV"}
+    assert len(keys) == 2
+    assert all(k.startswith("name:Client - ") for k in keys)
+
+
+def test_identifiers_stay_inside_the_column_they_have_to_fit():
+    """The id columns are varchar(64) and the feed does not respect that.
+
+    `line_item_id` sometimes carries a name rather than an id, and a key
+    built from a strategy name runs to 130 characters. Postgres rejects the
+    row; SQLite silently keeps it, so this only showed up against the real
+    engine.
+    """
+    from ingest.normalize import bound_id
+
+    long_name = "Clearfield Jefferson Drug and Alcohol Commission - Clearfield County Health"
+    out = normalize(frame(
+        row(line_item_id=long_name, strategy_id="", strategy_name=long_name),
+    ))
+    for column in ("campaign_id", "strategy_id", "external_order_id",
+                   "external_line_item_id"):
+        assert len(out.iloc[0][column]) <= 64, column
+
+    # Short, real ids are untouched, so the join to the orders file still works.
+    assert bound_id("126397") == "126397"
+
+
+def test_two_long_names_sharing_an_opening_still_get_different_keys():
+    from ingest.normalize import bound_id
+
+    a = "A" * 60 + "-first"
+    b = "A" * 60 + "-second"
+    assert bound_id(a) != bound_id(b)
+    assert len(bound_id(a)) <= 64
+
+
+def test_a_grain_split_across_chunks_is_summed_not_overwritten(tmp_path):
+    """The reason loads go through a staging table.
+
+    A strategy running several creatives makes several rows for one day. Read
+    in chunks and aggregated per chunk, the second chunk's upsert would
+    replace the first chunk's total instead of adding to it - an undercount
+    that only appears on files big enough to chunk.
+    """
+    import subprocess
+    import sys
+
+    from sqlalchemy import create_engine, func, select
+
+    from models import DailyDelivery
+
+    # Six rows on one grain, which a chunk size of 4 necessarily splits.
+    csv = "\n".join([HEADER] + [row(impressions="100", clicks="1")] * 6)
+    path = tmp_path / "client-serve_20260101_0000_0.csv"
+    path.write_text(csv)
+
+    url = f"sqlite:///{tmp_path}/m.db"
+    subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        env={**os.environ, "DATABASE_URL": url}, check=True, capture_output=True,
+    )
+
+    import importlib
+
+    import config
+    import db as db_module
+
+    os.environ["DATABASE_URL"] = url
+    config.get_settings.cache_clear()
+    importlib.reload(db_module)
+    from ingest import loader
+
+    importlib.reload(loader)
+    loader.CHUNK_ROWS = 4
+
+    with db_module.session_scope() as session:
+        written, _ = loader.load_delivery_file(session, str(path), "test")
+
+    engine = create_engine(url)
+    with engine.connect() as conn:
+        total = conn.execute(select(func.sum(DailyDelivery.__table__.c.impressions))).scalar()
+        rows = conn.execute(select(func.count()).select_from(DailyDelivery.__table__)).scalar()
+
+    assert written == 1
+    assert rows == 1
+    assert total == 600, "all six rows must be summed, not just the last chunk's"

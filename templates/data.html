@@ -23,7 +23,9 @@
       <div>
         <h4>Pull from S3</h4>
         <p class="hint">Reads every new drop under <code>{{ bucket }}/{{ prefix }}</code>.
-          Days already loaded are replaced with the newer numbers.</p>
+          Days already loaded are replaced with the newer numbers. Around a
+          minute per delivery file &mdash; the nightly job is the normal path,
+          and a browser request will give up before a large backlog finishes.</p>
       </div>
       <label class="forcebox"><input type="checkbox" name="force"> Re-read files already loaded</label>
       <button class="btn preview" type="submit">Run sweep</button>

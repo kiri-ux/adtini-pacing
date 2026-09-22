@@ -13,6 +13,8 @@ from __future__ import annotations
 import datetime as dt
 import io
 import logging
+import os
+import tempfile
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -20,11 +22,13 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from sqlalchemy import delete, func, select as sa_select, true as sa_true
+
 from db import engine, session_scope
 from ingest import orders as orders_file
 from ingest import s3
 from ingest.normalize import normalize
-from models import DailyDelivery, IngestedFile
+from models import DailyDelivery, DeliveryStaging, IngestedFile
 
 DELIVERY = "delivery"
 ORDERS = "orders"
@@ -47,6 +51,9 @@ def classify(key: str) -> str | None:
 log = logging.getLogger(__name__)
 
 CHUNK = 1000
+# Rows of CSV held in memory at once. A whole 69MB drop read at once peaks
+# around 415MB, which does not fit beside a web worker on a 512MB instance.
+CHUNK_ROWS = 20_000
 
 # Everything except the grain and the primary key gets refreshed on conflict.
 UPDATABLE = [
@@ -110,15 +117,96 @@ def upsert_rows(session, frame: pd.DataFrame) -> int:
     return written
 
 
-def load_bytes(session, raw_csv: bytes, source_label: str = "upload") -> tuple[int, pd.DataFrame]:
-    """Parse and store one delivery CSV's bytes. Returns (rows written, frame)."""
+# The columns the merge carries across, and how.
+_GRAIN = ["date", "data_source", "campaign_id", "strategy_id"]
+_METRICS = [
+    "impressions", "clicks", "cost", "conversions", "viewthroughs",
+    "click_conversions",
+]
+_ATTRS = [c for c in UPDATABLE if c not in _METRICS]
+
+
+def _merge_staging(session) -> int:
+    """Fold staging into `daily_delivery`, summing each grain exactly once.
+
+    Attributes are taken with MIN rather than "first": they are display
+    labels that repeat across a grain's rows, and MIN is the deterministic
+    choice both engines agree on.
+    """
+    staging = DeliveryStaging.__table__
+    grouped = (
+        sa_select(
+            *[staging.c[name] for name in _GRAIN],
+            *[func.min(staging.c[name]).label(name) for name in _ATTRS],
+            *[func.sum(staging.c[name]).label(name) for name in _METRICS],
+        )
+        .group_by(*[staging.c[name] for name in _GRAIN])
+        .subquery()
+    )
+
+    columns = _GRAIN + _ATTRS + _METRICS
+    # `WHERE true` is load-bearing on SQLite: in `INSERT ... SELECT ... ON
+    # CONFLICT` its parser cannot tell the ON of the upsert from the ON of a
+    # join, and a WHERE clause on the SELECT resolves it. Postgres is happy
+    # either way.
+    stmt = _insert(DailyDelivery.__table__).from_select(
+        columns,
+        sa_select(*[grouped.c[name] for name in columns]).where(sa_true()),
+    )
+    stmt = stmt.on_conflict_do_update(
+        index_elements=_GRAIN,
+        set_={name: getattr(stmt.excluded, name) for name in UPDATABLE},
+    )
+    session.execute(stmt)
+    return session.execute(
+        sa_select(func.count()).select_from(grouped)
+    ).scalar() or 0
+
+
+def load_delivery_file(session, path, source_label: str = "upload") -> tuple[int, dict]:
+    """Read a delivery CSV from disk in chunks and store it.
+
+    Returns (rows written, a small summary) - never the frame, which is the
+    thing that must not be held.
+    """
+    session.execute(delete(DeliveryStaging))
+
+    rows_read = 0
+    min_date = max_date = None
+    staging = DeliveryStaging.__table__
+
     # dtype=str keeps 17-digit Meta campaign ids out of float64, where they
     # lose their last digits. Numerics are coerced back in `normalize`.
-    raw = pd.read_csv(io.BytesIO(raw_csv), dtype=str, low_memory=False)
-    frame = normalize(raw)
-    written = upsert_rows(session, frame)
-    log.info("%s: %s rows -> %s stored", source_label, len(raw), written)
-    return written, frame
+    for chunk in pd.read_csv(path, dtype=str, low_memory=False, chunksize=CHUNK_ROWS):
+        frame = normalize(chunk, aggregate=False)
+        if frame.empty:
+            continue
+        rows_read += len(frame)
+        low, high = frame["date"].min(), frame["date"].max()
+        min_date = low if min_date is None else min(min_date, low)
+        max_date = high if max_date is None else max(max_date, high)
+
+        records = frame.to_dict("records")
+        for start in range(0, len(records), CHUNK):
+            session.execute(staging.insert().values(records[start : start + CHUNK]))
+        del frame, records
+
+    written = _merge_staging(session)
+    session.execute(delete(DeliveryStaging))
+
+    log.info("%s: %s rows -> %s stored", source_label, rows_read, written)
+    return written, {"rows_read": rows_read, "min_date": min_date, "max_date": max_date}
+
+
+def load_bytes(session, raw_csv: bytes, source_label: str = "upload"):
+    """Kept for tests and small in-memory loads."""
+    with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as handle:
+        handle.write(raw_csv)
+        path = handle.name
+    try:
+        return load_delivery_file(session, path, source_label)
+    finally:
+        os.unlink(path)
 
 
 def load_orders_bytes(session, raw_csv: bytes, source_label: str = "upload"):
@@ -173,20 +261,21 @@ def run(force: bool = False, limit: int | None = None) -> IngestResult:
                 result.files_skipped += 1
                 continue
 
+            path = None
             try:
-                raw_csv = s3.fetch_csv_bytes(obj.key)
+                path = s3.fetch_csv_file(obj.key)
                 if kind == DELIVERY:
-                    written, frame = load_bytes(session, raw_csv, obj.key)
+                    written, summary = load_delivery_file(session, path, obj.key)
                     result.delivery_loaded += 1
                     result.rows_written += written
                     _log_file(
                         session, prior, obj, kind=kind, status="ok",
-                        rows_read=len(frame), rows_written=written,
-                        min_date=frame["date"].min() if not frame.empty else None,
-                        max_date=frame["date"].max() if not frame.empty else None,
+                        rows_read=summary["rows_read"], rows_written=written,
+                        min_date=summary["min_date"], max_date=summary["max_date"],
                     )
                 else:
-                    imported, frame = load_orders_bytes(session, raw_csv, obj.key)
+                    with open(path, "rb") as handle:
+                        imported, frame = load_orders_bytes(session, handle.read(), obj.key)
                     result.orders_loaded += 1
                     _log_file(
                         session, prior, obj, kind=kind, status="ok",
@@ -200,6 +289,9 @@ def run(force: bool = False, limit: int | None = None) -> IngestResult:
                 result.errors.append(f"{obj.key}: {exc}")
                 _log_file(session, prior, obj, kind=kind, status="error", message=str(exc))
                 continue
+            finally:
+                if path and os.path.exists(path):
+                    os.unlink(path)
 
             result.files_loaded += 1
 

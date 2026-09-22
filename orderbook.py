@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 
 import ratecard
+from ingest.normalize import bound_id, name_key
 from ingest.orders import SPEND_BY_PRODUCT
 from models import (
     PACING_CLICK,
@@ -407,7 +408,7 @@ def adopt_unmatched_delivery(session) -> AdoptResult:
 
         # The delivery loader builds the same key for a line item the feed
         # gave no id, so the two sides meet.
-        key = row.external_line_item_id or f"name:{name}"
+        key = row.external_line_item_id or bound_id(name_key("name", name))
         if any(li.external_id == key for li in order.line_items):
             continue
 

@@ -196,6 +196,50 @@ class DailyDelivery(Base):
     )
 
 
+class DeliveryStaging(Base):
+    """Landing table for a delivery file, before it is aggregated.
+
+    A drop is read in chunks so it never sits in memory whole, but the same
+    (date, source, campaign, strategy) can straddle a chunk boundary - a
+    strategy running several creatives produces several rows for one day.
+    Aggregating per chunk and upserting would let the second chunk overwrite
+    the first's total instead of adding to it, quietly undercounting.
+
+    So chunks land here unaggregated and the sum is done once, in the
+    database, on the way into `daily_delivery`. Emptied either side of a load;
+    it holds nothing between runs.
+    """
+
+    __tablename__ = "delivery_staging"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    date: Mapped[dt.date] = mapped_column(Date)
+    data_source: Mapped[str] = mapped_column(String(120))
+    campaign_id: Mapped[str] = mapped_column(String(64))
+    strategy_id: Mapped[str] = mapped_column(String(64))
+
+    business_unit: Mapped[str | None] = mapped_column(String(200))
+    client_name: Mapped[str | None] = mapped_column(String(300))
+    external_order_id: Mapped[str | None] = mapped_column(String(64))
+    external_line_item_id: Mapped[str | None] = mapped_column(String(64))
+    order_level_name: Mapped[str | None] = mapped_column(String(400))
+    line_item_name: Mapped[str | None] = mapped_column(String(400))
+    strategy_name: Mapped[str | None] = mapped_column(String(400))
+    strategy_type: Mapped[str | None] = mapped_column(String(120))
+    product: Mapped[str | None] = mapped_column(String(120))
+    restricted: Mapped[str | None] = mapped_column(String(10))
+    campaign_name: Mapped[str | None] = mapped_column(String(400))
+    campaign_start_date: Mapped[dt.date | None] = mapped_column(Date)
+
+    impressions: Mapped[float] = mapped_column(Float, default=0.0)
+    clicks: Mapped[float] = mapped_column(Float, default=0.0)
+    cost: Mapped[float] = mapped_column(Float, default=0.0)
+    conversions: Mapped[float] = mapped_column(Float, default=0.0)
+    viewthroughs: Mapped[float] = mapped_column(Float, default=0.0)
+    click_conversions: Mapped[float] = mapped_column(Float, default=0.0)
+    goal_cpm: Mapped[float | None] = mapped_column(Float)
+
+
 class IngestedFile(Base):
     """Ingest log, so a re-run skips files already loaded."""
 

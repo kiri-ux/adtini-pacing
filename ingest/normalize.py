@@ -8,6 +8,7 @@ than one creative. Everything that depends on those quirks lives here.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import re
 
 import pandas as pd
@@ -69,6 +70,45 @@ def file_date(key: str) -> dt.date | None:
         return None
 
 
+# Identifier columns are varchar(64). A synthetic key built from a name
+# overruns that - strategy names run to 130 characters - and Postgres
+# rejects the row where SQLite would silently keep it.
+KEY_PREFIX_CHARS = 40
+
+
+def name_key(prefix: str, name: str) -> str:
+    """A bounded, stable key for a row the feed gave no id.
+
+    Readable at a glance and unique beyond the part that is readable: the
+    first 40 characters of the name, then a hash of the whole of it, so two
+    line items that share an opening still get different keys.
+    """
+    text = (name or "").strip()
+    if not text:
+        return f"{prefix}:"
+    digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:8]
+    return f"{prefix}:{text[:KEY_PREFIX_CHARS]}:{digest}"
+
+
+# Identifier columns are varchar(64), and the feed does not respect that:
+# `line_item_id` sometimes carries a name rather than an id.
+MAX_ID = 64
+
+
+def bound_id(value: str) -> str:
+    """Keep an identifier inside the column it has to fit in.
+
+    Anything over the limit is truncated and given a hash of the whole
+    original, so it stays unique and still reads as itself. Real ids - the
+    numeric ones the orders file joins on - are far below the limit and pass
+    through untouched, so the join is unaffected.
+    """
+    if len(value) <= MAX_ID:
+        return value
+    digest = hashlib.sha1(value.encode("utf-8")).hexdigest()[:8]
+    return value[: MAX_ID - 9] + ":" + digest
+
+
 def _clean_id(value: object) -> str:
     """Identifiers arrive as floats, with stray whitespace, or not at all.
 
@@ -86,8 +126,13 @@ def _clean_id(value: object) -> str:
     return text
 
 
-def normalize(raw: pd.DataFrame) -> pd.DataFrame:
-    """Map, clean and aggregate one CSV's worth of rows."""
+def normalize(raw: pd.DataFrame, aggregate: bool = True) -> pd.DataFrame:
+    """Map and clean one CSV's worth of rows, optionally aggregating.
+
+    `aggregate=False` is for chunked loads, where summing has to happen once
+    over the whole file rather than per chunk - a grain that straddles a
+    chunk boundary would otherwise be counted from only its last chunk.
+    """
     # Duplicate header names become `goal_cpm_` and `goal_cpm_.1`; neither is
     # the one we want, so they are simply not in COLUMN_MAP.
     present = {src: dst for src, dst in COLUMN_MAP.items() if src in raw.columns}
@@ -134,14 +179,14 @@ def normalize(raw: pd.DataFrame) -> pd.DataFrame:
         .where(lambda s: s != "", df["line_item_name"].fillna("").astype(str).str.strip())
     )
     df["strategy_id"] = df["strategy_id"].where(
-        df["strategy_id"] != "", "name:" + fallback
+        df["strategy_id"] != "", fallback.map(lambda v: name_key("name", v))
+    )
+    campaign_fallback = df["external_order_id"].where(
+        df["external_order_id"] != "",
+        df["order_level_name"].fillna("").astype(str).str.strip(),
     )
     df["campaign_id"] = df["campaign_id"].where(
-        df["campaign_id"] != "",
-        "order:" + df["external_order_id"].where(
-            df["external_order_id"] != "",
-            df["order_level_name"].fillna("").astype(str).str.strip(),
-        ),
+        df["campaign_id"] != "", campaign_fallback.map(lambda v: name_key("order", v))
     )
 
     # A blank line item id is the join key to the orders file, so leaving it
@@ -155,11 +200,24 @@ def normalize(raw: pd.DataFrame) -> pd.DataFrame:
         .where(lambda s: s != "", df["order_level_name"].fillna("").astype(str).str.strip())
     )
     df["external_line_item_id"] = df["external_line_item_id"].where(
-        df["external_line_item_id"] != "", "name:" + line_item_fallback
+        df["external_line_item_id"] != "",
+        line_item_fallback.map(lambda v: name_key("name", v)),
     )
+
+    for col in ("campaign_id", "strategy_id", "external_order_id",
+                "external_line_item_id"):
+        df[col] = df[col].map(bound_id)
+
+    if not aggregate:
+        out = df[GRAIN + [c for c in NUMERIC if c != "goal_cpm"] + ATTRS].copy()
+        # Straight to the database, so pandas' own missing values have to go:
+        # a NaT date and a NaN string both reach the driver as a float and
+        # fail there. The aggregating path never hit this because groupby
+        # turned them into None on the way through.
+        for column in ATTRS:
+            out[column] = out[column].astype(object).where(out[column].notna(), None)
+        return out
 
     agg = {col: "sum" for col in NUMERIC if col != "goal_cpm"}
     agg.update({col: "first" for col in ATTRS})
-    out = df.groupby(GRAIN, as_index=False, dropna=False).agg(agg)
-
-    return out
+    return df.groupby(GRAIN, as_index=False, dropna=False).agg(agg)

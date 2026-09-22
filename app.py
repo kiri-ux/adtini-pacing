@@ -9,6 +9,7 @@ import datetime as dt
 import functools
 import io
 import logging
+import os
 
 from flask import (
     Flask,
@@ -21,7 +22,7 @@ from flask import (
     session as flask_session,
     url_for,
 )
-from sqlalchemy import select
+from sqlalchemy import func, select
 from werkzeug.exceptions import HTTPException
 
 import exports
@@ -153,23 +154,43 @@ def inject_globals():
     return {"build": settings.build, "today": dt.date.today()}
 
 
-def _unwrap(raw: bytes, filename: str) -> bytes:
-    """Take a CSV out of its wrapper, if it arrived in one."""
-    lowered = filename.lower()
-    if lowered.endswith(".gz"):
-        import gzip
+def _spool(upload) -> str:
+    """Write an upload to a temp file, unwrapping it if it arrived zipped.
 
-        return gzip.decompress(raw)
-    if lowered.endswith(".zip"):
-        import zipfile
+    The caller deletes the file.
+    """
+    import gzip
+    import shutil
+    import tempfile
+    import zipfile
 
-        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
-            names = [
-                n for n in archive.namelist()
-                if n.lower().endswith(".csv") and not n.startswith("__MACOSX/")
-            ]
-            return archive.read(names[0]) if names else b""
-    return raw
+    raw = tempfile.NamedTemporaryFile(suffix=".raw", delete=False)
+    upload.save(raw)
+    raw.close()
+
+    lowered = upload.filename.lower()
+    if not lowered.endswith((".gz", ".zip")):
+        return raw.name
+
+    out = tempfile.NamedTemporaryFile(suffix=".csv", delete=False)
+    try:
+        if lowered.endswith(".gz"):
+            with gzip.open(raw.name, "rb") as source:
+                shutil.copyfileobj(source, out)
+        else:
+            with zipfile.ZipFile(raw.name) as archive:
+                names = [
+                    n for n in archive.namelist()
+                    if n.lower().endswith(".csv") and not n.startswith("__MACOSX/")
+                ]
+                if not names:
+                    raise ValueError(f"{upload.filename} contains no CSV")
+                with archive.open(names[0]) as source:
+                    shutil.copyfileobj(source, out)
+        out.close()
+        return out.name
+    finally:
+        os.unlink(raw.name)
 
 
 def _as_of():
@@ -369,24 +390,41 @@ def data_page():
         elif action == "upload":
             upload = request.files.get("file")
             if upload and upload.filename:
-                raw = _unwrap(upload.read(), upload.filename)
                 # The same filename rule the S3 sweep uses, so an uploaded
                 # file behaves exactly as it would from the bucket.
                 kind = loader.classify(upload.filename)
-                with session_scope() as db:
-                    if kind == loader.ORDERS:
-                        imported, frame = loader.load_orders_bytes(db, raw, upload.filename)
-                        message = f"{upload.filename}: {imported.summary()}."
-                        if frame.unmapped_note:
-                            message += f" Unrecognised columns: {frame.unmapped_note}"
-                    elif kind == loader.DELIVERY:
-                        written, _ = loader.load_bytes(db, raw, upload.filename)
-                        message = f"Loaded {written:,} delivery rows from {upload.filename}."
-                    else:
-                        message = (
-                            f"{upload.filename} is not recognised. Delivery files "
-                            "start with 'client-serve' and order files with 'orders'."
-                        )
+                if kind is None:
+                    message = (
+                        f"{upload.filename} is not recognised. Delivery files "
+                        "start with 'client-serve' and order files with 'orders'."
+                    )
+                else:
+                    # To disk, not through memory: a 69MB drop read whole
+                    # costs more than a worker has.
+                    path = _spool(upload)
+                    try:
+                        with session_scope() as db:
+                            if kind == loader.ORDERS:
+                                with open(path, "rb") as handle:
+                                    imported, frame = loader.load_orders_bytes(
+                                        db, handle.read(), upload.filename
+                                    )
+                                message = f"{upload.filename}: {imported.summary()}."
+                                if frame.unmapped_note:
+                                    message += (
+                                        f" Unrecognised columns: {frame.unmapped_note}"
+                                    )
+                            else:
+                                written, _ = loader.load_delivery_file(
+                                    db, path, upload.filename
+                                )
+                                message = (
+                                    f"Loaded {written:,} delivery rows "
+                                    f"from {upload.filename}."
+                                )
+                    finally:
+                        if os.path.exists(path):
+                            os.unlink(path)
             else:
                 message = "Pick a file first."
         elif action == "adopt":
@@ -401,8 +439,8 @@ def data_page():
         )
         latest = views.latest_delivery_date(db)
         counts = {
-            "clients": db.execute(select(Client)).scalars().all().__len__(),
-            "orders": db.execute(select(Order)).scalars().all().__len__(),
+            "clients": db.execute(select(func.count()).select_from(Client)).scalar(),
+            "orders": db.execute(select(func.count()).select_from(Order)).scalar(),
         }
     return render_template(
         "data.html",

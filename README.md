@@ -242,7 +242,7 @@ it skips the login gate. To work without S3 access, drop a CSV or zip on the
 **Data** page - it takes the same file the bucket does.
 
 ```bash
-python -m pytest tests/ -q    # 60 tests
+python -m pytest tests/ -q    # 63 tests
 python scripts/ingest.py      # what the cron job runs
 ```
 
@@ -277,6 +277,27 @@ scripts/ingest.py   the cron entrypoint
 
 ---
 
+## Memory
+
+The Starter instance is 512 MB and the app is ~110 MB resident per worker
+before it serves anything, so it runs **one** gunicorn worker with threads.
+Two workers plus an ingest overran the limit, the worker was OOM-killed
+mid-request, and it surfaced as a 502.
+
+Delivery files are read in chunks and never held whole: a 69 MB drop read at
+once peaked at 415 MB, against 188 MB chunked. Drops are streamed from S3 to
+a temp file rather than through memory, and uploads likewise.
+
+Because a file is read in chunks, the summing happens in the database rather
+than per chunk - chunks land in `delivery_staging` unaggregated and are
+folded into `daily_delivery` in one grouped upsert. Aggregating per chunk
+would let a grain that straddles a chunk boundary be counted from only its
+last chunk.
+
+A full sweep is about a minute per delivery file, so the nightly cron job is
+the normal path; the button on the **Data** page is for one or two files, and
+a browser request will time out before a large backlog finishes.
+
 ## Things worth knowing
 
 **History starts where the feed does.** Each drop carries 31 days, so on day
@@ -305,6 +326,15 @@ every line item many times over. Column matching is by alias on a simplified
 header name, so the two exports seen so far - which differ from each other -
 both map cleanly. Anything unrecognised is reported on the **Data** page
 rather than silently dropped, so a changed export gets noticed.
+
+**The feed's ids do not respect their own column.** `line_item_id` sometimes
+carries a name rather than an id, and a key built from a strategy name runs
+to 130 characters, against a 64-character column. Anything over the limit is
+truncated with a hash of the original appended, so it stays unique and still
+reads as itself; real numeric ids are far below the limit and pass through
+untouched, so the join to the orders file is unaffected. Postgres rejects an
+overlong value and SQLite silently keeps it, so this only appeared when the
+ingest was run against the real engine.
 
 **Two strategies can share a name.** The feed ships distinct strategy ids
 under one name - two Meta ad sets both called "Facebook/Instagram Premium" -
