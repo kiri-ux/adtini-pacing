@@ -43,8 +43,22 @@ that never ran at all (Draft, Declined) is out.
 | Type | Used for | Paces on |
 |---|---|---|
 | Impression | most orders | delivered impressions |
-| Click | PPC, LinkedIn | spend |
-| Event | Performance Max | spend |
+| Click | PPC, LinkedIn | **ad spend** |
+| Event | Performance Max | **client cost against the client's budget** |
+
+Click orders pace on the ad spend - `total_ppc_ad_spend`,
+`total_linkedin_ad_spend` - and not on the client's monthly budget, which
+carries the management fee that never reaches the platform. The spend column
+is chosen by keyword rather than an exact product name, because the delivery
+feed says "PPC" where the orders export says something longer, and an exact
+map silently fell through to the budget.
+
+Event orders pace what the client is billed against what the client is
+charged. The feed reports platform cost, so it is grossed up by the ratio the
+order was sold at - `client_total_budget / google_total_spend`, typically 4x
+- and the page names the multiplier it used. Targeting the platform spend
+instead, as it did first, made every Performance Max order read as under by
+the size of the fee however it was running.
 
 Orders are classified automatically by product and data source, and a buyer
 can override the type per order.

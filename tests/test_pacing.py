@@ -166,7 +166,13 @@ def test_click_pacing_reports_effective_cpc():
 
 
 # --- event pacing ----------------------------------------------------------
-def test_event_pacing_paces_on_google_spend():
+def test_event_pacing_targets_the_client_budget():
+    """Performance Max is paced on what the client is billed.
+
+    It used to target the platform spend, which is that budget net of the
+    management fee - so the order read as under by the size of the fee no
+    matter how it was running.
+    """
     order = Order(id=6, client_id=1, name="PMax", pacing_type="event",
                   start_date=dt.date(2025, 12, 31), end_date=dt.date(2026, 2, 9))
     item = LineItem(
@@ -176,8 +182,9 @@ def test_event_pacing_paces_on_google_spend():
     )
     row = compute_row(item, order, [], dt.date(2025, 12, 31))
     assert row.flight_days == 41
-    assert round(row.daily_target, 2) == 13.72      # $562.50 / 41
-    assert row.client_total_budget == 2_250.0
+    assert row.total_target == 2_250.0
+    assert round(row.daily_target, 2) == 54.88      # $2,250 / 41
+    assert row.google_total_spend == 562.50         # kept, for the ratio
     assert row.monthly_events == 400
 
 
@@ -306,3 +313,63 @@ def test_the_row_carries_its_goal_and_margin():
     assert row.goal_label == "0.40% CTR"
     assert round(row.margin * 100, 2) == 37.50
     assert row.goal_cpm_source == "rate card"
+
+
+# --- what spend products pace on -------------------------------------------
+def test_ppc_paces_on_ad_spend_not_the_client_budget():
+    """The client's budget carries the management fee, which never reaches
+    the platform - pacing on it would read as permanently under."""
+    from orderbook import _apply_sold_terms
+
+    item = LineItem(id=200, order_id=200, name="PPC", product="PPC Ads")
+    _apply_sold_terms(item, {
+        "product": "PPC Ads",
+        "total_ppc_spend": 23_814.0, "monthly_ppc_spend": 3_969.0,
+        "total_campaign_budget": 40_000.0, "monthly_budget": 6_666.0,
+    }, "click")
+    assert item.total_spend == 23_814.0
+    assert item.monthly_spend == 3_969.0
+
+
+def test_linkedin_paces_on_its_own_ad_spend():
+    from orderbook import _apply_sold_terms
+
+    item = LineItem(id=201, order_id=201, name="LI", product="LinkedIn Ads")
+    _apply_sold_terms(item, {
+        "product": "LinkedIn Ads",
+        "total_linkedin_spend": 9_000.0, "monthly_linkedin_spend": 1_500.0,
+        "total_ppc_spend": 111.0, "monthly_budget": 2_000.0,
+    }, "click")
+    assert item.total_spend == 9_000.0
+    assert item.monthly_spend == 1_500.0
+
+
+def test_performance_max_paces_the_client_budget_against_client_cost():
+    """Target is what the client is billed; the feed reports platform cost,
+    so it is grossed up by the ratio the order was sold at."""
+    order = Order(id=202, client_id=1, name="PMax", pacing_type="event",
+                  start_date=dt.date(2026, 9, 1), end_date=dt.date(2026, 9, 30))
+    item = LineItem(
+        id=202, order_id=202, name="PMax", product="Performance Max Ads",
+        client_monthly_budget=2_250.0, client_total_budget=2_250.0,
+        google_monthly_spend=562.50, google_total_spend=562.50,
+    )
+    # A day at the platform's $562.50 is a full month of the client's budget.
+    delivered = [DailyPoint(date=dt.date(2026, 9, 1), cost=562.50)]
+    row = compute_row(item, order, delivered, dt.date(2026, 9, 1))
+
+    assert row.total_target == 2_250.0          # the client's budget, not Google's
+    assert row.client_cost_ratio == 4.0         # 2,250 / 562.50
+    assert row.to_date == 2_250.0               # platform cost grossed up
+
+
+def test_event_pacing_without_a_platform_figure_compares_like_for_like():
+    """No ratio to apply, so the delivered cost is shown as it comes."""
+    order = Order(id=203, client_id=1, name="PMax", pacing_type="event",
+                  start_date=dt.date(2026, 9, 1), end_date=dt.date(2026, 9, 30))
+    item = LineItem(id=203, order_id=203, name="PMax",
+                    client_monthly_budget=900.0, client_total_budget=900.0)
+    row = compute_row(item, order, [DailyPoint(date=dt.date(2026, 9, 1), cost=30.0)],
+                      dt.date(2026, 9, 1))
+    assert row.client_cost_ratio == 1.0
+    assert row.to_date == 30.0

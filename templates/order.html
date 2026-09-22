@@ -51,6 +51,14 @@
     <b class="{% if t.goal_value %}pace {{ 'on-pace' if (t.ctr or 0) >= t.goal_value else 'under' }}{% endif %}">{{ t.ctr|pct }}</b>
     <u>{% if t.goal_label %}goal {{ t.goal_label }}{% else %}{{ t.clicks|num }} clicks{% endif %}</u></div>
   {% endif %}
+  {% if o.pacing_type == 'event' %}
+  <div class="qtile"><small>Client cost</small>
+    <b>{{ t.to_date|money }}</b>
+    <u>of {{ t.total_target|money }} billed
+      {%- if t.client_cost_ratio and t.client_cost_ratio != 1.0 %} &middot;
+      platform spend &times;{{ '%.2f'|format(t.client_cost_ratio) }}
+      {%- else %} &middot; platform cost as reported{% endif %}</u></div>
+  {% endif %}
   <div class="qtile"><small>Setup {{ 'CPM' if o.pacing_type=='impression' else ('CPC' if o.pacing_type=='click' else 'CPE') }}</small>
     <b>{{ t.unit_cost|money }}</b>
     <u>{% if t.goal_cpm_source %}from {{ t.goal_cpm_source }}{% else %}not set{% endif %}
@@ -108,9 +116,9 @@
       {% else %}
       <tr><th>Campaign Elements</th><th class="num">Client Mon. Budget</th>
         <th class="num">Client Tot. Budget</th><th class="num">Google Mon. Spend</th>
-        <th class="num">Google Tot. Spend</th><th class="num">Google Daily</th>
-        <th class="num">CPE</th><th class="num">Mon. Events</th><th class="num">TD Spend</th>
-        <th class="num">Spend Left</th><th class="num">On Pace</th><th class="num">Pacing</th><th></th></tr>
+        <th class="num">Google Tot. Spend</th><th class="num">Client Daily</th>
+        <th class="num">CPE</th><th class="num">Mon. Events</th><th class="num">TD Client Cost</th>
+        <th class="num">Left</th><th class="num">On Pace</th><th class="num">Pacing</th><th></th></tr>
       {% endif %}
     </thead>
     <tbody>
@@ -140,10 +148,10 @@
           <td class="num ro">{{ r.remaining|money if r.total_target else '—' }}</td>
           <td class="num ro">{{ r.on_pace|money if r.total_target else '—' }}</td>
         {% else %}
-          <td class="num"><input type="text" name="li-{{ li }}-client_monthly_budget" value="{{ r.client_monthly_budget|entry }}"></td>
-          <td class="num"><input type="text" name="li-{{ li }}-client_total_budget" value="{{ r.client_total_budget|entry }}"></td>
-          <td class="num"><input type="text" name="li-{{ li }}-google_monthly_spend" value="{{ r.monthly_target|entry }}"></td>
-          <td class="num"><input type="text" name="li-{{ li }}-google_total_spend" value="{{ r.total_target|entry }}"></td>
+          <td class="num"><input type="text" name="li-{{ li }}-client_monthly_budget" value="{{ r.monthly_target|entry }}"></td>
+          <td class="num"><input type="text" name="li-{{ li }}-client_total_budget" value="{{ r.total_target|entry }}"></td>
+          <td class="num"><input type="text" name="li-{{ li }}-google_monthly_spend" value="{{ r.google_monthly_spend|entry }}"></td>
+          <td class="num"><input type="text" name="li-{{ li }}-google_total_spend" value="{{ r.google_total_spend|entry }}"></td>
           <td class="num ro">{{ r.daily_target|money }}</td>
           <td class="num"><input type="text" name="li-{{ li }}-goal_cpe" value="{{ r.unit_cost|entry }}"></td>
           <td class="num"><input type="text" name="li-{{ li }}-monthly_events" value="{{ r.monthly_events|entry }}"></td>
@@ -181,10 +189,10 @@
           <td class="num">{{ t.remaining|money }}</td>
           <td class="num">{{ t.on_pace|money }}</td>
         {% else %}
-          <td class="num">{{ t.client_monthly_budget|money }}</td>
-          <td class="num">{{ t.client_total_budget|money }}</td>
           <td class="num">{{ t.monthly_target|money }}</td>
           <td class="num">{{ t.total_target|money }}</td>
+          <td class="num">{{ t.google_monthly_spend|money }}</td>
+          <td class="num">{{ t.google_total_spend|money }}</td>
           <td class="num">{{ t.daily_target|money }}</td>
           <td class="num">{{ t.unit_cost|money }}</td>
           <td class="num">{{ t.monthly_events|num }}</td>

@@ -85,12 +85,30 @@ TEXT_FIELDS = (
 )
 
 # Which spend pair a product paces on, for the click and event sheets.
-SPEND_BY_PRODUCT = {
-    "PPC": ("total_ppc_spend", "monthly_ppc_spend"),
-    "LinkedIn": ("total_linkedin_spend", "monthly_linkedin_spend"),
-    "PMax": ("total_pm_spend", "monthly_pm_spend"),
-    "Meta": ("total_meta_spend", "monthly_meta_spend"),
-}
+# Matched on a keyword rather than the whole name, because two vocabularies
+# arrive here: the delivery feed says "PPC", the orders export says something
+# longer. An exact-name map silently missed the longer one and fell back to
+# the monthly budget, which is not what these pace on.
+SPEND_KEYWORDS = (
+    ("linkedin", ("total_linkedin_spend", "monthly_linkedin_spend")),
+    ("performance max", ("total_pm_spend", "monthly_pm_spend")),
+    ("pmax", ("total_pm_spend", "monthly_pm_spend")),
+    ("ppc", ("total_ppc_spend", "monthly_ppc_spend")),
+    ("paid search", ("total_ppc_spend", "monthly_ppc_spend")),
+    ("search", ("total_ppc_spend", "monthly_ppc_spend")),
+    ("meta", ("total_meta_spend", "monthly_meta_spend")),
+)
+
+
+def spend_columns(product: str | None) -> tuple[str, str] | None:
+    """The ad-spend pair a product paces on, or None when it has none."""
+    text = (product or "").strip().lower()
+    if not text:
+        return None
+    for keyword, columns in SPEND_KEYWORDS:
+        if keyword in text:
+            return columns
+    return None
 
 ANCHOR = re.compile(r"<[^>]+>")
 MONEY = re.compile(r"[^0-9.\-]")

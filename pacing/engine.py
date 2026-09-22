@@ -73,6 +73,11 @@ class PacingRow:
     # event count beside it. Not paced on, but part of the row.
     client_monthly_budget: float = 0.0
     client_total_budget: float = 0.0
+    google_monthly_spend: float = 0.0
+    google_total_spend: float = 0.0
+    # Platform cost -> client cost. 1.0 when the order does not say, and the
+    # page then shows the comparison for what it is.
+    client_cost_ratio: float = 1.0
     monthly_events: float = 0.0
     total_events: float = 0.0
 
@@ -166,13 +171,24 @@ def compute_row(
         row.total_target = line_item.total_spend or 0.0
         row.unit_cost = line_item.goal_cpc or 0.0
     else:
-        row.monthly_target = line_item.google_monthly_spend or 0.0
-        row.total_target = line_item.google_total_spend or 0.0
+        # Performance Max paces what the client is billed against what the
+        # client is charged - not the platform spend, which is the ad spend
+        # net of the management fee and would read as permanently under.
+        row.monthly_target = line_item.client_monthly_budget or 0.0
+        row.total_target = line_item.client_total_budget or 0.0
         row.unit_cost = line_item.goal_cpe or 0.0
         row.client_monthly_budget = line_item.client_monthly_budget or 0.0
         row.client_total_budget = line_item.client_total_budget or 0.0
+        row.google_total_spend = line_item.google_total_spend or 0.0
+        row.google_monthly_spend = line_item.google_monthly_spend or 0.0
         row.monthly_events = line_item.monthly_events or 0.0
         row.total_events = line_item.total_events or 0.0
+        # The feed reports platform cost. What the client is charged is that
+        # grossed up by the same ratio the order sold it at.
+        if line_item.google_total_spend:
+            row.client_cost_ratio = (
+                (line_item.client_total_budget or 0.0) / line_item.google_total_spend
+            )
 
     points = sorted(daily, key=lambda p: p.date)
     row.daily = points
@@ -183,7 +199,9 @@ def compute_row(
     row.ctr = (row.clicks / row.impressions) if row.impressions else None
 
     attr = _primary_attr(pacing_type)
-    row.to_date = _sum(points, attr)
+    row.to_date = _sum(points, attr) * (
+        row.client_cost_ratio if pacing_type == PACING_EVENT else 1.0
+    )
 
     # Without dates or a sold total there is nothing to pace against. Delivery
     # still shows, flagged so the order book can be filled in.
@@ -193,7 +211,7 @@ def compute_row(
         row.month_to_date = _sum(
             [p for p in points if p.date.year == as_of.year and p.date.month == as_of.month],
             attr,
-        )
+        ) * (row.client_cost_ratio if pacing_type == PACING_EVENT else 1.0)
         _attach_effective_cost(row)
         _attach_rate_card(row, line_item)
         return row
@@ -210,7 +228,9 @@ def compute_row(
         row.total_budget = row.total_target
 
     flight_points = [p for p in points if start <= p.date <= end]
-    row.to_date = _sum(flight_points, attr)
+    row.to_date = _sum(flight_points, attr) * (
+        row.client_cost_ratio if pacing_type == PACING_EVENT else 1.0
+    )
     row.impressions = _sum(flight_points, "impressions")
     row.clicks = _sum(flight_points, "clicks")
     row.cost = _sum(flight_points, "cost")
@@ -233,7 +253,7 @@ def compute_row(
         )
         row.month_to_date = _sum(
             [p for p in flight_points if w_start <= p.date <= min(as_of, w_end)], attr
-        )
+        ) * (row.client_cost_ratio if pacing_type == PACING_EVENT else 1.0)
         row.month_on_pace = row.month_daily_target * elapsed_days(as_of, w_start, w_end)
         row.month_pacing_delta = row.month_to_date - row.month_on_pace
         row.month_pacing_pct = _pct(row.month_on_pace, row.month_to_date)
@@ -287,7 +307,8 @@ def total_row(rows: Sequence[PacingRow], pacing_type: str) -> PacingRow:
         "total_budget", "to_date", "remaining", "on_pace", "month_daily_target",
         "month_to_date", "month_on_pace", "impressions", "clicks", "cost",
         "conversions", "client_monthly_budget", "client_total_budget",
-        "monthly_events", "total_events",
+        "google_monthly_spend", "google_total_spend", "monthly_events",
+        "total_events",
     ):
         setattr(total, attr, sum(getattr(r, attr) for r in rows))
 
@@ -334,6 +355,11 @@ def total_row(rows: Sequence[PacingRow], pacing_type: str) -> PacingRow:
 
     sources = {r.goal_cpm_source for r in rows if r.goal_cpm_source}
     total.goal_cpm_source = sources.pop() if len(sources) == 1 else None
+
+    # The order's own platform-to-client ratio, from its summed figures, so
+    # the page can say what the delivered side has been turned into.
+    if total.google_total_spend:
+        total.client_cost_ratio = total.client_total_budget / total.google_total_spend
 
     return total
 

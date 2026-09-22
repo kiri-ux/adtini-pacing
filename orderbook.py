@@ -19,7 +19,7 @@ from sqlalchemy import func, select
 
 import ratecard
 from ingest.normalize import bound_id, name_key
-from ingest.orders import SPEND_BY_PRODUCT
+from ingest.orders import spend_columns
 from models import (
     PACING_CLICK,
     PACING_EVENT,
@@ -215,23 +215,28 @@ def _apply_sold_terms(item: LineItem, row, pacing_type: str) -> None:
         )
         return
 
-    total_key, monthly_key = SPEND_BY_PRODUCT.get(
-        row.get("product") or "", ("total_campaign_budget", "monthly_budget")
-    )
-    total = row.get(total_key)
-    monthly = row.get(monthly_key)
+    columns = spend_columns(row.get("product"))
 
     if pacing_type == PACING_CLICK:
-        _keep(item, "total_spend", total)
-        _keep(item, "monthly_spend", monthly)
+        # PPC and LinkedIn pace on the ad spend, not on the client's monthly
+        # budget - the budget includes the management fee, which never
+        # reaches the platform.
+        if columns is None:
+            return
+        _keep(item, "total_spend", row.get(columns[0]))
+        _keep(item, "monthly_spend", row.get(columns[1]))
         # The orders file prices clicks by budget, not by a CPC, so the goal
         # rate is left for a buyer to set where they want one.
         return
 
-    _keep(item, "google_total_spend", total)
-    _keep(item, "google_monthly_spend", monthly)
+    # Performance Max paces the client's budget against the client's cost.
+    # The platform spend is kept beside it, because the ratio between the two
+    # is what turns a delivered platform cost into a client-facing one.
     _keep(item, "client_total_budget", row.get("client_total_budget"))
     _keep(item, "client_monthly_budget", row.get("client_monthly_budget"))
+    if columns is not None:
+        _keep(item, "google_total_spend", row.get(columns[0]))
+        _keep(item, "google_monthly_spend", row.get(columns[1]))
 
 
 def import_orders(session, frame) -> ImportResult:
