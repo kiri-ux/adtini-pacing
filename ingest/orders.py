@@ -284,4 +284,15 @@ def normalize(raw: pd.DataFrame) -> OrdersFrame:
             .reset_index(drop=True)
         )
 
+    # Hand the order book `None` for a blank, never a float NaN.
+    #
+    # A numeric pandas column holds missing values as NaN, and
+    # `to_dict("records")` hands that NaN straight through. NaN is not None,
+    # so every "is this blank" guard downstream read it as a real number,
+    # stored it, and then arithmetic on it produced NaN - which is how every
+    # goal on the overview came to read "nan / nan". Converted here, once, at
+    # the boundary, rather than guarded for at each of the dozen places that
+    # touch one of these values.
+    out = out.astype(object).where(out.notna(), None)
+
     return OrdersFrame(rows=out, mapped=mapped, unmapped=unmapped)

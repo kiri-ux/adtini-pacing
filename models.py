@@ -151,6 +151,53 @@ class LineItem(Base):
     total_events: Mapped[float | None] = mapped_column(Float)
 
     order: Mapped[Order] = relationship(back_populates="line_items")
+    campaign_links: Mapped[list["CampaignLink"]] = relationship(
+        back_populates="line_item", cascade="all, delete-orphan"
+    )
+
+
+class CampaignLink(Base):
+    """A DSP campaign attached to a line item by hand.
+
+    Where the two exports share a line item id the join is automatic and this
+    table is not involved. Where they do not - a campaign built before the
+    order was written, rebuilt mid-flight, or set up under an id the orders
+    file never saw - nothing joins, and the line item reads as having served
+    nothing at all. That is not a small discrepancy to leave sitting there: it
+    is the difference between "under-pacing" and "the tool cannot see it".
+
+    So this is the buying team saying, explicitly, that this campaign is what
+    that line item bought. Held apart from `daily_delivery` because the feed
+    is rebuilt from the drops on every sweep and would wipe anything stored
+    alongside it; the links are the team's own and outlive the data.
+
+    A campaign links to at most one line item, so linking can never
+    double-count a day of delivery across an order.
+    """
+
+    __tablename__ = "campaign_links"
+    __table_args__ = (
+        UniqueConstraint("data_source", "campaign_id", name="uq_campaign_link"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    line_item_id: Mapped[int] = mapped_column(
+        ForeignKey("line_items.id", ondelete="CASCADE"), index=True
+    )
+    data_source: Mapped[str] = mapped_column(String(120))
+    campaign_id: Mapped[str] = mapped_column(String(64), index=True)
+    # Kept for the page to show after the campaign drops out of the feed's
+    # rolling window, when the id alone says nothing to a human.
+    campaign_name: Mapped[str | None] = mapped_column(String(400))
+    # Ops has confirmed the campaign is built to the order, not merely that
+    # its numbers now land somewhere.
+    ops_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    linked_by: Mapped[str | None] = mapped_column(String(120))
+    linked_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    line_item: Mapped["LineItem"] = relationship(back_populates="campaign_links")
 
 
 class DailyDelivery(Base):

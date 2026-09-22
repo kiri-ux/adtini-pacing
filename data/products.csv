@@ -1,0 +1,33 @@
+product,abbreviation,hex,paced
+Meta Display & Video Ads,M,#006ae3,1
+Meta Display & Video Ads (Mgmt),MM,#A0C5E8,0
+Meta Lead Display & Video Ads,ML,#61a6ef,1
+CTV + Video Ads,CV,#008080,1
+Geo-Framing Display Ads,GF,#2E8B57,1
+TikTok Display & Video Ads,TT,#6febe6,1
+Connected TV Ads,CTV,#7FFFD4,1
+Linkedin Ads,LI,#87CEEB,1
+IP Targeting Display & Native Video Ads,IPD,#8B8B8B,0
+Dynamic Ads,DY,#98FB98,1
+Social Mirror CTV Ads,SMC,#9966CC,1
+Native Video Ads,NV,#a14796,1
+Mobile Conquesting Display & Video Ads,MC,#befd1c,1
+Native Display Ads,ND,#bf3a7a,1
+Mobile Conquesting EVENT or POLITICAL CATEGORY TARGETING Display & Video Ads,MCE,#cceae8,1
+Digital Out-Of-Home (DOOH) Display & Video Ads,DOOH,#D8BFD8,1
+IP Targeting Video Ads,IPV,#DCDCDC,0
+Social Mirror Ads,SM,#E0B0FF,1
+Online Audio Ads,OA,#f6dc75,1
+Performance Max Ads,PM,#fa8bed,1
+Performance Max Ads (Mgmt),PMM,#f3b9ed,0
+Display Ads,D,#fb8b76,1
+Pay-Per-Click Ads,PPC,#fcb500,1
+Amazon Premium Display Ads,AD,#fd8c52,1
+YouTube Video Ads,YT,#fe0908,1
+Amazon Premium Video (with Twitch) & OTT Ads,AV,#fee6ce,1
+Video Ads,V,#ff4d45,1
+Website Visitor ID,ID,#e6e827,0
+Live Chat,LC,#FFDAB9,0
+Search Engine Optimization+,SEO,#ffdfe9,0
+Online Reputation Management,ORM,#bbaefe,0
+Google Analytics 4 Integration,GA4,#98FF98,0

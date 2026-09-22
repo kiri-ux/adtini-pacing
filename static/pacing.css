@@ -252,13 +252,20 @@ table.overview th.meterhead{min-width:200px}
 
 /* ---- product pills ------------------------------------------------------ */
 .pills{display:flex;gap:5px;flex-wrap:wrap;align-items:center;min-width:130px}
-.pill-prod{position:relative;display:inline-flex;align-items:center;justify-content:center;
+/* The chip carries the product's own colour, from the product sheet, and
+   its ink is chosen for contrast because that palette runs from near-black
+   to near-white. Pacing is a dot on the chip rather than its colour - the
+   colour is the product's identity and cannot also be its state. */
+.pill-prod{position:relative;display:inline-flex;align-items:center;gap:5px;
   border-radius:999px;font-size:10.5px;font-weight:700;letter-spacing:.02em;
-  padding:3px 9px;color:#fff;background:var(--navy);cursor:default;white-space:nowrap}
-.pill-prod.on-pace{background:#2E9E62}
-.pill-prod.under{background:#C6362E}
-.pill-prod.over{background:#D9922B}
-.pill-prod.unknown{background:#8A93A3}
+  padding:3px 8px;cursor:default;white-space:nowrap;
+  box-shadow:inset 0 0 0 1px rgba(16,40,70,.14)}
+.pdot{width:6px;height:6px;border-radius:50%;flex:0 0 6px;
+  box-shadow:0 0 0 1px rgba(255,255,255,.55)}
+.pdot.on-pace{background:#1E7D46}
+.pdot.under{background:#B3261E}
+.pdot.over{background:#B77400}
+.pdot.unknown{background:#7A8593}
 .pill-more{font-size:10.5px;font-weight:700;color:var(--muted)}
 
 /* ---- row actions -------------------------------------------------------- */
@@ -278,3 +285,75 @@ table.overview tfoot td.pair i{font-weight:400}
 .breakoutcard{margin-bottom:20px;padding-bottom:6px}
 table.breakout{min-width:1520px}
 table.breakout td.clip{max-width:230px}
+
+/* ---- campaign linking ---------------------------------------------------- */
+/* Month to date is the default reading; `.showlife` on the body swaps every
+   pair of numbers at once, in the table and the dialog together, so the two
+   can never be read against each other by mistake. */
+.life{display:none}
+body.showlife .mtd{display:none}
+body.showlife .life{display:inline}
+
+.linkcard .charthead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.lifetoggle{margin-left:auto;display:inline-flex;align-items:center;gap:7px;
+  font-size:12px;font-weight:500;color:var(--muted);white-space:nowrap}
+.lifetoggle input{accent-color:var(--blue);width:15px;height:15px}
+
+.linkwarn{margin:0;padding:10px 18px;background:#FDF3E7;color:#8A4B06;
+  font-size:12.5px;font-weight:600;border-bottom:1px solid var(--line)}
+
+.pchip{display:inline-block;border-radius:6px;font-size:10.5px;font-weight:700;
+  padding:3px 6px;margin-right:7px;letter-spacing:.02em;vertical-align:middle}
+
+.linkstate{display:inline-block;border-radius:999px;font-size:11px;
+  font-weight:700;padding:3px 9px;white-space:nowrap}
+.linkstate.verified{background:#E4F3EA;color:#1E7D46}
+.linkstate.linked{background:#E7EEFA;color:#1C5BC4}
+.linkstate.matched{background:var(--fill);color:var(--muted)}
+.linkstate.unmatched{background:#FBE7E6;color:#B3261E}
+table.linktable tr.state-unmatched td{background:#FFF8F8}
+
+.byhand{display:inline-block;margin-left:6px;font-size:10px;font-weight:600;
+  color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+td.linkact{white-space:nowrap}
+td.linkact .inlineform{display:inline;padding:0;margin-left:6px}
+.btn2.danger{color:#B3261E;border-color:#F0C9C6}
+.nowrap{white-space:nowrap}
+
+/* ---- the dialog ---------------------------------------------------------- */
+.linkdlg{border:0;border-radius:14px;padding:0;max-width:820px;width:calc(100% - 32px);
+  background:var(--card);color:var(--text);box-shadow:0 24px 64px rgba(12,24,40,.28)}
+.linkdlg::backdrop{background:rgba(12,24,40,.45)}
+.linkdlg form{padding:0}
+.dlghead{padding:20px 22px 12px;border-bottom:1px solid var(--line)}
+.dlghead h3{margin:0 0 4px;font-size:15px}
+.dlghead .hint{display:block;font-size:12px;color:var(--muted);line-height:1.5}
+.dlgfor{margin:10px 0 0;font-size:12.5px;color:var(--muted)}
+.dlgfilter{display:block;width:calc(100% - 44px);margin:14px 22px 0;
+  background:var(--fill);border:1px solid transparent;border-radius:10px;
+  padding:9px 12px;font-family:inherit;font-size:13px;color:var(--text)}
+.dlgfilter:focus{outline:2px solid var(--blue-lt);outline-offset:-1px;background:var(--card)}
+.dlgscroll{max-height:46vh;overflow:auto;margin:12px 0 0;padding:0 22px}
+table.dlgtable{width:100%}
+table.dlgtable td,table.dlgtable th{vertical-align:middle}
+table.dlgtable label{cursor:pointer;display:block}
+table.dlgtable input[type=radio]{accent-color:var(--blue);width:15px;height:15px}
+/* The campaign already on the row being edited is the current answer, not a
+   campaign to take off something else. */
+table.dlgtable tr.ismine .takenby{color:#1E7D46;font-weight:600}
+table.dlgtable tr.ismine .takenby::after{content:" (this row)"}
+
+.dlgfoot{display:flex;align-items:center;gap:12px;padding:16px 22px;
+  border-top:1px solid var(--line);margin-top:14px;flex-wrap:wrap}
+.dlgfoot .spacer{flex:1}
+.dlgfoot .chk{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;
+  font-weight:500;color:var(--muted);white-space:nowrap}
+.dlgfoot .chk input{accent-color:var(--blue);width:15px;height:15px}
+.dlgby{background:var(--fill);border:1px solid transparent;border-radius:10px;
+  padding:8px 11px;font-family:inherit;font-size:12.5px;color:var(--text);width:170px}
+.dlgby:focus{outline:2px solid var(--blue-lt);outline-offset:-1px;background:var(--card)}
+
+@media (max-width:720px){
+  .dlgfoot .spacer{display:none}
+  .linkdlg{max-height:88vh;overflow:auto}
+}

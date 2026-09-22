@@ -5,4 +5,12 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
-data/
+# data/ is ignored because a drop dropped there would be hundreds of
+# megabytes. The reference CSVs underneath it are the opposite: the app reads
+# them at runtime, so ignoring them shipped a deploy with no rate card, no
+# strategy seed and no product colours. They are named one by one rather than
+# globbed, because a drop is a .csv too.
+data/*
+!data/rate_card.csv
+!data/products.csv
+!data/strategy_seed.csv

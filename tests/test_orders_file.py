@@ -478,3 +478,96 @@ def test_asking_for_a_file_that_is_not_there_says_so():
         result = loader.run(only="orders/nope.csv")
     assert result.errors
     assert "no such file" in result.errors[0]
+
+
+# --- blanks must arrive as blanks ------------------------------------------
+# A column is only float64 when some row fills it, so a single-row fixture
+# with a blank gives an all-object column and misses this entirely. Two rows,
+# one full and one blank, is the shape the real export has.
+MIXED = "\n".join([
+    HEAD,
+    line(),
+    line(
+        id='"<a href=""/x/viewLineItem/999"">999</a>"',
+        monthly="", total2="", budget="",
+    ),
+])
+
+
+def test_a_blank_number_reaches_the_order_book_as_none_not_nan():
+    """The bug that made every goal on the overview read "nan / nan".
+
+    A numeric pandas column holds a blank as float NaN, and NaN is not None,
+    so every "is this missing" guard downstream waved it through. It was
+    stored, arithmetic on it produced NaN, and a whole page of goals and
+    pacing percentages read "nan" - with no error anywhere to say so.
+    """
+    frame = normalize(csv(MIXED))
+    blank = next(
+        r for r in frame.rows.to_dict("records")
+        if r["external_line_item_id"] == "999"
+    )
+
+    for field_name in (
+        "monthly_impressions", "total_impressions", "total_campaign_budget"
+    ):
+        assert blank[field_name] is None, (
+            f"{field_name} came through as {blank[field_name]!r}"
+        )
+
+
+def test_a_blank_number_never_reaches_a_line_item_as_nan():
+    """The same blank again, but through the import.
+
+    Checked on the object before the commit, not after. SQLite has no NaN
+    and its driver quietly writes one as NULL, so a round trip through the
+    test database would hide the bug the way it hid it for weeks - it only
+    ever showed on the live Postgres, which stores NaN faithfully.
+    """
+    import math
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from models import Base, LineItem
+    from orderbook import import_orders
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        import_orders(session, normalize(csv(MIXED)))
+        item = next(
+            obj for obj in session.identity_map.values()
+            if isinstance(obj, LineItem) and obj.external_id == "999"
+        )
+        for field_name in (
+            "monthly_impressions", "total_impressions", "goal_cpm"
+        ):
+            value = getattr(item, field_name)
+            assert value is None or not math.isnan(value), (
+                f"{field_name} set to {value!r}"
+            )
+
+
+def test_a_nan_is_treated_as_a_blank_even_if_one_gets_through():
+    """`_keep` is the guard for a missing value, so it has to know all of them.
+
+    The parse converts NaN at the boundary now, but this is the function
+    whose whole job is "do not replace a figure with a blank", and a NaN is
+    a blank. It read one as a real number and stored it.
+    """
+    import math
+
+    from models import LineItem
+    from orderbook import _keep
+
+    item = LineItem(name="x", monthly_impressions=100000.0)
+    _keep(item, "monthly_impressions", float("nan"))
+    assert item.monthly_impressions == 100000.0
+
+    fresh = LineItem(name="y")
+    _keep(fresh, "monthly_impressions", float("nan"))
+    assert fresh.monthly_impressions is None or not math.isnan(
+        fresh.monthly_impressions
+    )

@@ -79,7 +79,8 @@
         <td class="num orderid">{{ r.order.external_order_id or '—' }}</td>
         <td class="pills">
           {% for p in r.products[:5] %}
-            <span class="pill-prod {{ p.health }}">{{ p.code }}
+            <span class="pill-prod" style="background:{{ p.hex }};color:{{ p.text_hex }}">{{ p.code }}
+              <i class="pdot {{ p.health }}"></i>
               <span class="mtip"><b>{{ p.name }}</b><br>
                 Served: {{ p.served|metric(t) }}<br>
                 Expected: {{ p.expected|metric(t) }}</span></span>

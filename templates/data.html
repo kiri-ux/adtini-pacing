@@ -5,6 +5,11 @@
 {% block body %}
 <p class="crumbs"><a href="/">Pacing</a> / <span class="crumbc">Data</span></p>
 
+{% if sweep_running %}
+<p class="flash">A load is running. Refresh to follow it &mdash; files below show
+  <b>reading…</b> while they are in flight.</p>
+{% endif %}
+
 <div class="qtiles">
   <div class="qtile"><small>Delivery through</small>
     <b>{{ latest.strftime('%-d %b') if latest else '—' }}</b>
@@ -76,6 +81,7 @@
         <td><span class="tag type-{{ 'impression' if f.kind == 'delivery' else ('event' if f.kind == 'orders' else 'click') }}">{{ f.kind }}</span></td>
         <td class="num">{{ '%.1f'|format(f.mb) }} MB</td>
         <td>{% if f.status == 'ok' %}<span class="pace on-pace">loaded</span>
+            {% elif f.status == 'loading' %}<span class="pace over">reading…</span>
             {% elif f.status == 'error' %}<span class="pace under">failed</span>
             {% elif f.status == 'stale' %}<span class="pace over">changed</span>
             {% else %}<span class="pace unknown">not loaded</span>{% endif %}</td>
@@ -107,7 +113,7 @@
       <tr>
         <td class="lnk">{{ f.s3_key }}</td>
         <td><span class="tag type-{{ 'impression' if f.kind == 'delivery' else 'event' }}">{{ f.kind }}</span></td>
-        <td><span class="pace {{ 'on-pace' if f.status == 'ok' else 'under' }}">{{ f.status }}</span>
+        <td><span class="pace {{ 'on-pace' if f.status == 'ok' else ('over' if f.status == 'loading' else 'under') }}">{{ f.status }}</span>
           {% if f.message %}<span class="rowmsg">{{ f.message[:140] }}</span>{% endif %}
           {% if f.unmapped_columns %}<span class="rowmsg err">unrecognised: {{ f.unmapped_columns[:140] }}</span>{% endif %}</td>
         <td class="num">{{ f.rows_written|num if f.rows_written else '—' }}</td>

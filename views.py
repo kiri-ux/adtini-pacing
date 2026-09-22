@@ -10,12 +10,14 @@ import datetime as dt
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from sqlalchemy import func, select
+from sqlalchemy import false, func, or_, select, tuple_
 from sqlalchemy.orm import selectinload
 
-from models import Client, DailyDelivery, LineItem, Order, StrategyTerms
+from models import CampaignLink, Client, DailyDelivery, LineItem, Order, StrategyTerms
+import products
 import sheets
-from orderbook import PACEABLE_ORDER_TYPE, PRODUCT_ABBR, line_item_label
+from orderbook import PACEABLE_ORDER_TYPE, line_item_label
+from pacing.calendar import month_bounds
 from pacing.engine import DailyPoint, PacingRow, compute_row, health, total_row
 
 
@@ -36,67 +38,152 @@ def earliest_delivery_date(session) -> dt.date | None:
     return session.execute(select(func.min(DailyDelivery.date))).scalar()
 
 
-def _delivery_join(line_items: list[LineItem]):
-    """The condition that ties a day of delivery to the line item it ran under.
+@dataclass
+class _Join:
+    """How a day of delivery finds the line item it ran under.
 
-    The two exports share `order_id` and `line_item_id`, so the join is on
-    ids. Delivery that carries no order id was adopted under a line item
-    keyed by its own line item id, which is the second branch.
+    Two routes, tried in that order:
+
+    * **by id** - the two exports share `order_id` and `line_item_id`, which
+      covers most of the book. Delivery carrying no order id was adopted
+      under a line item keyed on its own line item id alone; that is the
+      second entry in `by_id`.
+    * **by link** - a campaign the buying team attached to a line item by
+      hand, for the campaigns the ids never matched on.
+
+    The id route wins where both apply, so a campaign that starts matching on
+    its own after a rebuild cannot be counted twice.
     """
-    keys = {
+
+    by_id: dict[tuple[str | None, str | None], int]
+    by_link: dict[tuple[str, str], int]
+    order_ids: set[str | None]
+
+    def __bool__(self) -> bool:
+        return bool(self.by_id or self.by_link)
+
+    @property
+    def external_ids(self) -> list[str | None]:
+        return [li_id for (_, li_id) in self.by_id]
+
+    def where(self):
+        """Everything either route could claim, as one filter.
+
+        The links go in as a row-value `IN` rather than an `OR` per link: the
+        overview builds one join across every order on the page, and a
+        thousand `OR`s is a query plan no index can help.
+        """
+        clauses = []
+        if self.by_id:
+            clauses.append(DailyDelivery.external_line_item_id.in_(self.external_ids))
+        if self.by_link:
+            clauses.append(
+                tuple_(DailyDelivery.data_source, DailyDelivery.campaign_id).in_(
+                    list(self.by_link)
+                )
+            )
+        return or_(*clauses) if clauses else false()
+
+    def resolve(
+        self,
+        order_id: str | None,
+        line_item_id: str | None,
+        data_source: str | None = None,
+        campaign_id: str | None = None,
+    ) -> int | None:
+        target = self.by_id.get((order_id, line_item_id))
+        if target is None and order_id not in self.order_ids:
+            # Adopted delivery, keyed on its line item id alone.
+            target = self.by_id.get((None, line_item_id))
+        if target is None and data_source is not None and campaign_id is not None:
+            target = self.by_link.get((data_source, campaign_id))
+        return target
+
+
+def _delivery_join(session, line_items: list[LineItem]) -> _Join:
+    by_id = {
         (li.order.external_order_id, li.external_id): li.id
         for li in line_items
         if li.external_id
     }
-    return keys
+    ids = [li.id for li in line_items]
+    by_link: dict[tuple[str, str], int] = {}
+    if ids:
+        rows = session.execute(
+            select(
+                CampaignLink.data_source,
+                CampaignLink.campaign_id,
+                CampaignLink.line_item_id,
+            ).where(CampaignLink.line_item_id.in_(ids))
+        )
+        by_link = {(source, campaign): li_id for source, campaign, li_id in rows}
+    return _Join(
+        by_id=by_id,
+        by_link=by_link,
+        order_ids={li.order.external_order_id for li in line_items},
+    )
 
 
 def _daily_by_line_item(
     session, line_items: list[LineItem]
 ) -> dict[int, list[DailyPoint]]:
     """Delivery per line item per day, summed across its strategies."""
-    keys = _delivery_join(line_items)
-    if not keys:
+    join = _delivery_join(session, line_items)
+    if not join:
         return {}
-
-    line_item_ids = [li.external_id for li in line_items if li.external_id]
-    order_ids = {li.order.external_order_id for li in line_items}
 
     stmt = (
         select(
             DailyDelivery.external_order_id,
             DailyDelivery.external_line_item_id,
+            DailyDelivery.data_source,
+            DailyDelivery.campaign_id,
             DailyDelivery.date,
             func.sum(DailyDelivery.impressions),
             func.sum(DailyDelivery.clicks),
             func.sum(DailyDelivery.cost),
             func.sum(DailyDelivery.conversions),
         )
-        .where(DailyDelivery.external_line_item_id.in_(line_item_ids))
+        .where(join.where())
         .group_by(
             DailyDelivery.external_order_id,
             DailyDelivery.external_line_item_id,
+            DailyDelivery.data_source,
+            DailyDelivery.campaign_id,
             DailyDelivery.date,
         )
     )
 
-    out: dict[int, list[DailyPoint]] = defaultdict(list)
-    for order_id, li_id, date, impressions, clicks, cost, conversions in session.execute(stmt):
-        target = keys.get((order_id, li_id))
-        if target is None and order_id not in order_ids:
-            # Adopted delivery, keyed on its line item id alone.
-            target = keys.get((None, li_id))
+    # A linked campaign is several rows here - one per day per campaign - and
+    # the same day can also arrive by the id route, so days are added up
+    # rather than appended as they come.
+    totals: dict[int, dict[dt.date, list[float]]] = defaultdict(
+        lambda: defaultdict(lambda: [0.0, 0.0, 0.0, 0.0])
+    )
+    for (
+        order_id, li_id, source, campaign, date, impressions, clicks, cost, conversions
+    ) in session.execute(stmt):
+        target = join.resolve(order_id, li_id, source, campaign)
         if target is None:
             continue
-        out[target].append(
+        bucket = totals[target][date]
+        bucket[0] += float(impressions or 0)
+        bucket[1] += float(clicks or 0)
+        bucket[2] += float(cost or 0)
+        bucket[3] += float(conversions or 0)
+
+    out: dict[int, list[DailyPoint]] = {}
+    for target, by_date in totals.items():
+        out[target] = [
             DailyPoint(
                 date=date,
-                impressions=float(impressions or 0),
-                clicks=float(clicks or 0),
-                cost=float(cost or 0),
-                conversions=float(conversions or 0),
+                impressions=values[0],
+                clicks=values[1],
+                cost=values[2],
+                conversions=values[3],
             )
-        )
+            for date, values in sorted(by_date.items())
+        ]
     return out
 
 
@@ -129,8 +216,8 @@ def strategy_series(
     session, line_items: list[LineItem], metric: str = "impressions"
 ) -> dict[int, list[StrategySeries]]:
     """Per-strategy daily delivery, grouped under each line item."""
-    keys = _delivery_join(line_items)
-    if not keys:
+    join = _delivery_join(session, line_items)
+    if not join:
         return {}
 
     column = {
@@ -140,13 +227,12 @@ def strategy_series(
         "conversions": DailyDelivery.conversions,
     }[metric]
 
-    external_ids = [li.external_id for li in line_items if li.external_id]
-    order_ids = {li.order.external_order_id for li in line_items}
-
     stmt = (
         select(
             DailyDelivery.external_order_id,
             DailyDelivery.external_line_item_id,
+            DailyDelivery.data_source,
+            DailyDelivery.campaign_id,
             DailyDelivery.strategy_id,
             DailyDelivery.strategy_name,
             DailyDelivery.strategy_type,
@@ -154,10 +240,12 @@ def strategy_series(
             DailyDelivery.date,
             func.sum(column),
         )
-        .where(DailyDelivery.external_line_item_id.in_(external_ids))
+        .where(join.where())
         .group_by(
             DailyDelivery.external_order_id,
             DailyDelivery.external_line_item_id,
+            DailyDelivery.data_source,
+            DailyDelivery.campaign_id,
             DailyDelivery.strategy_id,
             DailyDelivery.strategy_name,
             DailyDelivery.strategy_type,
@@ -169,11 +257,10 @@ def strategy_series(
     collected: dict[tuple[int, str], StrategySeries] = {}
     seen_ids: dict[tuple[int, str], set[str]] = defaultdict(set)
     for (
-        order_id, li_id, strategy_id, strategy_name, strategy_type, product, date, value
+        order_id, li_id, source, campaign, strategy_id, strategy_name,
+        strategy_type, product, date, value
     ) in session.execute(stmt):
-        target = keys.get((order_id, li_id))
-        if target is None and order_id not in order_ids:
-            target = keys.get((None, li_id))
+        target = join.resolve(order_id, li_id, source, campaign)
         if target is None:
             continue
 
@@ -244,7 +331,13 @@ def order_view(session, order_id: int, as_of: dt.date | None = None) -> OrderVie
 
     as_of = as_of or latest_delivery_date(session) or dt.date.today()
     covers_from = earliest_delivery_date(session)
-    line_items = sorted(order.line_items, key=lambda li: (li.sort_order, li.id))
+    # Website Visitor ID, Live Chat, SEO, reputation management and the
+    # management-fee lines sit on orders but have no impressions or spend to
+    # pace, so they never reach a pacing view.
+    line_items = [
+        li for li in sorted(order.line_items, key=lambda li: (li.sort_order, li.id))
+        if products.is_paced(li.product)
+    ]
     daily = _daily_by_line_item(session, line_items)
 
     rows = [compute_row(li, order, daily.get(li.id, []), as_of) for li in line_items]
@@ -292,6 +385,8 @@ class ProductChip:
 
     code: str
     name: str
+    hex: str = "#123A63"
+    text_hex: str = "#FFFFFF"
     served: float = 0.0
     expected: float = 0.0
     goal: float = 0.0
@@ -383,12 +478,17 @@ def overview(
         stmt = stmt.where((Order.end_date.is_(None)) | (Order.end_date >= as_of))
 
     orders = list(session.execute(stmt).scalars())
-    all_line_items = [li for o in orders for li in o.line_items]
+    all_line_items = [
+        li for o in orders for li in o.line_items if products.is_paced(li.product)
+    ]
     daily = _daily_by_line_item(session, all_line_items)
 
     out: list[OverviewRow] = []
     for order in orders:
-        line_items = sorted(order.line_items, key=lambda li: (li.sort_order, li.id))
+        line_items = [
+            li for li in sorted(order.line_items, key=lambda li: (li.sort_order, li.id))
+            if products.is_paced(li.product)
+        ]
         rows = [compute_row(li, order, daily.get(li.id, []), as_of) for li in line_items]
         total = total_row(rows, order.pacing_type)
 
@@ -398,9 +498,12 @@ def overview(
             name = item.product or "Other"
             chip = chips.get(name)
             if chip is None:
+                entry = products.lookup(name)
                 chip = ProductChip(
-                    code=PRODUCT_ABBR.get(name, name[:4].upper()),
+                    code=products.abbreviation(name),
                     name=name,
+                    hex=entry.hex if entry else "#123A63",
+                    text_hex=entry.text_hex if entry else "#FFFFFF",
                     is_money=row.is_money,
                 )
                 chips[name] = chip
@@ -616,3 +719,213 @@ def strategy_pacing(session, view: "OrderView") -> list[StrategyPacing]:
             )
         )
     return out
+
+
+# --------------------------------------------------------------------------
+# Campaign linking
+# --------------------------------------------------------------------------
+@dataclass
+class CampaignCandidate:
+    """A DSP campaign in the feed that could be what a line item bought."""
+
+    data_source: str
+    campaign_id: str
+    campaign_name: str | None
+    product: str | None
+    external_line_item_id: str | None
+    month_impressions: float = 0.0
+    month_cost: float = 0.0
+    impressions: float = 0.0
+    cost: float = 0.0
+    first_date: dt.date | None = None
+    last_date: dt.date | None = None
+    # The line item this campaign already reaches, and how it got there.
+    taken_by: int | None = None
+    taken_how: str | None = None  # "id" or "link"
+
+    @property
+    def key(self) -> str:
+        return f"{self.data_source}␟{self.campaign_id}"
+
+    @property
+    def label(self) -> str:
+        name = (self.campaign_name or "").strip()
+        return name or f"{self.data_source} {self.campaign_id}"
+
+
+@dataclass
+class LinkRow:
+    """One line item, and what delivery currently reaches it."""
+
+    line_item: LineItem
+    label: str
+    code: str
+    hex: str
+    text_hex: str
+    link: CampaignLink | None = None
+    matched_campaigns: list[CampaignCandidate] = field(default_factory=list)
+    served: float = 0.0
+    is_money: bool = False
+
+    @property
+    def state(self) -> str:
+        """What the row needs from a human, in one word.
+
+        `linked` and `matched` are both fine; `unmatched` is the one that
+        costs the buying team a wrong number on the page.
+        """
+        if self.link:
+            return "verified" if self.link.ops_verified else "linked"
+        if self.matched_campaigns:
+            return "matched"
+        return "unmatched"
+
+
+@dataclass
+class LinkingView:
+    rows: list[LinkRow]
+    candidates: list[CampaignCandidate]
+    as_of: dt.date
+
+    @property
+    def unmatched_count(self) -> int:
+        return sum(1 for r in self.rows if r.state == "unmatched")
+
+    @property
+    def free_candidates(self) -> list[CampaignCandidate]:
+        """Campaigns nothing on this order is already reading."""
+        return [c for c in self.candidates if c.taken_by is None]
+
+
+def campaign_candidates(
+    session, order: Order, join: "_Join", as_of: dt.date
+) -> list[CampaignCandidate]:
+    """Every campaign in the feed that plausibly belongs to this order.
+
+    Cast by client name and by order id, because the two are not reliably
+    both present: a campaign built before the order was written carries the
+    client but no order id, which is exactly the case linking exists for.
+    """
+    conditions = []
+    if order.client and order.client.name:
+        conditions.append(DailyDelivery.client_name == order.client.name)
+    if order.external_order_id:
+        conditions.append(DailyDelivery.external_order_id == order.external_order_id)
+    if not conditions:
+        return []
+
+    # The calendar month, not the flight's slice of it: a candidate campaign
+    # is not yet attached to a flight, so the flight's dates say nothing
+    # about it.
+    month_start, _ = month_bounds(as_of)
+
+    stmt = (
+        select(
+            DailyDelivery.data_source,
+            DailyDelivery.campaign_id,
+            func.max(DailyDelivery.campaign_name),
+            func.max(DailyDelivery.product),
+            func.max(DailyDelivery.external_line_item_id),
+            func.sum(DailyDelivery.impressions),
+            func.sum(DailyDelivery.cost),
+            func.min(DailyDelivery.date),
+            func.max(DailyDelivery.date),
+        )
+        .where(or_(*conditions))
+        .group_by(DailyDelivery.data_source, DailyDelivery.campaign_id)
+    )
+
+    month_stmt = (
+        select(
+            DailyDelivery.data_source,
+            DailyDelivery.campaign_id,
+            func.sum(DailyDelivery.impressions),
+            func.sum(DailyDelivery.cost),
+        )
+        .where(or_(*conditions))
+        .where(DailyDelivery.date >= month_start)
+        .where(DailyDelivery.date <= as_of)
+        .group_by(DailyDelivery.data_source, DailyDelivery.campaign_id)
+    )
+    month_totals: dict[tuple[str, str], tuple[float, float]] = {
+        (source, campaign): (float(impressions or 0), float(cost or 0))
+        for source, campaign, impressions, cost in session.execute(month_stmt)
+    }
+
+    out: list[CampaignCandidate] = []
+    for (
+        source, campaign, name, product, li_id, impressions, cost, first, last
+    ) in session.execute(stmt):
+        month = month_totals.get((source, campaign), (0.0, 0.0))
+        candidate = CampaignCandidate(
+            data_source=source,
+            campaign_id=campaign,
+            campaign_name=name,
+            product=product,
+            external_line_item_id=li_id,
+            month_impressions=month[0],
+            month_cost=month[1],
+            impressions=float(impressions or 0),
+            cost=float(cost or 0),
+            first_date=first,
+            last_date=last,
+        )
+        by_id = join.resolve(order.external_order_id, li_id)
+        if by_id is not None:
+            candidate.taken_by, candidate.taken_how = by_id, "id"
+        elif (source, campaign) in join.by_link:
+            candidate.taken_by = join.by_link[(source, campaign)]
+            candidate.taken_how = "link"
+        out.append(candidate)
+
+    out.sort(key=lambda c: (-c.month_impressions, -c.impressions, c.label))
+    return out
+
+
+def linking_view(session, order: Order, as_of: dt.date | None = None) -> LinkingView:
+    """What each line item is reading, and what is going unread.
+
+    Non-paced products are left out here as everywhere else: there is no
+    campaign to link a Live Chat line to.
+    """
+    as_of = as_of or latest_delivery_date(session) or dt.date.today()
+    line_items = [
+        li for li in sorted(order.line_items, key=lambda li: (li.sort_order, li.id))
+        if products.is_paced(li.product)
+    ]
+    join = _delivery_join(session, line_items)
+    candidates = campaign_candidates(session, order, join, as_of)
+    daily = _daily_by_line_item(session, line_items)
+
+    links = {
+        link.line_item_id: link
+        for link in session.execute(
+            select(CampaignLink).where(
+                CampaignLink.line_item_id.in_([li.id for li in line_items] or [0])
+            )
+        ).scalars()
+    }
+
+    is_money = order.pacing_type != "impression"
+    rows: list[LinkRow] = []
+    for item in line_items:
+        entry = products.lookup(item.product)
+        points = daily.get(item.id, [])
+        rows.append(
+            LinkRow(
+                line_item=item,
+                label=item.product or item.name,
+                code=products.abbreviation(item.product),
+                hex=entry.hex if entry else "#123A63",
+                text_hex=entry.text_hex if entry else "#FFFFFF",
+                link=links.get(item.id),
+                matched_campaigns=[
+                    c for c in candidates
+                    if c.taken_by == item.id and c.taken_how == "id"
+                ],
+                served=sum(p.cost if is_money else p.impressions for p in points),
+                is_money=is_money,
+            )
+        )
+
+    return LinkingView(rows=rows, candidates=candidates, as_of=as_of)

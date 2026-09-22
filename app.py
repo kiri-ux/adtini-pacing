@@ -32,7 +32,16 @@ import views
 from config import get_settings
 from db import session_scope
 from ingest import loader
-from models import PACING_TYPES, Base, Client, IngestedFile, LineItem, Order
+from models import (
+    PACING_TYPES,
+    Base,
+    CampaignLink,
+    Client,
+    DailyDelivery,
+    IngestedFile,
+    LineItem,
+    Order,
+)
 from orderbook import adopt_unmatched_delivery
 
 logging.basicConfig(level=logging.INFO)
@@ -334,6 +343,7 @@ def order_detail(order_id: int):
             t=view.total,
             chart=views.chart_series(view),
             strategy_rows=views.strategy_pacing(db, view),
+            linking=views.linking_view(db, view.order, as_of=view.as_of),
             lineitem_names={li.id: li.name for li in view.order.line_items},
             pacing_types=PACING_TYPES,
         )
@@ -440,6 +450,103 @@ def line_item_delete(order_id: int, line_item_id: int):
         item = db.get(LineItem, line_item_id)
         if item and item.order_id == order_id:
             db.delete(item)
+    return redirect(url_for("order_detail", order_id=order_id))
+
+
+# --------------------------------------------------------------------------
+# Campaign linking
+# --------------------------------------------------------------------------
+@app.route("/orders/<int:order_id>/link", methods=["POST"])
+@login_required
+def campaign_link(order_id: int):
+    """Attach a DSP campaign to a line item, or update how it is attached.
+
+    The campaign is identified by `source\u241fcampaign_id`, which is the pair
+    delivery is unique on. A campaign already linked elsewhere is moved
+    rather than duplicated: one campaign's delivery belongs to one line item,
+    or it would be counted twice on the same order.
+    """
+    line_item_id = request.form.get("line_item_id", type=int)
+    raw = (request.form.get("campaign") or "").strip()
+    verified = request.form.get("ops_verified") == "on"
+    who = (request.form.get("linked_by") or "").strip() or None
+
+    with session_scope() as db:
+        item = db.get(LineItem, line_item_id) if line_item_id else None
+        if item is None or item.order_id != order_id:
+            abort(404)
+
+        existing = db.execute(
+            select(CampaignLink).where(CampaignLink.line_item_id == item.id)
+        ).scalar_one_or_none()
+
+        if not raw:
+            # An empty pick with the row already linked means "just record
+            # the verification"; with nothing linked it is a no-op.
+            if existing is not None:
+                existing.ops_verified = verified
+                existing.linked_by = who or existing.linked_by
+                flash("Updated.")
+            return redirect(url_for("order_detail", order_id=order_id))
+
+        source, _, campaign_id = raw.partition("\u241f")
+        if not campaign_id:
+            flash("That campaign could not be read.")
+            return redirect(url_for("order_detail", order_id=order_id))
+
+        name = db.execute(
+            select(func.max(DailyDelivery.campaign_name)).where(
+                DailyDelivery.data_source == source,
+                DailyDelivery.campaign_id == campaign_id,
+            )
+        ).scalar()
+
+        # The campaign may already be linked to a different line item.
+        claimed = db.execute(
+            select(CampaignLink).where(
+                CampaignLink.data_source == source,
+                CampaignLink.campaign_id == campaign_id,
+            )
+        ).scalar_one_or_none()
+
+        if claimed is not None and claimed is not existing:
+            db.delete(claimed)
+            db.flush()
+
+        if existing is None:
+            db.add(
+                CampaignLink(
+                    line_item_id=item.id,
+                    data_source=source,
+                    campaign_id=campaign_id,
+                    campaign_name=name,
+                    ops_verified=verified,
+                    linked_by=who,
+                )
+            )
+        else:
+            existing.data_source = source
+            existing.campaign_id = campaign_id
+            existing.campaign_name = name
+            existing.ops_verified = verified
+            existing.linked_by = who
+
+    flash("Campaign linked.")
+    return redirect(url_for("order_detail", order_id=order_id))
+
+
+@app.route("/orders/<int:order_id>/link/<int:line_item_id>/clear", methods=["POST"])
+@login_required
+def campaign_unlink(order_id: int, line_item_id: int):
+    with session_scope() as db:
+        item = db.get(LineItem, line_item_id)
+        if item is None or item.order_id != order_id:
+            abort(404)
+        for link in db.execute(
+            select(CampaignLink).where(CampaignLink.line_item_id == item.id)
+        ).scalars():
+            db.delete(link)
+    flash("Link removed.")
     return redirect(url_for("order_detail", order_id=order_id))
 
 

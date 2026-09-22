@@ -340,6 +340,11 @@ def run(
             # Logged before the work, not after: a delivery file is about a
             # minute and logging only on completion looks like a stall.
             log.info("reading %s (%s, %.1f MB)", obj.key, kind, obj.size / 1e6)
+            # And recorded before the work, in its own transaction, so the
+            # page can show the file as in flight instead of looking idle
+            # for the minute it takes.
+            with session_scope() as session:
+                _log_file(session, obj, kind=kind, status="loading")
             path = s3.fetch_csv_file(obj.key)
             with session_scope() as session:
                 if kind == DELIVERY:

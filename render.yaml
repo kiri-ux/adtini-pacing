@@ -16,8 +16,12 @@ services:
     # two of them plus an ingest does not fit in Starter's 512MB and the
     # worker gets OOM-killed mid-request - which reads as a 502. Threads give
     # the concurrency instead; the work is IO-bound on the database.
+    #
+    # No --max-requests: the health check alone recycled the worker every
+    # twenty minutes, filling the log with restarts for no gain now that the
+    # ingest runs in its own process and the worker no longer grows.
     # The timeout covers a manual upload of a ~70MB drop.
-    startCommand: gunicorn app:app --timeout 600 --worker-class gthread --workers 1 --threads 8 --max-requests 200 --max-requests-jitter 50
+    startCommand: gunicorn app:app --timeout 600 --worker-class gthread --workers 1 --threads 8
     healthCheckPath: /healthz
     envVars:
       - key: PYTHON_VERSION

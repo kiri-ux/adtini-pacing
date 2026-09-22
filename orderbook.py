@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import math
 from dataclasses import dataclass
 
 from sqlalchemy import func, select
@@ -220,8 +221,19 @@ def _keep(item: LineItem, field: str, value) -> None:
     The export repeats a line item across its rows and chunks, and the
     repeats are not equally complete. Letting a sparser copy win would empty
     terms that a fuller copy had already supplied.
+
+    A pandas NaN counts as a blank. The parse converts them before they get
+    here, but this is the function whose job is to recognise a missing value,
+    and `value is None` alone does not: a NaN sailed through, was stored, and
+    turned every goal on the overview into "nan".
     """
-    if value is None and getattr(item, field) is not None:
+    if isinstance(value, float) and math.isnan(value):
+        value = None
+    current = getattr(item, field)
+    if isinstance(current, float) and math.isnan(current):
+        # A NaN already on the row is damage, not a figure worth protecting.
+        current = None
+    if value is None and current is not None:
         return
     setattr(item, field, value)
 
