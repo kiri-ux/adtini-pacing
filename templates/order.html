@@ -307,17 +307,21 @@
             <span class="pchip" style="background:{{ r.hex }};color:{{ r.text_hex }}">{{ r.code }}</span>
             <span class="clip" title="{{ r.label }}">{{ r.label }}</span>
           </td>
-          <td class="clip">
-            {%- if r.link -%}
-              <span title="{{ r.link.data_source }} · {{ r.link.campaign_id }}">
-                {{ r.link.campaign_name or r.link.campaign_id }}</span>
+          <td class="campcell">
+            {%- if r.links -%}
+              <ul class="camplist">
+              {% for link in r.links %}
+                <li title="{{ link.data_source }} · {{ link.campaign_id }}">
+                  {{ link.campaign_name or link.campaign_id }}</li>
+              {% endfor %}
+              </ul>
               <span class="byhand" title="Attached by hand, not by id">by hand</span>
             {%- elif r.matched_campaigns -%}
-              <span title="{{ r.matched_campaigns|map(attribute='label')|join(', ') }}">
-                {{ r.matched_campaigns[0].label }}</span>
-              {%- if r.matched_campaigns|length > 1 %}
-              <span class="muted">+{{ r.matched_campaigns|length - 1 }}</span>
-              {%- endif -%}
+              <ul class="camplist">
+              {% for c in r.matched_campaigns %}
+                <li title="{{ c.data_source }} · {{ c.campaign_id }}">{{ c.label }}</li>
+              {% endfor %}
+              </ul>
             {%- else -%}
               <span class="muted">—</span>
             {%- endif -%}
@@ -325,17 +329,17 @@
           <td class="num">
             {% if r.is_money %}{{ r.served|money }}{% else %}{{ r.served|num }}{% endif %}
           </td>
-          <td>{{ '✓' if r.link and r.link.ops_verified else '' }}</td>
-          <td class="muted">{{ (r.link.linked_by if r.link else '') or '—' }}</td>
+          <td>{{ '✓' if r.state == 'verified' else '' }}</td>
+          <td class="muted">{{ r.linked_by or '—' }}</td>
           <td class="linkact">
             <button type="button" class="btn2 linkbtn"
               data-li="{{ r.line_item.id }}"
               data-label="{{ r.label }}"
-              data-campaign="{{ r.link.data_source ~ '␟' ~ r.link.campaign_id if r.link else '' }}"
-              data-verified="{{ '1' if r.link and r.link.ops_verified else '' }}"
-              data-by="{{ (r.link.linked_by if r.link else '') or '' }}">
-              {{ 'Edit link' if r.link else 'Link…' }}</button>
-            {% if r.link %}
+              data-campaigns="{{ r.linked_keys }}"
+              data-verified="{{ '1' if r.state == 'verified' else '' }}"
+              data-by="{{ r.linked_by or '' }}">
+              {{ 'Edit links' if r.links else 'Link…' }}</button>
+            {% if r.links %}
             <form method="post" class="inlineform"
               action="{{ url_for('campaign_unlink', order_id=o.id, line_item_id=r.line_item.id) }}">
               <button class="btn2 danger" type="submit">Unlink</button>
@@ -353,10 +357,11 @@
   <form method="post" action="{{ url_for('campaign_link', order_id=o.id) }}">
     <input type="hidden" name="line_item_id" id="dlg-li">
     <div class="dlghead">
-      <h3>Link a campaign</h3>
-      <p class="hint">Pick the DSP campaign this line item was bought on.
-        A campaign belongs to one line item, so choosing one already linked
-        moves it here.</p>
+      <h3>Link campaigns</h3>
+      <p class="hint">Pick every DSP campaign this line item was bought on -
+        a Meta line split across an impressions campaign and a leads one needs
+        both. Unticking one removes it. A campaign belongs to one line item,
+        so choosing one already linked elsewhere moves it here.</p>
       <p class="dlgfor">Line item: <b id="dlg-label"></b></p>
     </div>
 
@@ -372,7 +377,7 @@
         <tbody>
         {% for c in linking.candidates %}
           <tr data-hay="{{ (c.label ~ ' ' ~ c.campaign_id ~ ' ' ~ (c.product or ''))|lower }}">
-            <td><input type="radio" name="campaign" value="{{ c.key }}"
+            <td><input type="checkbox" name="campaign" value="{{ c.key }}"
               id="cand-{{ loop.index }}"></td>
             <td class="clip"><label for="cand-{{ loop.index }}"
               title="{{ c.data_source }} · {{ c.campaign_id }}">{{ c.label }}</label></td>
@@ -401,13 +406,14 @@
     </div>
 
     <div class="dlgfoot">
+      <span id="dlgcount" class="dlgcount none">none picked</span>
       <label class="chk"><input type="checkbox" name="ops_verified" id="dlg-verified">
         Ops verified</label>
       <input type="text" name="linked_by" id="dlg-by" class="dlgby"
         placeholder="Validated by" autocomplete="off">
       <span class="spacer"></span>
       <button type="button" class="btn2" id="dlgcancel">Cancel</button>
-      <button class="btn save" type="submit">Link</button>
+      <button class="btn save" type="submit">Save links</button>
     </div>
   </form>
 </dialog>

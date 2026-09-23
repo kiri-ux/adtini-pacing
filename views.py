@@ -786,7 +786,11 @@ class LinkRow:
     code: str
     hex: str
     text_hex: str
-    link: CampaignLink | None = None
+    # A line item can be bought across several campaigns - a Meta line split
+    # into an impressions campaign and a leads one is ordinary - so this is a
+    # set, not a single choice. The other direction stays one-to-one: a
+    # campaign belongs to one line item, or its delivery counts twice.
+    links: list[CampaignLink] = field(default_factory=list)
     matched_campaigns: list[CampaignCandidate] = field(default_factory=list)
     served: float = 0.0
     is_money: bool = False
@@ -798,11 +802,29 @@ class LinkRow:
         `linked` and `matched` are both fine; `unmatched` is the one that
         costs the buying team a wrong number on the page.
         """
-        if self.link:
-            return "verified" if self.link.ops_verified else "linked"
+        if self.links:
+            return (
+                "verified"
+                if all(link.ops_verified for link in self.links)
+                else "linked"
+            )
         if self.matched_campaigns:
             return "matched"
         return "unmatched"
+
+    @property
+    def linked_by(self) -> str | None:
+        for link in self.links:
+            if link.linked_by:
+                return link.linked_by
+        return None
+
+    @property
+    def linked_keys(self) -> str:
+        """The campaigns on this row, for the dialog to tick on open."""
+        return ",".join(
+            f"{link.data_source}\u241f{link.campaign_id}" for link in self.links
+        )
 
 
 @dataclass
@@ -922,14 +944,13 @@ def linking_view(
     if daily is None:
         daily = _daily_by_line_item(session, line_items)
 
-    links = {
-        link.line_item_id: link
-        for link in session.execute(
-            select(CampaignLink).where(
-                CampaignLink.line_item_id.in_([li.id for li in line_items] or [0])
-            )
-        ).scalars()
-    }
+    links: dict[int, list[CampaignLink]] = defaultdict(list)
+    for link in session.execute(
+        select(CampaignLink)
+        .where(CampaignLink.line_item_id.in_([li.id for li in line_items] or [0]))
+        .order_by(CampaignLink.campaign_name, CampaignLink.campaign_id)
+    ).scalars():
+        links[link.line_item_id].append(link)
 
     is_money = order.pacing_type != "impression"
     rows: list[LinkRow] = []
@@ -943,7 +964,7 @@ def linking_view(
                 code=products.abbreviation(item.product),
                 hex=entry.hex if entry else "#123A63",
                 text_hex=entry.text_hex if entry else "#FFFFFF",
-                link=links.get(item.id),
+                links=links.get(item.id, []),
                 matched_campaigns=[
                     c for c in candidates
                     if c.taken_by == item.id and c.taken_how == "id"

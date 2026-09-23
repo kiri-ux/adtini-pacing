@@ -78,24 +78,27 @@ def site(tmp_path):
                 goal_cpm=9.0,
             )
         )
-        for day in range(1, 11):
-            session.add(
-                DailyDelivery(
-                    date=dt.date(2026, 8, day),
-                    data_source="Meta",
-                    campaign_id="CMP-777",
-                    strategy_id=f"S-{day}",
-                    client_name="W&L Subaru",
-                    external_order_id="27900",
-                    external_line_item_id="NOT-27919",
-                    campaign_name="W&L Subaru | Meta | Aug",
-                    product="Meta Display & Video Ads",
-                    strategy_name="Behavioral",
-                    impressions=1_000.0,
-                    clicks=10.0,
-                    cost=9.0,
+        # Two campaigns for the one line item: the shape a Meta line split
+        # into an impressions campaign and a leads campaign actually has.
+        for campaign, impressions in (("CMP-777", 1_000.0), ("CMP-778", 400.0)):
+            for day in range(1, 11):
+                session.add(
+                    DailyDelivery(
+                        date=dt.date(2026, 8, day),
+                        data_source="Meta",
+                        campaign_id=campaign,
+                        strategy_id=f"S-{campaign}-{day}",
+                        client_name="W&L Subaru",
+                        external_order_id="27900",
+                        external_line_item_id="NOT-27919",
+                        campaign_name=f"W&L Subaru #27900 - {campaign}",
+                        product="Meta Display & Video Ads",
+                        strategy_name="Behavioral",
+                        impressions=impressions,
+                        clicks=10.0,
+                        cost=9.0,
+                    )
                 )
-            )
         order_id = order.id
 
     app_module.app.config["TESTING"] = True
@@ -143,7 +146,7 @@ def test_delivery_that_matches_nothing_is_called_out(site):
 
     assert page.count("Not matched") >= 1
     # The campaign is there to be picked, with its numbers.
-    assert "W&amp;L Subaru | Meta | Aug" in page
+    assert "W&amp;L Subaru #27900 - CMP-777" in page
 
 
 def test_linking_a_campaign_makes_its_delivery_count(site):
@@ -299,3 +302,113 @@ def test_a_nan_sold_term_does_not_break_the_order_page(site):
 
     assert page == "|—|—|—|unknown", page
     assert app_module.app.test_client().get(f"/orders/{order_id}").status_code == 200
+
+
+# --- a line item can be bought across several campaigns --------------------
+def test_several_campaigns_can_sit_on_one_line_item(site):
+    """A Meta line split into impressions and leads needs both.
+
+    Reading only one of them understates the line by whatever the other ran,
+    which is the same wrong answer as reading none - just harder to notice.
+    """
+    app_module, order_id = site
+    client = app_module.app.test_client()
+    line_item_id = _line_item_id(app_module, order_id)
+
+    client.post(
+        f"/orders/{order_id}/link",
+        data={
+            "line_item_id": str(line_item_id),
+            "campaign": ["Meta␟CMP-777", "Meta␟CMP-778"],
+            "linked_by": "Kiri",
+        },
+        follow_redirects=True,
+    )
+
+    # 10 days at 1,000 plus 10 days at 400.
+    assert _served(order_id) == 14_000
+
+
+def test_unticking_a_campaign_removes_only_that_one(site):
+    from models import CampaignLink
+
+    import db as db_module
+
+    app_module, order_id = site
+    client = app_module.app.test_client()
+    line_item_id = _line_item_id(app_module, order_id)
+
+    client.post(
+        f"/orders/{order_id}/link",
+        data={
+            "line_item_id": str(line_item_id),
+            "campaign": ["Meta␟CMP-777", "Meta␟CMP-778"],
+        },
+        follow_redirects=True,
+    )
+    client.post(
+        f"/orders/{order_id}/link",
+        data={"line_item_id": str(line_item_id), "campaign": ["Meta␟CMP-777"]},
+        follow_redirects=True,
+    )
+
+    with db_module.session_scope() as session:
+        left = session.query(CampaignLink).all()
+        assert [link.campaign_id for link in left] == ["CMP-777"]
+    assert _served(order_id) == 10_000
+
+
+def test_saving_with_nothing_ticked_clears_the_row(site):
+    from models import CampaignLink
+
+    import db as db_module
+
+    app_module, order_id = site
+    client = app_module.app.test_client()
+    line_item_id = _line_item_id(app_module, order_id)
+
+    client.post(
+        f"/orders/{order_id}/link",
+        data={
+            "line_item_id": str(line_item_id),
+            "campaign": ["Meta␟CMP-777", "Meta␟CMP-778"],
+        },
+        follow_redirects=True,
+    )
+    client.post(
+        f"/orders/{order_id}/link",
+        data={"line_item_id": str(line_item_id)},
+        follow_redirects=True,
+    )
+
+    with db_module.session_scope() as session:
+        assert session.query(CampaignLink).count() == 0
+    assert _served(order_id) == 0
+
+
+def test_ops_verified_applies_to_every_campaign_picked(site):
+    from models import CampaignLink
+
+    import db as db_module
+
+    app_module, order_id = site
+    client = app_module.app.test_client()
+    line_item_id = _line_item_id(app_module, order_id)
+
+    page = client.post(
+        f"/orders/{order_id}/link",
+        data={
+            "line_item_id": str(line_item_id),
+            "campaign": ["Meta␟CMP-777", "Meta␟CMP-778"],
+            "ops_verified": "on",
+            "linked_by": "Kiri",
+        },
+        follow_redirects=True,
+    ).get_data(as_text=True)
+
+    with db_module.session_scope() as session:
+        links = session.query(CampaignLink).all()
+        assert len(links) == 2
+        assert all(link.ops_verified for link in links)
+        assert all(link.linked_by == "Kiri" for link in links)
+    assert "Verified" in page

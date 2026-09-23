@@ -21,9 +21,10 @@
     verified.checked = btn.dataset.verified === "1";
     by.value = btn.dataset.by || "";
 
-    var current = btn.dataset.campaign || "";
+    // A line item can be on several campaigns, so this is a set.
+    var current = (btn.dataset.campaigns || "").split(",").filter(Boolean);
     dlg.querySelectorAll('input[name="campaign"]').forEach(function (input) {
-      input.checked = input.value !== "" && input.value === current;
+      input.checked = current.indexOf(input.value) !== -1;
     });
 
     // "Now on" is relative to whoever is being linked: a campaign already on
@@ -39,6 +40,7 @@
     else dlg.setAttribute("open", "open");
     var picked = dlg.querySelector('input[name="campaign"]:checked');
     if (picked) picked.scrollIntoView({ block: "center" });
+    count();
   }
 
   function apply(term) {
@@ -59,6 +61,19 @@
       apply(filter.value.trim().toLowerCase());
     });
   }
+
+  // How many are ticked, so the count is visible without scrolling the list.
+  function count() {
+    var tally = dlg.querySelector("#dlgcount");
+    if (!tally) return;
+    var n = dlg.querySelectorAll('input[name="campaign"]:checked').length;
+    tally.textContent = n === 0 ? "none picked" : n + " picked";
+    tally.classList.toggle("none", n === 0);
+  }
+
+  dlg.addEventListener("change", function (event) {
+    if (event.target.name === "campaign") count();
+  });
 
   var cancel = document.getElementById("dlgcancel");
   if (cancel) {

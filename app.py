@@ -532,15 +532,22 @@ def line_item_delete(order_id: int, line_item_id: int):
 @app.route("/orders/<int:order_id>/link", methods=["POST"])
 @login_required
 def campaign_link(order_id: int):
-    """Attach a DSP campaign to a line item, or update how it is attached.
+    """Set which DSP campaigns a line item was bought on.
 
-    The campaign is identified by `source\u241fcampaign_id`, which is the pair
-    delivery is unique on. A campaign already linked elsewhere is moved
-    rather than duplicated: one campaign's delivery belongs to one line item,
-    or it would be counted twice on the same order.
+    The whole set arrives at once, so unticking one removes it. A line item
+    can carry several: a Meta line split into an impressions campaign and a
+    leads campaign is ordinary, and reading only one of them understates the
+    line by whatever the other ran.
+
+    The other direction stays one-to-one. A campaign already on another line
+    item is moved here rather than shared, because two line items reading one
+    campaign would count its delivery twice on the same order - which is a
+    worse answer than the zero it started with.
     """
     line_item_id = request.form.get("line_item_id", type=int)
-    raw = (request.form.get("campaign") or "").strip()
+    picked = [
+        raw.strip() for raw in request.form.getlist("campaign") if raw.strip()
+    ]
     verified = request.form.get("ops_verified") == "on"
     who = (request.form.get("linked_by") or "").strip() or None
 
@@ -549,44 +556,47 @@ def campaign_link(order_id: int):
         if item is None or item.order_id != order_id:
             abort(404)
 
-        existing = db.execute(
-            select(CampaignLink).where(CampaignLink.line_item_id == item.id)
-        ).scalar_one_or_none()
+        existing = {
+            (link.data_source, link.campaign_id): link
+            for link in db.execute(
+                select(CampaignLink).where(CampaignLink.line_item_id == item.id)
+            ).scalars()
+        }
 
-        if not raw:
-            # An empty pick with the row already linked means "just record
-            # the verification"; with nothing linked it is a no-op.
-            if existing is not None:
-                existing.ops_verified = verified
-                existing.linked_by = who or existing.linked_by
-                flash("Updated.")
-            return redirect(url_for("order_detail", order_id=order_id))
+        wanted: set[tuple[str, str]] = set()
+        for raw in picked:
+            source, _, campaign_id = raw.partition("\u241f")
+            if campaign_id:
+                wanted.add((source, campaign_id))
 
-        source, _, campaign_id = raw.partition("\u241f")
-        if not campaign_id:
-            flash("That campaign could not be read.")
-            return redirect(url_for("order_detail", order_id=order_id))
+        for key, link in existing.items():
+            if key not in wanted:
+                db.delete(link)
 
-        name = db.execute(
-            select(func.max(DailyDelivery.campaign_name)).where(
-                DailyDelivery.data_source == source,
-                DailyDelivery.campaign_id == campaign_id,
-            )
-        ).scalar()
+        for source, campaign_id in sorted(wanted):
+            link = existing.get((source, campaign_id))
+            if link is not None:
+                link.ops_verified = verified
+                link.linked_by = who or link.linked_by
+                continue
 
-        # The campaign may already be linked to a different line item.
-        claimed = db.execute(
-            select(CampaignLink).where(
-                CampaignLink.data_source == source,
-                CampaignLink.campaign_id == campaign_id,
-            )
-        ).scalar_one_or_none()
+            # It may be on another line item. Move it rather than copy it.
+            claimed = db.execute(
+                select(CampaignLink).where(
+                    CampaignLink.data_source == source,
+                    CampaignLink.campaign_id == campaign_id,
+                )
+            ).scalar_one_or_none()
+            if claimed is not None:
+                db.delete(claimed)
+                db.flush()
 
-        if claimed is not None and claimed is not existing:
-            db.delete(claimed)
-            db.flush()
-
-        if existing is None:
+            name = db.execute(
+                select(func.max(DailyDelivery.campaign_name)).where(
+                    DailyDelivery.data_source == source,
+                    DailyDelivery.campaign_id == campaign_id,
+                )
+            ).scalar()
             db.add(
                 CampaignLink(
                     line_item_id=item.id,
@@ -597,14 +607,21 @@ def campaign_link(order_id: int):
                     linked_by=who,
                 )
             )
-        else:
-            existing.data_source = source
-            existing.campaign_id = campaign_id
-            existing.campaign_name = name
-            existing.ops_verified = verified
-            existing.linked_by = who
 
-    flash("Campaign linked.")
+        removed = len(set(existing) - wanted)
+        added = len(wanted - set(existing))
+
+    if not wanted and not removed:
+        flash("Nothing picked.")
+    elif not wanted:
+        flash("Link removed.")
+    else:
+        parts = []
+        if added:
+            parts.append(f"{added} campaign{'' if added == 1 else 's'} linked")
+        if removed:
+            parts.append(f"{removed} removed")
+        flash(", ".join(parts) + "." if parts else "Updated.")
     return redirect(url_for("order_detail", order_id=order_id))
 
 
