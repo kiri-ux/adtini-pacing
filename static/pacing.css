@@ -382,9 +382,11 @@ ul.camplist li + li{border-top:1px dotted var(--line)}
    one per kind - impressions and dollars need different columns. */
 .groupname{margin:18px 18px 8px;font-size:11px;font-weight:700;
   letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-select.rowpace{width:auto;min-width:0;margin-left:8px;padding:4px 6px;
-  font-size:11px;font-weight:600;color:var(--muted);background:var(--fill);
-  border:1px solid transparent;border-radius:7px}
+th.pacehead{font-size:10.5px;white-space:nowrap}
+td.pacecell{width:1%;white-space:nowrap}
+select.rowpace{width:auto;min-width:0;padding:6px 8px;
+  font-size:11.5px;font-weight:600;color:var(--muted);background:var(--fill);
+  border:1px solid transparent;border-radius:8px}
 select.rowpace:focus{outline:2px solid var(--blue-lt);outline-offset:-1px;
   background:var(--card)}
 
@@ -404,7 +406,7 @@ details.running{border-top:1px solid var(--line)}
 details.running > summary{cursor:pointer;padding:12px 18px;font-size:12.5px;
   font-weight:600;color:var(--muted);list-style:none}
 details.running > summary::-webkit-details-marker{display:none}
-details.running > summary::before{content:"\\25B8 ";display:inline-block;
+details.running > summary::before{content:"\25B8 ";display:inline-block;
   transition:transform .12s;margin-right:6px}
 details.running[open] > summary::before{transform:rotate(90deg)}
 details.running > summary:hover{color:var(--text)}
@@ -416,3 +418,20 @@ details.running .cardfoot{display:flex;align-items:center;gap:14px;flex-wrap:wra
 details.running .cardfoot .hint{flex:1;min-width:240px;font-size:12px;
   color:var(--muted);line-height:1.5}
 details.running .cardfoot form{padding:0}
+
+/* ---- the strategy breakout ---------------------------------------------- */
+.goalnote{margin-left:auto;font-size:12px;font-weight:600;color:var(--muted);
+  white-space:nowrap;display:inline-flex;align-items:center;gap:8px}
+table.stratbreak td,table.stratbreak th{white-space:nowrap}
+table.stratbreak td.elname{white-space:normal;min-width:190px}
+/* The feed's own name for a strategy, under the targeting it rolls up to. */
+.rawname{display:block;font-size:11px;color:var(--muted);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;max-width:280px;margin-top:2px}
+details.soldsplit{border-top:1px solid var(--line)}
+details.soldsplit > summary{cursor:pointer;padding:12px 18px;font-size:12.5px;
+  font-weight:600;color:var(--muted);list-style:none}
+details.soldsplit > summary::-webkit-details-marker{display:none}
+details.soldsplit > summary::before{content:"\25B8 ";display:inline-block;
+  transition:transform .12s;margin-right:6px}
+details.soldsplit[open] > summary::before{transform:rotate(90deg)}
+details.soldsplit > summary:hover{color:var(--text)}

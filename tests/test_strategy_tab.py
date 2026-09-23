@@ -336,9 +336,10 @@ def test_the_running_targeting_and_its_share_are_shown(site):
 
     meta = next(b for b in blocks if b.code == "M")
     shares = {o.label: round(o.share, 3) for o in meta.observed}
-    # 20 days at 3,800 against 20 days at 400.
+    # 20 days at 3,800 against 20 days at 400. Named the way the buying
+    # team writes them, not the way the feed does.
     assert shares == {
-        "META - Categories": 0.905, "META - Retargeting": 0.095
+        "M - Categories": 0.905, "M - Retargeting": 0.095
     }
     assert meta.observed_total == 84_000
     assert all(o.claimed for o in meta.observed), "both have a sold row"
@@ -632,5 +633,135 @@ def test_two_products_on_one_order_can_run_the_same_targeting(site):
             by_label.setdefault(row.label, []).append(row.line_item_id)
 
     # The same targeting, on two products, is two rows on one order.
-    assert len(by_label["META - Categories"]) == 2
-    assert len(set(by_label["META - Categories"])) == 2
+    assert len(by_label["M - Categories"]) == 2
+    assert len(set(by_label["M - Categories"])) == 2
+
+
+def test_a_strategy_is_named_the_way_the_buying_team_writes_it():
+    """The feed's names are unreadable and do not line up with their sheets.
+
+    "FB - Home Improvement Center/Interior Design Facebook Premium" is what
+    the feed calls it; every sheet the team keeps calls it "FB - Premium".
+    Shown the feed's way the strategy tab could not be checked against their
+    own numbers at all.
+    """
+    import sheets
+    import views
+
+    def label(product, name):
+        key = sheets.match_key(name) or name.lower()
+        return views.strategy_label(product, key, name)
+
+    meta = "Meta Display & Video Ads"
+    assert label(meta, "FB - Retargeting Facebook Premium") == "M - Retargeting"
+    assert label(
+        meta, "FB - Home Improvement Center/Interior Design Facebook Premium"
+    ) == "M - Premium"
+    assert label("Display Ads", "D - Behavioral") == "D - Behavioral"
+    # Nothing recognised keeps the feed's own name: a name nobody knows beats
+    # a tidy one that is wrong.
+    assert label(meta, "Some New Audience") == "Some New Audience"
+
+
+def test_the_breakout_costs_each_strategy_at_the_products_rate(site):
+    """Performance and cost per strategy, with nothing entered by hand.
+
+    This is the part that matters - the sold split is optional and most
+    orders will never have one.
+    """
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        view = views.order_view(session, order_id)
+        blocks = views.strategy_blocks(session, view)
+
+    meta = next(b for b in blocks if b.code == "M")
+    assert meta.rate == 2.96
+
+    categories = next(o for o in meta.observed if o.label == "M - Categories")
+    # 20 days at 3,800 impressions, bought at a $2.96 CPM.
+    assert categories.delivered == 76_000
+    assert categories.days == 20
+    assert categories.per_day == 3_800
+    assert round(categories.spend, 2) == round(76_000 * 2.96 / 1000, 2)
+    assert round(meta.observed_spend, 2) == round(84_000 * 2.96 / 1000, 2)
+
+
+def test_the_products_overall_goal_is_the_line_items_own(site):
+    """Not a sum over its strategies.
+
+    A sold split is optional and most products will never have one, so
+    summing an empty split said every product had a goal of zero.
+    """
+    from models import StrategyTerms
+
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        for term in session.query(StrategyTerms).all():
+            session.delete(term)
+
+    with db_module.session_scope() as session:
+        view = views.order_view(session, order_id)
+        meta = next(b for b in views.strategy_blocks(session, view) if b.code == "M")
+
+    assert meta.rows == [], "no sold split"
+    assert meta.total.total_target == 1_536_000, "the product's own goal"
+    assert meta.total.to_date == 84_000
+
+
+def test_the_breakout_keeps_the_performance_metrics(site):
+    """Clicks, CTR and conversions, per strategy, in the same query.
+
+    A second query for each thing the table wants to say is how a page gets
+    slow one column at a time.
+    """
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        view = views.order_view(session, order_id)
+        meta = next(b for b in views.strategy_blocks(session, view) if b.code == "M")
+
+    categories = next(o for o in meta.observed if o.label == "M - Categories")
+    # 20 days at 3,800 impressions and 4 clicks.
+    assert categories.impressions == 76_000
+    assert categories.clicks == 80
+    assert round(categories.ctr, 6) == round(80 / 76_000, 6)
+    assert meta.observed_clicks == 160
+    assert meta.observed_ctr == 160 / 84_000
+
+
+def test_drafting_names_rows_the_way_the_breakout_does(site):
+    """They used to disagree, so a drafted row matched nothing on the page.
+
+    The breakout rolled delivery up by targeting and named it "M -
+    Retargeting"; the drafting used the feed's own name. The rows appeared
+    beside each other claiming the same delivery under two names.
+    """
+    from models import StrategyTerms
+
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        for term in session.query(StrategyTerms).all():
+            session.delete(term)
+
+    with db_module.session_scope() as session:
+        views.draft_missing_splits(session)
+
+    with db_module.session_scope() as session:
+        drafted = {t.label for t in session.query(StrategyTerms).all()}
+        view = views.order_view(session, order_id)
+        meta = next(b for b in views.strategy_blocks(session, view) if b.code == "M")
+        shown = {o.label for o in meta.observed}
+
+    assert drafted == shown
+    assert all(o.claimed for o in meta.observed)

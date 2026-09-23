@@ -218,6 +218,16 @@ class StrategySeries:
     total: float = 0.0
     # How many of the feed's strategy ids rolled up into this line.
     strategy_count: int = 0
+    # Every metric, so the breakout can show performance without a second
+    # query for each thing it wants to say.
+    impressions: float = 0.0
+    clicks: float = 0.0
+    cost: float = 0.0
+    conversions: float = 0.0
+
+    @property
+    def ctr(self) -> float | None:
+        return (self.clicks / self.impressions) if self.impressions else None
 
 
 def strategy_series(
@@ -227,13 +237,6 @@ def strategy_series(
     join = _delivery_join(session, line_items)
     if not join:
         return {}
-
-    column = {
-        "impressions": DailyDelivery.impressions,
-        "clicks": DailyDelivery.clicks,
-        "cost": DailyDelivery.cost,
-        "conversions": DailyDelivery.conversions,
-    }[metric]
 
     stmt = (
         select(
@@ -246,7 +249,10 @@ def strategy_series(
             DailyDelivery.strategy_type,
             DailyDelivery.product,
             DailyDelivery.date,
-            func.sum(column),
+            func.sum(DailyDelivery.impressions),
+            func.sum(DailyDelivery.clicks),
+            func.sum(DailyDelivery.cost),
+            func.sum(DailyDelivery.conversions),
         )
         .where(join.where())
         .group_by(
@@ -266,11 +272,18 @@ def strategy_series(
     seen_ids: dict[tuple[int, str], set[str]] = defaultdict(set)
     for (
         order_id, li_id, source, campaign, strategy_id, strategy_name,
-        strategy_type, product, date, value
+        strategy_type, product, date,
+        impressions, clicks, cost, conversions,
     ) in session.execute(stmt):
         target = join.resolve(order_id, li_id, source, campaign)
         if target is None:
             continue
+        metrics = {
+            "impressions": float(impressions or 0),
+            "clicks": float(clicks or 0),
+            "cost": float(cost or 0),
+            "conversions": float(conversions or 0),
+        }
 
         client = next(
             (li.order.client.name for li in line_items if li.id == target), None
@@ -285,9 +298,13 @@ def strategy_series(
                 line_item_id=target, label=label, product=product, by_date={}
             )
             collected[key] = series
-        amount = float(value or 0)
+        amount = metrics[metric]
         series.by_date[date] = series.by_date.get(date, 0.0) + amount
         series.total += amount
+        series.impressions += metrics["impressions"]
+        series.clicks += metrics["clicks"]
+        series.cost += metrics["cost"]
+        series.conversions += metrics["conversions"]
 
     for key, series in collected.items():
         series.strategy_count = len(seen_ids[key])
@@ -1218,6 +1235,29 @@ class ObservedStrategy:
     share: float = 0.0
     # True when a sold row already claims this targeting.
     claimed: bool = False
+    # What the feed actually called it. The label above is the targeting -
+    # "M - Retargeting" - which is how the buying team writes it; the feed
+    # writes "FB - Retargeting Facebook Premium", and both are worth having.
+    raw_labels: list[str] = field(default_factory=list)
+    # What it cost, at the product's setup rate.
+    spend: float = 0.0
+    days: int = 0
+    # Performance, which is the other half of why a buyer opens this tab.
+    impressions: float = 0.0
+    clicks: float = 0.0
+    conversions: float = 0.0
+
+    @property
+    def ctr(self) -> float | None:
+        return (self.clicks / self.impressions) if self.impressions else None
+
+    @property
+    def per_day(self) -> float:
+        return (self.delivered / self.days) if self.days else 0.0
+
+    @property
+    def spend_per_day(self) -> float:
+        return (self.spend / self.days) if self.days else 0.0
 
 
 @dataclass
@@ -1247,6 +1287,107 @@ class StrategyBlock:
     @property
     def observed_total(self) -> float:
         return sum(o.delivered for o in self.observed)
+
+    @property
+    def observed_spend(self) -> float:
+        return sum(o.spend for o in self.observed)
+
+    @property
+    def observed_clicks(self) -> float:
+        return sum(o.clicks for o in self.observed)
+
+    @property
+    def observed_conversions(self) -> float:
+        return sum(o.conversions for o in self.observed)
+
+    @property
+    def observed_ctr(self) -> float | None:
+        impressions = sum(o.impressions for o in self.observed)
+        return (self.observed_clicks / impressions) if impressions else None
+
+    @property
+    def observed_days(self) -> int:
+        return max((o.days for o in self.observed), default=0)
+
+    @property
+    def observed_per_day(self) -> float:
+        days = self.observed_days
+        return (self.observed_total / days) if days else 0.0
+
+    @property
+    def observed_spend_per_day(self) -> float:
+        days = self.observed_days
+        return (self.observed_spend / days) if days else 0.0
+
+    @property
+    def rate(self) -> float:
+        item = self.line_item
+        return item.goal_cpm or item.goal_cpc or item.goal_cpe or 0.0
+
+
+def group_by_targeting(
+    product: str | None, running: list["StrategySeries"]
+) -> list[tuple[str, str, "StrategySeries", list[str]]]:
+    """Roll a product's delivery up by the targeting that ran it.
+
+    The feed reports a campaign per audience and names each one in full;
+    the buying team works in targeting. Used by the breakout and by the
+    drafting both, so the two cannot end up calling the same thing by
+    different names - which they did, and the drafted rows then matched
+    nothing on the page they were drafted from.
+
+    Returns (key, label, merged series, the feed's own names).
+    """
+    merged: dict[str, StrategySeries] = {}
+    raw: dict[str, list[str]] = defaultdict(list)
+    for series in running:
+        key = sheets.match_key(series.label) or series.label.lower()
+        raw[key].append(series.label)
+        existing = merged.get(key)
+        if existing is None:
+            merged[key] = StrategySeries(
+                line_item_id=series.line_item_id,
+                label=series.label,
+                product=series.product,
+                by_date=dict(series.by_date),
+                total=series.total,
+                impressions=series.impressions,
+                clicks=series.clicks,
+                cost=series.cost,
+                conversions=series.conversions,
+            )
+            continue
+        for date, value in series.by_date.items():
+            existing.by_date[date] = existing.by_date.get(date, 0.0) + value
+        existing.total += series.total
+        existing.impressions += series.impressions
+        existing.clicks += series.clicks
+        existing.cost += series.cost
+        existing.conversions += series.conversions
+
+    return [
+        (key, strategy_label(product, key, series.label), series,
+         sorted(set(raw[key])))
+        for key, series in merged.items()
+    ]
+
+
+def strategy_label(product: str | None, key: str, fallback: str) -> str:
+    """What to call a strategy: the product, then the targeting.
+
+    The feed writes "FB - Home Improvement Center/Interior Design Facebook
+    Premium"; the buying team writes "FB - Premium", and every sheet they
+    keep is in the second form. Showing the first made the strategy tab
+    unreadable and impossible to line up against their own numbers.
+
+    Where nothing matches a known targeting the feed's own name is kept -
+    a name nobody recognises is better than a wrong one that looks tidy.
+    """
+    code = products.abbreviation(product)
+    targeting = sheets.TARGETING_LABELS.get(key)
+    if not targeting:
+        return fallback
+    return f"{code} - {targeting}" if code else targeting
 
 
 def _strategy_line_item(term: StrategyTerms, line_items: list[LineItem]) -> LineItem | None:
@@ -1291,18 +1432,6 @@ def strategy_blocks(session, view: "OrderView") -> list[StrategyBlock]:
         key=lambda t: (t.sort_order, t.id),
     )
 
-    # What ran, per product, per targeting.
-    ran: dict[int, dict[str, StrategySeries]] = defaultdict(dict)
-    for line_item_id, items in view.strategies.items():
-        for series in items:
-            key = sheets.match_key(series.label) or series.label.lower()
-            existing = ran[line_item_id].get(key)
-            if existing is None:
-                ran[line_item_id][key] = series
-            else:
-                for date, value in series.by_date.items():
-                    existing.by_date[date] = existing.by_date.get(date, 0.0) + value
-                existing.total += series.total
 
     by_product: dict[int, list[StrategyTerms]] = defaultdict(list)
     for term in terms:
@@ -1323,10 +1452,14 @@ def strategy_blocks(session, view: "OrderView") -> list[StrategyBlock]:
         )
 
         money = (item.pacing_type or order.pacing_type or "impression") != "impression"
+        grouped = group_by_targeting(
+            item.product, view.strategies.get(item.id, [])
+        )
+        ran = {key: series for key, _, series, _ in grouped}
         claimed: set[str] = set()
         for term in block.terms:
             key = sheets.match_key(term.label) or term.label.lower()
-            series = ran[item.id].get(key)
+            series = ran.get(key)
             if series is not None:
                 claimed.add(key)
             points = [
@@ -1357,28 +1490,41 @@ def strategy_blocks(session, view: "OrderView") -> list[StrategyBlock]:
             row.strategy_id = term.id
             block.rows.append(row)
 
-        for key, series in ran[item.id].items():
+        for key, label, series, _ in grouped:
             if key not in claimed:
                 block.unclaimed += series.total
-                block.unclaimed_labels.append(series.label)
+                block.unclaimed_labels.append(label)
 
-        running = sum(s.total for s in ran[item.id].values())
+        running = sum(series.total for _, _, series, _ in grouped)
+        rate = item.goal_cpm or item.goal_cpc or item.goal_cpe or 0.0
         block.observed = sorted(
             (
                 ObservedStrategy(
-                    label=series.label,
-                    match_key=sheets.match_key(series.label),
+                    label=label,
+                    match_key=key if sheets.TARGETING_LABELS.get(key) else None,
                     delivered=series.total,
                     share=(series.total / running) if running else 0.0,
                     claimed=key in claimed,
+                    raw_labels=raw,
+                    # Impressions bought at a CPM cost that much; a spend
+                    # product's delivery is already money.
+                    spend=series.total if money else series.total * rate / 1000.0,
+                    days=len([v for v in series.by_date.values() if v]),
+                    clicks=series.clicks,
+                    conversions=series.conversions,
+                    impressions=series.impressions,
                 )
-                for key, series in ran[item.id].items()
+                for key, label, series, raw in grouped
             ),
             key=lambda o: -o.delivered,
         )
 
-        block.total = total_row(
-            block.rows, item.pacing_type or order.pacing_type or "impression"
+        # The product's own row, not a sum over its strategies. The goal is
+        # the overall one - there is no requirement that a sold split exists,
+        # and summing an empty split said every product had a goal of zero.
+        block.total = next(
+            (r for r in view.rows if r.line_item_id == item.id),
+            total_row(block.rows, item.pacing_type or order.pacing_type or "impression"),
         )
         blocks.append(block)
 
@@ -1503,9 +1649,13 @@ def _draft_item(
     session, item: LineItem, running: list["StrategySeries"]
 ) -> int:
     """Apportion one product's sold figures by what is running under it."""
-    running = [s for s in running if s.total > 0]
-    total_run = sum(s.total for s in running)
-    if not running or not total_run:
+    grouped = [
+        (label, series)
+        for _, label, series, _ in group_by_targeting(item.product, running)
+        if series.total > 0
+    ]
+    total_run = sum(series.total for _, series in grouped)
+    if not grouped or not total_run:
         return 0
 
     # What this product already has. Rows added earlier in this same run are
@@ -1533,15 +1683,15 @@ def _draft_item(
     rate = item.goal_cpm or item.goal_cpc or item.goal_cpe
 
     added = 0
-    for entry in sorted(running, key=lambda s: -s.total):
-        if entry.label in taken:
+    for label, entry in sorted(grouped, key=lambda pair: -pair[1].total):
+        if label in taken:
             continue
         share = entry.total / total_run
         session.add(
             StrategyTerms(
                 order_id=item.order_id,
                 line_item_id=item.id,
-                label=entry.label,
+                label=label,
                 match_key=sheets.match_key(entry.label),
                 monthly_target=(monthly * share) if monthly else None,
                 total_target=(total * share) if total else None,
@@ -1551,7 +1701,7 @@ def _draft_item(
                 added_by_hand=True,
             )
         )
-        taken.add(entry.label)
+        taken.add(label)
         added += 1
     return added
 

@@ -101,6 +101,28 @@ ABBREVIATIONS = {
 }
 
 
+# How each targeting is written on the page. The keys are what `match_key`
+# returns; the values are the buying team's own wording.
+TARGETING_LABELS = {
+    "behavioral": "Behavioral",
+    "retargeting": "Retargeting",
+    "geo-retargeting": "Geo-Retargeting",
+    "geo-fencing": "Geo-Fencing",
+    "geo-framing": "Geo-Framing",
+    "ai": "AI",
+    "keyword": "Keyword",
+    "category": "Categories",
+    "content": "Content",
+    "lookalike": "Lookalike",
+    "matching": "Matching",
+    "cross platform": "Cross Platform",
+    "premium": "Premium",
+    "event": "Event",
+    "b2b": "B2B",
+    "search terms": "Search Terms",
+}
+
+
 def _targeting_part(text: str) -> str:
     """The label with the product taken off the front.
 

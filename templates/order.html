@@ -121,17 +121,17 @@
   <table class="elements">
     <thead>
       {% if g.pacing_type == 'impression' %}
-      <tr><th>Campaign Elements:</th><th class="num">Impr.</th><th class="num">Tot. Impr.</th>
+      <tr><th>Campaign Elements:</th><th class="pacehead">Paces on</th><th class="num">Impr.</th><th class="num">Tot. Impr.</th>
         <th class="num">Day Impr.</th><th class="num">CPM</th><th class="num">Day Budg.</th>
         <th class="num">Tot Budg.</th><th class="num">TD Impr.</th><th class="num">Impr. Left</th>
         <th class="num">On Pace</th><th class="num">Pacing</th><th></th></tr>
       {% elif g.pacing_type == 'click' %}
-      <tr><th>Campaign Elements</th><th class="num">Mon Spend</th><th class="num">Total Spend</th>
+      <tr><th>Campaign Elements</th><th class="pacehead">Paces on</th><th class="num">Mon Spend</th><th class="num">Total Spend</th>
         <th class="num">Daily Spend</th><th class="num">CPC</th><th class="num">Mon Clicks</th>
         <th class="num">Total Clicks</th><th class="num">TD Spend</th><th class="num">Spend Left</th>
         <th class="num">On Pace</th><th class="num">Pacing</th><th></th></tr>
       {% else %}
-      <tr><th>Campaign Elements</th><th class="num">Client Mon. Budget</th>
+      <tr><th>Campaign Elements</th><th class="pacehead">Paces on</th><th class="num">Client Mon. Budget</th>
         <th class="num">Client Tot. Budget</th><th class="num">Google Mon. Spend</th>
         <th class="num">Google Tot. Spend</th><th class="num">Client Daily</th>
         <th class="num">CPE</th><th class="num">Mon. Events</th><th class="num">TD Client Cost</th>
@@ -143,13 +143,14 @@
       {% set li = r.line_item_id %}
       <tr class="{% if r.needs_setup %}needssetup{% endif %}">
         <td class="elname"><input type="text" name="li-{{ li }}-name" value="{{ r.label }}">
-          <select class="rowpace" name="li-{{ li }}-pacing_type"
+          {% if r.needs_setup %}<span class="setupflag"
+            title="This row has no sold total or no flight dates, so there is nothing to pace it against">no goal set</span>{% endif %}</td>
+        <td class="pacecell"><select class="rowpace" name="li-{{ li }}-pacing_type"
             title="How this product paces. Products on one order are not all sold the same way.">
             {% for pt in pacing_types %}
             <option value="{{ pt }}" {% if r.pacing_type == pt %}selected{% endif %}>{{ pacing_labels[pt] }}</option>
             {% endfor %}
-          </select>
-          {% if r.needs_setup %}<span class="setupflag" title="Add the sold total and flight dates to pace this row">needs terms</span>{% endif %}</td>
+          </select></td>
         {% if g.pacing_type == 'impression' %}
           <td class="num"><input type="text" name="li-{{ li }}-monthly_impressions" value="{{ r.monthly_target|entry }}"></td>
           <td class="num"><input type="text" name="li-{{ li }}-total_impressions" value="{{ r.total_target|entry }}"></td>
@@ -191,6 +192,7 @@
     {% endfor %}
       <tr class="totalrow">
         <td>Total:</td>
+        <td></td>
         {% if g.pacing_type == 'impression' %}
           <td class="num">{{ g.total.monthly_target|num }}</td>
           <td class="num">{{ g.total.total_target|num }}</td>
@@ -489,115 +491,115 @@
   <div class="charthead">
     <h3><span class="pchip" style="background:{{ b.hex }};color:{{ b.text_hex }}">{{ b.code }}</span>
       {{ b.label }}</h3>
-    {% if not b.terms %}
-    <span class="hint">No split entered. Nothing here says how much of this
-      product each targeting was bought for.</span>
+    {% if b.total and b.total.total_target %}
+    <span class="goalnote">Goal {{ b.total.total_target|metric(b.total) }}
+      &middot; {{ b.total.to_date|metric(b.total) }} delivered
+      <span class="pace {{ b.total.pacing_pct|paceclass }}">{{ b.total.pacing_pct|pct }}</span></span>
     {% endif %}
   </div>
 
   {% if b.observed %}
-  <details class="running" {% if not b.terms %}open{% endif %}>
-    <summary>Running now &mdash; {{ b.observed|length }} targeting,
-      {{ b.observed_total|metric(b.total) }} delivered</summary>
+  <div class="scroller">
+    <table class="elements stratbreak">
+      <thead><tr>
+        <th>Strategy</th>
+        <th class="num">Share</th>
+        <th class="num">{{ 'Impr.' if not b.total.is_money else 'Spend' }}</th>
+        <th class="num">Day {{ 'Impr.' if not b.total.is_money else 'Spend' }}</th>
+        <th class="num">CPM</th>
+        <th class="num">Cost</th>
+        <th class="num">Day Budg.</th>
+        <th class="num">Clicks</th>
+        <th class="num">CTR</th>
+        <th class="num">Conv.</th>
+        <th class="num">Days</th>
+      </tr></thead>
+      <tbody>
+      {% for obs in b.observed %}
+        <tr>
+          <td class="elname">{{ obs.label }}
+            {%- if obs.raw_labels and obs.raw_labels != [obs.label] %}
+            <span class="rawname" title="{{ obs.raw_labels|join(' · ') }}">{{ obs.raw_labels[0] }}</span>
+            {%- endif %}</td>
+          <td class="num ro">
+            <span class="sharebar"><i style="width:{{ (obs.share * 100)|round(1) }}%"></i></span>
+            {{ obs.share|pct(1) }}</td>
+          <td class="num ro">{{ obs.delivered|metric(b.total) }}</td>
+          <td class="num ro">{{ obs.per_day|metric(b.total) }}</td>
+          <td class="num ro">{{ b.rate|money }}</td>
+          <td class="num ro">{{ obs.spend|money }}</td>
+          <td class="num ro">{{ obs.spend_per_day|money }}</td>
+          <td class="num ro">{{ obs.clicks|num }}</td>
+          <td class="num ro">{{ obs.ctr|pct }}</td>
+          <td class="num ro">{{ obs.conversions|num }}</td>
+          <td class="num ro muted">{{ obs.days }}</td>
+        </tr>
+      {% endfor %}
+        <tr class="totalrow">
+          <td>Total:</td>
+          <td class="num">100.0%</td>
+          <td class="num">{{ b.observed_total|metric(b.total) }}</td>
+          <td class="num">{{ b.observed_per_day|metric(b.total) }}</td>
+          <td class="num">{{ b.rate|money }}</td>
+          <td class="num">{{ b.observed_spend|money }}</td>
+          <td class="num">{{ b.observed_spend_per_day|money }}</td>
+          <td class="num">{{ b.observed_clicks|num }}</td>
+          <td class="num">{{ b.observed_ctr|pct }}</td>
+          <td class="num">{{ b.observed_conversions|num }}</td>
+          <td class="num muted">{{ b.observed_days }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">Nothing has run under this product yet.</p>
+  {% endif %}
+
+  {# The sold split is optional. Most orders never get one, and the breakout
+     above needs nobody to enter anything. #}
+  {% if b.terms %}
+  <details class="soldsplit">
+    <summary>Sold split &mdash; {{ b.terms|length }} rows</summary>
+    <form method="post" action="{{ url_for('strategies_save', order_id=o.id) }}">
     <div class="scroller">
-      <table class="elements running">
-        <thead><tr><th>Targeting in the feed</th>
-          <th class="num">Delivered</th><th class="num">Share</th>
-          <th>Sold row</th></tr></thead>
+      <table class="elements">
+        <thead><tr><th>Strategy</th><th class="num">Impr.</th>
+          <th class="num">Tot. Impr.</th><th class="num">CPM</th>
+          <th class="num">Delivered</th><th class="num">On Pace</th>
+          <th class="num">Pacing</th><th></th></tr></thead>
         <tbody>
-        {# Not `o` - that is the order, and shadowing it here would be a
-           long afternoon. #}
-        {% for obs in b.observed %}
+        {% for r in b.rows %}
           <tr>
-            <td class="elname">{{ obs.label }}</td>
-            <td class="num ro">{{ obs.delivered|metric(b.total) }}</td>
-            <td class="num ro">
-              <span class="sharebar"><i style="width:{{ (obs.share * 100)|round(1) }}%"></i></span>
-              {{ obs.share|pct(1) }}</td>
-            <td class="muted">{{ 'matched' if obs.claimed else 'none' }}</td>
+            <td class="elname"><input type="text" name="st-{{ r.strategy_id }}-label"
+              value="{{ r.label }}"></td>
+            <td class="num"><input type="text" name="st-{{ r.strategy_id }}-monthly"
+              value="{{ r.monthly_target|entry }}"></td>
+            <td class="num"><input type="text" name="st-{{ r.strategy_id }}-total"
+              value="{{ r.total_target|entry }}"></td>
+            <td class="num"><input type="text" name="st-{{ r.strategy_id }}-rate"
+              value="{{ r.unit_cost|entry }}"></td>
+            <td class="num ro">{{ r.to_date|metric(r) }}</td>
+            <td class="num ro">{{ r.on_pace|metric(r) }}</td>
+            <td class="num"><span class="pace {{ r.pacing_pct|paceclass }}">{{ r.pacing_pct|pct }}</span></td>
+            <td class="rowdel">
+              <button class="x" type="submit" title="Remove this strategy" formnovalidate
+                formaction="{{ url_for('strategy_delete', order_id=o.id, strategy_id=r.strategy_id) }}">&times;</button>
+            </td>
           </tr>
         {% endfor %}
         </tbody>
       </table>
     </div>
     <div class="cardfoot">
-      <span class="hint">These are the shares actually running. What is
-        missing is the sold split - how much of the product each was bought
-        for - which nothing can work out on its own.</span>
-      <form method="post" action="{{ url_for('strategy_seed', order_id=o.id) }}">
-        <input type="hidden" name="line_item_id" value="{{ b.line_item.id }}">
-        <button class="btn2 addprod" type="submit">Draft a split from these shares</button>
-      </form>
+      <button class="btn save" type="submit">Save split</button>
     </div>
+    </form>
   </details>
-  {% endif %}
-
-  {% if b.terms %}
-  <form method="post" action="{{ url_for('strategies_save', order_id=o.id) }}">
-  <div class="scroller">
-    <table class="elements">
-      <thead><tr>
-        <th>Strategy</th><th class="num">Impr.</th><th class="num">Tot. Impr.</th>
-        <th class="num">Day Impr.</th><th class="num">CPM</th>
-        <th class="num">Day Budg.</th><th class="num">Tot Budg.</th>
-        <th class="num">TD Impr.</th><th class="num">Impr. Left</th>
-        <th class="num">On Pace</th><th class="num">Pacing</th><th></th>
-      </tr></thead>
-      <tbody>
-      {% for r in b.rows %}
-        <tr>
-          <td class="elname"><input type="text" name="st-{{ r.strategy_id }}-label"
-            value="{{ r.label }}"></td>
-          <td class="num"><input type="text" name="st-{{ r.strategy_id }}-monthly"
-            value="{{ r.monthly_target|entry }}"></td>
-          <td class="num"><input type="text" name="st-{{ r.strategy_id }}-total"
-            value="{{ r.total_target|entry }}"></td>
-          <td class="num ro">{{ r.daily_target|metric(r) }}</td>
-          <td class="num"><input type="text" name="st-{{ r.strategy_id }}-rate"
-            value="{{ r.unit_cost|entry }}"></td>
-          <td class="num ro">{{ r.daily_budget|money }}</td>
-          <td class="num ro">{{ r.total_budget|money }}</td>
-          <td class="num ro">{{ r.to_date|metric(r) }}</td>
-          <td class="num ro">{{ r.remaining|metric(r) }}</td>
-          <td class="num ro">{{ r.on_pace|metric(r) }}</td>
-          <td class="num"><span class="pace {{ r.pacing_pct|paceclass }}">{{ r.pacing_pct|pct }}</span></td>
-          <td class="rowdel">
-            <button class="x" type="submit" title="Remove this strategy"
-              formnovalidate
-              formaction="{{ url_for('strategy_delete', order_id=o.id, strategy_id=r.strategy_id) }}">&times;</button>
-          </td>
-        </tr>
-      {% endfor %}
-        <tr class="totalrow">
-          <td>Total:</td>
-          <td class="num">{{ b.total.monthly_target|metric(b.total) }}</td>
-          <td class="num">{{ b.total.total_target|metric(b.total) }}</td>
-          <td class="num">{{ b.total.daily_target|metric(b.total) }}</td>
-          <td class="num">{{ b.total.unit_cost|money }}</td>
-          <td class="num">{{ b.total.daily_budget|money }}</td>
-          <td class="num">{{ b.total.total_budget|money }}</td>
-          <td class="num">{{ b.total.to_date|metric(b.total) }}</td>
-          <td class="num">{{ b.total.remaining|metric(b.total) }}</td>
-          <td class="num">{{ b.total.on_pace|metric(b.total) }}</td>
-          <td class="num"><span class="pace {{ b.total.pacing_pct|paceclass }}">{{ b.total.pacing_pct|pct }}</span></td>
-          <td></td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-  <div class="cardfoot">
-    {% if b.unclaimed %}
-    <span class="unclaimed" title="{{ b.unclaimed_labels|join(', ') }}">
-      {{ b.unclaimed|metric(b.total) }} ran under targeting no row here claims</span>
-    {% endif %}
-    <button class="btn save" type="submit">Save split</button>
-  </div>
-  </form>
   {% endif %}
 
   <form method="post" action="{{ url_for('strategy_add', order_id=o.id) }}" class="addrow">
     <input type="hidden" name="line_item_id" value="{{ b.line_item.id }}">
-    <input type="text" name="label" placeholder="New strategy on {{ b.label }}">
+    <input type="text" name="label" placeholder="Add a sold strategy row on {{ b.label }}">
     <button class="btn2 addprod" type="submit">&#43; Add strategy</button>
   </form>
 </div>
