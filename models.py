@@ -265,7 +265,12 @@ class StrategyTerms(Base):
 
     __tablename__ = "strategy_terms"
     __table_args__ = (
-        UniqueConstraint("order_id", "label", name="uq_strategy_terms_label"),
+        # Per product, not per order. An order can carry two Mobile
+        # Conquesting line items, and both of them running "MC - Behavioral"
+        # is two real rows, not a duplicate.
+        UniqueConstraint(
+            "order_id", "line_item_id", "label", name="uq_strategy_terms_label"
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

@@ -73,13 +73,14 @@
 
 
 <nav class="tabs" role="tablist">
-  <a class="tab {{ 'on' if tab == 'order' }}"
-     href="{{ url_for('order_detail', order_id=o.id, tab='order') }}">Order</a>
-  <a class="tab {{ 'on' if tab == 'campaign' }}"
-     href="{{ url_for('order_detail', order_id=o.id, tab='product') }}">Product
-     {% if linking.unmatched_count %}<i class="tabflag">{{ linking.unmatched_count }}</i>{% endif %}</a>
-  <a class="tab {{ 'on' if tab == 'strategy' }}"
-     href="{{ url_for('order_detail', order_id=o.id, tab='strategy') }}">Strategy</a>
+  {# Built from the route's own list, so a tab cannot exist in one and not
+     the other. #}
+  {% for name in order_tabs %}
+  <a class="tab {{ 'on' if tab == name }}"
+     href="{{ url_for('order_detail', order_id=o.id, tab=name) }}">{{ name|capitalize }}
+     {%- if name == 'product' and linking.unmatched_count %}
+     <i class="tabflag">{{ linking.unmatched_count }}</i>{% endif %}</a>
+  {% endfor %}
 </nav>
 
 <div class="pane"{% if tab != "order" %} hidden{% endif %}>

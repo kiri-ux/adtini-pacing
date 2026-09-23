@@ -1383,3 +1383,230 @@ def strategy_blocks(session, view: "OrderView") -> list[StrategyBlock]:
         blocks.append(block)
 
     return blocks
+
+
+@dataclass
+class DraftResult:
+    orders_seen: int = 0
+    orders_drafted: int = 0
+    strategies_added: int = 0
+    orders_without_delivery: int = 0
+
+    def summary(self) -> str:
+        parts = [
+            f"{self.orders_drafted} orders given a split",
+            f"{self.strategies_added} strategies drafted",
+        ]
+        if self.orders_without_delivery:
+            parts.append(
+                f"{self.orders_without_delivery} had nothing running to draft from"
+            )
+        return ", ".join(parts) + f" (of {self.orders_seen} missing one)"
+
+
+# Orders per batch. Each one costs a handful of queries and a page's worth of
+# objects, and this runs in the web worker beside whatever else it is serving.
+DRAFT_BATCH = 50
+
+
+def draft_missing_splits(session, as_of: dt.date | None = None) -> DraftResult:
+    """Draft a sold split for every product that has none.
+
+    The split is the only thing that says which targeting to push when a
+    product is under-pacing, and nearly every order on the book is missing
+    it. Doing that a product at a time, by hand, across a thousand orders is
+    not work anybody is going to finish.
+
+    What is running is knowable; what each targeting was *bought* for is not,
+    so this apportions the product's sold figures by the shares actually
+    running and leaves the rows editable. It is a first draft for a buyer to
+    correct, not an answer - which is why it only ever fills a gap and never
+    touches a row that already exists.
+    """
+    as_of = as_of or latest_delivery_date(session) or dt.date.today()
+    result = DraftResult()
+
+    # Only Insertion Orders that are still running: pacing a finished order
+    # by strategy answers nothing anybody is going to act on.
+    candidates = list(
+        session.execute(
+            select(Order.id)
+            .where(
+                func.lower(func.coalesce(Order.order_type, "")) == PACEABLE_ORDER_TYPE,
+                Order.active.is_(True),
+                or_(Order.end_date.is_(None), Order.end_date >= as_of),
+                ~Order.id.in_(select(StrategyTerms.order_id).distinct()),
+            )
+            .order_by(Order.id)
+        ).scalars()
+    )
+    result.orders_seen = len(candidates)
+
+    for start in range(0, len(candidates), DRAFT_BATCH):
+        batch = candidates[start : start + DRAFT_BATCH]
+        orders = list(
+            session.execute(
+                select(Order)
+                .where(Order.id.in_(batch))
+                .options(selectinload(Order.line_items), selectinload(Order.client))
+            ).scalars()
+        )
+        line_items = [
+            li
+            for order in orders
+            for li in order.line_items
+            if products.is_paced(li.product)
+        ]
+        if not line_items:
+            result.orders_without_delivery += len(orders)
+            continue
+
+        # One pass over the batch rather than a full order view per order.
+        # Built per order, the whole book took a hundred seconds and held a
+        # worker for all of it; the shares are all this needs.
+        series: dict[int, list[StrategySeries]] = {}
+        for metric in ("impressions", "cost"):
+            wanted = [
+                li for li in line_items
+                if (
+                    "impressions"
+                    if (li.pacing_type or li.order.pacing_type or "impression")
+                    == "impression"
+                    else "cost"
+                ) == metric
+            ]
+            if wanted:
+                series.update(strategy_series(session, wanted, metric=metric))
+
+        for order in orders:
+            added = 0
+            for item in order.line_items:
+                if not products.is_paced(item.product):
+                    continue
+                added += _draft_item(session, item, series.get(item.id, []))
+            if added:
+                result.orders_drafted += 1
+                result.strategies_added += added
+            else:
+                result.orders_without_delivery += 1
+
+        # Written out and let go of between batches. Holding a thousand
+        # orders and their line items in one session is how the last
+        # sweeping action over the whole book took the worker down.
+        session.flush()
+        session.expunge_all()
+
+    return result
+
+
+def _draft_item(
+    session, item: LineItem, running: list["StrategySeries"]
+) -> int:
+    """Apportion one product's sold figures by what is running under it."""
+    running = [s for s in running if s.total > 0]
+    total_run = sum(s.total for s in running)
+    if not running or not total_run:
+        return 0
+
+    # What this product already has. Rows added earlier in this same run are
+    # not flushed yet, so the session's pending objects are counted too -
+    # without that, two products on one order running the same targeting each
+    # tried to write the same row.
+    taken = {
+        label
+        for label in session.execute(
+            select(StrategyTerms.label).where(StrategyTerms.line_item_id == item.id)
+        ).scalars()
+    }
+    if taken:
+        return 0
+    taken |= {
+        pending.label
+        for pending in session.new
+        if isinstance(pending, StrategyTerms) and pending.line_item_id == item.id
+    }
+
+    monthly = (
+        item.monthly_impressions or item.monthly_spend or item.client_monthly_budget
+    )
+    total = item.total_impressions or item.total_spend or item.client_total_budget
+    rate = item.goal_cpm or item.goal_cpc or item.goal_cpe
+
+    added = 0
+    for entry in sorted(running, key=lambda s: -s.total):
+        if entry.label in taken:
+            continue
+        share = entry.total / total_run
+        session.add(
+            StrategyTerms(
+                order_id=item.order_id,
+                line_item_id=item.id,
+                label=entry.label,
+                match_key=sheets.match_key(entry.label),
+                monthly_target=(monthly * share) if monthly else None,
+                total_target=(total * share) if total else None,
+                rate=rate,
+                sort_order=added,
+                source="drafted from delivery",
+                added_by_hand=True,
+            )
+        )
+        taken.add(entry.label)
+        added += 1
+    return added
+
+
+def _draft_block(session, block: "StrategyBlock") -> int:
+    """Apportion one product's sold figures by what is running under it."""
+    if block.terms:
+        return 0
+    running = [o for o in block.observed if o.delivered > 0]
+    if not running:
+        return 0
+
+    item = block.line_item
+    monthly = (
+        item.monthly_impressions or item.monthly_spend or item.client_monthly_budget
+    )
+    total = item.total_impressions or item.total_spend or item.client_total_budget
+    rate = item.goal_cpm or item.goal_cpc or item.goal_cpe
+
+    # What this product already has. Rows added earlier in this same run are
+    # not flushed yet, so the session's pending objects are counted too -
+    # without that, two products on one order running the same targeting each
+    # tried to write the same row.
+    taken = {
+        label
+        for label in session.execute(
+            select(StrategyTerms.label).where(
+                StrategyTerms.line_item_id == item.id
+            )
+        ).scalars()
+    }
+    taken |= {
+        pending.label
+        for pending in session.new
+        if isinstance(pending, StrategyTerms) and pending.line_item_id == item.id
+    }
+
+    added = 0
+    for observed in running:
+        if observed.label in taken:
+            continue
+        session.add(
+            StrategyTerms(
+                order_id=item.order_id,
+                line_item_id=item.id,
+                label=observed.label,
+                match_key=observed.match_key,
+                monthly_target=(monthly * observed.share) if monthly else None,
+                total_target=(total * observed.share) if total else None,
+                rate=rate,
+                sort_order=len(taken) + added,
+                source="drafted from delivery",
+                added_by_hand=True,
+            )
+        )
+        taken.add(observed.label)
+        added += 1
+    return added

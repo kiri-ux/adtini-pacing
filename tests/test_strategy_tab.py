@@ -472,3 +472,165 @@ def test_a_spend_product_reports_its_strategies_in_spend(site):
 
     ppc = next(b for b in blocks if b.code == "PPC")
     assert ppc.observed_total == 550.0, "10 days at $55, not zero impressions"
+
+
+# --- the tab bar and the route have to agree -------------------------------
+def test_every_tab_link_on_the_page_selects_its_own_pane(site):
+    """Renaming Campaign to Product broke this and nothing caught it.
+
+    The template linked to `tab=product`; the route still only accepted
+    `tab=campaign`, so the new link fell through to the default and clicking
+    Product showed the Order pane. Both are now built from one list, and this
+    follows every link the page actually renders rather than a list written
+    out again here.
+    """
+    import re
+
+    app_module, order_id = site
+    client = app_module.app.test_client()
+    page = client.get(f"/orders/{order_id}").get_data(as_text=True)
+
+    links = re.findall(r'href="([^"]*\btab=[a-z]+)"', page)
+    assert len(links) >= 3, "the tab bar should be on the page"
+
+    for href in links:
+        name = href.rsplit("tab=", 1)[1]
+        body = client.get(href.replace("&amp;", "&")).get_data(as_text=True)
+        panes = re.findall(r'<div class="pane"[^>]*>', body)
+        shown = [i for i, pane in enumerate(panes) if "hidden" not in pane]
+        assert len(shown) == 1, f"{name}: {len(shown)} panes visible"
+        # And the tab itself reads as the selected one.
+        assert re.search(
+            r'class="tab on"[^>]*href="[^"]*tab=' + name, body
+        ), f"{name} is not marked selected"
+
+
+def test_the_old_campaign_link_still_lands_on_product(site):
+    """Links to the old name are out there."""
+    import re
+
+    app_module, order_id = site
+    body = app_module.app.test_client().get(
+        f"/orders/{order_id}?tab=campaign"
+    ).get_data(as_text=True)
+    assert re.search(r'class="tab on"[^>]*href="[^"]*tab=product', body)
+
+
+# --- drafting across the whole book ----------------------------------------
+def test_drafting_fills_every_live_order_that_has_no_split(site):
+    """Doing this by hand across a thousand orders is not work that finishes."""
+    from models import StrategyTerms
+
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        for term in session.query(StrategyTerms).all():
+            session.delete(term)
+
+    with db_module.session_scope() as session:
+        result = views.draft_missing_splits(session)
+
+    assert result.orders_seen == 1
+    assert result.orders_drafted == 1
+    assert result.strategies_added == 2
+
+    with db_module.session_scope() as session:
+        drafted = session.query(StrategyTerms).all()
+        assert {t.source for t in drafted} == {"drafted from delivery"}
+        assert all(t.line_item_id is not None for t in drafted)
+
+
+def test_drafting_skips_an_order_that_already_has_a_split(site):
+    """It fills gaps. A split already entered is not a gap."""
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        result = views.draft_missing_splits(session)
+
+    assert result.orders_seen == 0
+    assert result.strategies_added == 0
+
+
+def test_drafting_is_safe_to_run_twice(site):
+    """Someone will press it twice. The second press must change nothing."""
+    from models import StrategyTerms
+
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        for term in session.query(StrategyTerms).all():
+            session.delete(term)
+
+    with db_module.session_scope() as session:
+        views.draft_missing_splits(session)
+    with db_module.session_scope() as session:
+        again = views.draft_missing_splits(session)
+
+    assert again.strategies_added == 0
+    with db_module.session_scope() as session:
+        assert session.query(StrategyTerms).count() == 2
+
+
+def test_two_products_on_one_order_can_run_the_same_targeting(site):
+    """Two Mobile Conquesting lines both running behavioral is two rows.
+
+    The label was unique per order, so the second one could not be written
+    at all - drafting across the book died on a unique violation partway
+    through. A strategy belongs to a product, so that is the grain.
+    """
+    import datetime as dt
+
+    from models import DailyDelivery, LineItem, Order, StrategyTerms
+
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        for term in session.query(StrategyTerms).all():
+            session.delete(term)
+        order = session.get(Order, order_id)
+        # A second line item of the same product as the first.
+        twin = LineItem(
+            order_id=order.id, external_id="88003", name="Meta 2",
+            product="Meta Display & Video Ads", sort_order=2,
+            monthly_impressions=40_000.0, total_impressions=480_000.0,
+            goal_cpm=2.96,
+        )
+        session.add(twin)
+        session.flush()
+        for day in range(1, 11):
+            session.add(
+                DailyDelivery(
+                    date=dt.date(2026, 8, day),
+                    data_source="Meta",
+                    campaign_id="CMP-2",
+                    strategy_id=f"TWIN-{day}",
+                    client_name="Bud's Auto",
+                    external_order_id="44100",
+                    external_line_item_id="88003",
+                    product="Meta Display & Video Ads",
+                    strategy_name="Meta - Categories",
+                    strategy_type="Categories",
+                    impressions=900.0,
+                )
+            )
+
+    with db_module.session_scope() as session:
+        views.draft_missing_splits(session)
+
+    with db_module.session_scope() as session:
+        rows = session.query(StrategyTerms).all()
+        by_label = {}
+        for row in rows:
+            by_label.setdefault(row.label, []).append(row.line_item_id)
+
+    # The same targeting, on two products, is two rows on one order.
+    assert len(by_label["META - Categories"]) == 2
+    assert len(set(by_label["META - Categories"])) == 2

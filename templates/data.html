@@ -70,6 +70,21 @@
 
   <div class="datarow">
     <form method="post" action="{{ url_for('data_action') }}">
+      <input type="hidden" name="action" value="draft-splits">
+      <div>
+        <h4>Draft the missing strategy splits</h4>
+        <p class="hint">Every live order with no split gets one, apportioned
+          by what each targeting is actually running. A first draft for a
+          buyer to correct, not an answer &mdash; it only fills a gap and
+          never touches a row already entered.</p>
+      </div>
+      <button class="btn2 addprod" type="submit"
+        {% if sweep_running %}disabled{% endif %}>Draft splits</button>
+    </form>
+  </div>
+
+  <div class="datarow">
+    <form method="post" action="{{ url_for('data_action') }}">
       <input type="hidden" name="action" value="adopt">
       <div>
         <h4>Adopt unmatched delivery</h4>

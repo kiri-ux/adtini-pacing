@@ -403,6 +403,12 @@ def overview():
         )
 
 
+# The order page's views. The template's tab bar is built from this, so a
+# tab cannot be added to one and forgotten in the other - which is exactly
+# how renaming Campaign to Product left the new link falling back to Order.
+ORDER_TABS = ("order", "product", "strategy")
+
+
 @app.route("/orders/<int:order_id>")
 @login_required
 def order_detail(order_id: int):
@@ -411,13 +417,17 @@ def order_detail(order_id: int):
         if view is None:
             abort(404)
         tab = request.args.get("tab") or "order"
-        if tab not in ("order", "campaign", "strategy"):
+        # "campaign" is what this tab was called before it was renamed, and
+        # links to it are out there.
+        tab = {"campaign": "product"}.get(tab, tab)
+        if tab not in ORDER_TABS:
             tab = "order"
         return render_template(
             "order.html",
             v=view,
             t=view.total,
             tab=tab,
+            order_tabs=ORDER_TABS,
             chart=views.chart_series(view),
             product_charts=views.product_charts(view),
             blocks=views.strategy_blocks(db, view),
@@ -616,7 +626,8 @@ def strategy_add(order_id: int):
 
         clash = db.execute(
             select(StrategyTerms).where(
-                StrategyTerms.order_id == order_id, StrategyTerms.label == label
+                StrategyTerms.line_item_id == item.id,
+                StrategyTerms.label == label,
             )
         ).scalar_one_or_none()
         if clash is not None:
@@ -685,10 +696,14 @@ def strategy_seed(order_id: int):
         taken = {
             term.label
             for term in db.execute(
-                select(StrategyTerms).where(StrategyTerms.order_id == order_id)
+                select(StrategyTerms).where(StrategyTerms.line_item_id == item.id)
             ).scalars()
         }
-        count = len(taken)
+        count = db.execute(
+            select(func.count())
+            .select_from(StrategyTerms)
+            .where(StrategyTerms.order_id == order_id)
+        ).scalar() or 0
 
         monthly = item.monthly_impressions or item.monthly_spend or item.client_monthly_budget
         total = item.total_impressions or item.total_spend or item.client_total_budget
@@ -917,6 +932,9 @@ def data_action():
     elif action == "recompute":
         with session_scope() as db:
             message = recompute_terms(db).summary()
+    elif action == "draft-splits":
+        with session_scope() as db:
+            message = views.draft_missing_splits(db, as_of=_as_of()).summary()
 
     if message:
         flash(message)
