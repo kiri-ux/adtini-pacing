@@ -419,6 +419,7 @@ def order_detail(order_id: int):
             t=view.total,
             tab=tab,
             chart=views.chart_series(view),
+            product_charts=views.product_charts(view),
             blocks=views.strategy_blocks(db, view),
             pacing_labels={
                 "impression": "Impressions",
@@ -640,6 +641,85 @@ def strategy_add(order_id: int):
         )
 
     flash(f"Added {label}.")
+    return redirect(url_for("order_detail", order_id=order_id, tab="strategy"))
+
+
+@app.route("/orders/<int:order_id>/strategies/seed", methods=["POST"])
+@login_required
+def strategy_seed(order_id: int):
+    """Draft the sold split from the shares that are actually running.
+
+    What is running is knowable without anyone typing it; what is missing is
+    the *sold* split - how much of the product each targeting was bought for.
+    Nothing can derive that, but the running shares are the obvious first
+    draft of it, and a buyer correcting three numbers beats a buyer entering
+    ten from nothing.
+
+    Drafted, not decided: the rows land editable and a buyer is expected to
+    fix them. Existing rows are left alone, so this fills gaps rather than
+    overwriting anybody's work.
+    """
+    line_item_id = request.form.get("line_item_id", type=int)
+
+    with session_scope() as db:
+        item = db.get(LineItem, line_item_id) if line_item_id else None
+        if item is None or item.order_id != order_id:
+            abort(404)
+
+        view = views.order_view(db, order_id, as_of=_as_of())
+        if view is None:
+            abort(404)
+        block = next(
+            (
+                b
+                for b in views.strategy_blocks(db, view)
+                if b.line_item.id == item.id
+            ),
+            None,
+        )
+        running = [o for o in (block.observed if block else []) if o.delivered > 0]
+        if not running:
+            flash("Nothing is running under this product yet to build a split from.")
+            return redirect(url_for("order_detail", order_id=order_id, tab="strategy"))
+
+        taken = {
+            term.label
+            for term in db.execute(
+                select(StrategyTerms).where(StrategyTerms.order_id == order_id)
+            ).scalars()
+        }
+        count = len(taken)
+
+        monthly = item.monthly_impressions or item.monthly_spend or item.client_monthly_budget
+        total = item.total_impressions or item.total_spend or item.client_total_budget
+        rate = item.goal_cpm or item.goal_cpc or item.goal_cpe
+
+        added = 0
+        for observed in running:
+            if observed.label in taken:
+                continue
+            db.add(
+                StrategyTerms(
+                    order_id=order_id,
+                    line_item_id=item.id,
+                    label=observed.label,
+                    match_key=observed.match_key,
+                    # The product's sold figures, apportioned by what each
+                    # targeting is actually taking.
+                    monthly_target=(monthly * observed.share) if monthly else None,
+                    total_target=(total * observed.share) if total else None,
+                    rate=rate,
+                    sort_order=count + added,
+                    source="drafted from delivery",
+                    added_by_hand=True,
+                )
+            )
+            added += 1
+
+    if added:
+        flash(f"Drafted {added} strategies from what is running. Check the numbers.")
+    else:
+        flash("Every running strategy already has a row.")
     return redirect(url_for("order_detail", order_id=order_id, tab="strategy"))
 
 

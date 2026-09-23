@@ -316,3 +316,159 @@ def test_a_product_with_no_targeting_matches_nothing():
     assert match_key("PPC") is None
     assert match_key("Video") is None
     assert match_key("") is None
+
+
+# --- what is running, and drafting a split from it -------------------------
+def test_the_running_targeting_and_its_share_are_shown(site):
+    """What is running needs nobody to type it; the sold split does.
+
+    A product with no split entered used to show an empty card - true, and
+    useless. The shares actually running are the obvious first draft of the
+    split, and seeing them is most of the work.
+    """
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        view = views.order_view(session, order_id)
+        blocks = views.strategy_blocks(session, view)
+
+    meta = next(b for b in blocks if b.code == "M")
+    shares = {o.label: round(o.share, 3) for o in meta.observed}
+    # 20 days at 3,800 against 20 days at 400.
+    assert shares == {
+        "META - Categories": 0.905, "META - Retargeting": 0.095
+    }
+    assert meta.observed_total == 84_000
+    assert all(o.claimed for o in meta.observed), "both have a sold row"
+
+
+def test_a_split_can_be_drafted_from_what_is_running(site):
+    """Apportion the product's sold figures by the shares in the feed."""
+    from models import LineItem, StrategyTerms
+
+    import db as db_module
+
+    app_module, order_id = site
+    client = app_module.app.test_client()
+
+    # Clear the seeded split so there is a gap to fill.
+    with db_module.session_scope() as session:
+        for term in session.query(StrategyTerms).all():
+            session.delete(term)
+        meta_id = (
+            session.query(LineItem).filter(LineItem.external_id == "88001").one().id
+        )
+
+    client.post(
+        f"/orders/{order_id}/strategies/seed",
+        data={"line_item_id": str(meta_id)},
+        follow_redirects=True,
+    )
+
+    with db_module.session_scope() as session:
+        drafted = {
+            t.label: (t.monthly_target, t.total_target)
+            for t in session.query(StrategyTerms).all()
+        }
+
+    # The product sold 128,000 a month and 1,536,000 in total.
+    assert len(drafted) == 2
+    monthly = sum(v[0] for v in drafted.values())
+    total = sum(v[1] for v in drafted.values())
+    assert round(monthly) == 128_000
+    assert round(total) == 1_536_000
+
+
+def test_drafting_never_overwrites_a_row_a_buyer_entered(site):
+    """It fills gaps. Someone's typed numbers are not a gap."""
+    from models import LineItem, StrategyTerms
+
+    import db as db_module
+
+    app_module, order_id = site
+    client = app_module.app.test_client()
+
+    with db_module.session_scope() as session:
+        meta_id = (
+            session.query(LineItem).filter(LineItem.external_id == "88001").one().id
+        )
+        before = {
+            t.label: t.monthly_target for t in session.query(StrategyTerms).all()
+        }
+
+    client.post(
+        f"/orders/{order_id}/strategies/seed",
+        data={"line_item_id": str(meta_id)},
+        follow_redirects=True,
+    )
+
+    with db_module.session_scope() as session:
+        after = {
+            t.label: t.monthly_target for t in session.query(StrategyTerms).all()
+        }
+    # The seeded rows are named differently from the feed's, so drafting adds
+    # the feed's - but it must not have touched what was already there.
+    for label, monthly in before.items():
+        assert after[label] == monthly
+
+
+def test_each_product_is_charted_in_its_own_unit(site):
+    """Impressions for a product sold in impressions, spend for one in spend.
+
+    They cannot share an axis: a Display line running 40,000 a day beside a
+    PPC line spending $90 would flatten one against the other and say
+    nothing about either.
+    """
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        charts = views.product_charts(views.order_view(session, order_id))
+
+    units = {c["label"]: c["unit"] for c in charts}
+    assert units["Impressions"] == "Impressions per day"
+    assert [s["label"] for s in charts[0]["series"]] == ["Meta"]
+
+
+def test_a_spend_product_reports_its_strategies_in_spend(site):
+    """Asking a Pay-Per-Click line for impressions reports nothing ran.
+
+    Its strategies were measured in the order's unit rather than their own,
+    so every one of them read as zero on a product that was spending fine.
+    """
+    import datetime as dt
+
+    from models import DailyDelivery
+
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        for day in range(1, 11):
+            session.add(
+                DailyDelivery(
+                    date=dt.date(2026, 8, day),
+                    data_source="Google Ads Search",
+                    campaign_id="PPC-1",
+                    strategy_id=f"SRCH-{day}",
+                    client_name="Bud's Auto",
+                    external_order_id="44100",
+                    external_line_item_id="88002",
+                    product="Pay-Per-Click Ads",
+                    strategy_name="Search",
+                    impressions=0.0,
+                    clicks=30.0,
+                    cost=55.0,
+                )
+            )
+
+    with db_module.session_scope() as session:
+        view = views.order_view(session, order_id)
+        blocks = views.strategy_blocks(session, view)
+
+    ppc = next(b for b in blocks if b.code == "PPC")
+    assert ppc.observed_total == 550.0, "10 days at $55, not zero impressions"

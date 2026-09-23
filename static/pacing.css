@@ -398,3 +398,21 @@ select.rowpace:focus{outline:2px solid var(--blue-lt);outline-offset:-1px;
 .stratblock table.elements td.rowdel button.x{background:none;border:0;
   cursor:pointer;color:var(--muted);font-size:16px;line-height:1;padding:2px 6px}
 .stratblock table.elements td.rowdel button.x:hover{color:#B3261E}
+
+/* ---- what is running under a product ------------------------------------ */
+details.running{border-top:1px solid var(--line)}
+details.running > summary{cursor:pointer;padding:12px 18px;font-size:12.5px;
+  font-weight:600;color:var(--muted);list-style:none}
+details.running > summary::-webkit-details-marker{display:none}
+details.running > summary::before{content:"\\25B8 ";display:inline-block;
+  transition:transform .12s;margin-right:6px}
+details.running[open] > summary::before{transform:rotate(90deg)}
+details.running > summary:hover{color:var(--text)}
+table.elements.running input{display:none}
+.sharebar{display:inline-block;width:54px;height:6px;border-radius:999px;
+  background:var(--fill);margin-right:8px;vertical-align:middle;overflow:hidden}
+.sharebar i{display:block;height:100%;background:var(--blue-lt);border-radius:999px}
+details.running .cardfoot{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+details.running .cardfoot .hint{flex:1;min-width:240px;font-size:12px;
+  color:var(--muted);line-height:1.5}
+details.running .cardfoot form{padding:0}

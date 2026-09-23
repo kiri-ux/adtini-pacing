@@ -7,11 +7,15 @@
  * Every label here comes from the delivery feed, and the orders export is
  * known to carry HTML in its fields. Labels go in with textContent only.
  */
-(function () {
+/* One page can hold several of these - an order sold in impressions beside
+ * one sold in spend needs a chart each, because the two cannot share an
+ * axis. So the whole thing is a function over a suffix rather than a lookup
+ * of two fixed ids. */
+function adtiniChart(suffix) {
   "use strict";
 
-  var host = document.getElementById("strategychart");
-  var dataEl = document.getElementById("chartdata");
+  var host = document.getElementById("strategychart" + suffix);
+  var dataEl = document.getElementById("chartdata" + suffix);
   if (!host || !dataEl) return;
 
   var data;
@@ -260,7 +264,7 @@
   /* The legend is markup, not canvas, so identity survives with images off
      and is reachable by a screen reader. */
   function legend() {
-    var host2 = document.getElementById("chartlegend");
+    var host2 = document.getElementById("chartlegend" + suffix);
     if (!host2) return;
     host2.textContent = "";
     data.series.forEach(function (series, index) {
@@ -284,4 +288,13 @@
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(function () { draw(); legend(); }, 150);
   });
+}
+
+/* Draw every chart the page carries: the bare ids, and any numbered ones. */
+(function () {
+  adtiniChart("");
+  var nodes = document.querySelectorAll('[id^="chartdata-"]');
+  for (var i = 0; i < nodes.length; i += 1) {
+    adtiniChart(nodes[i].id.slice("chartdata".length));
+  }
 })();

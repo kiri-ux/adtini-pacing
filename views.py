@@ -384,7 +384,21 @@ def order_view(session, order_id: int, as_of: dt.date | None = None) -> OrderVie
             day += dt.timedelta(days=1)
 
     attr = "impressions" if order.pacing_type == "impression" else "cost"
-    strategies = strategy_series(session, line_items, metric=attr)
+    # Per product, not per order: the strategies under a Pay-Per-Click line
+    # are measured in spend, and asking for their impressions - which it has
+    # none of - reported every one of them as having run nothing.
+    strategies: dict[int, list[StrategySeries]] = {}
+    for metric in ("impressions", "cost"):
+        wanted = [
+            li for li in line_items
+            if (
+                "impressions"
+                if (li.pacing_type or order.pacing_type or "impression") == "impression"
+                else "cost"
+            ) == metric
+        ]
+        if wanted:
+            strategies.update(strategy_series(session, wanted, metric=metric))
     grid = {
         row.line_item_id: {p.date: getattr(p, attr) for p in row.daily}
         for row in rows
@@ -712,6 +726,66 @@ def chart_series(view: "OrderView", limit: int = MAX_CHART_SERIES) -> dict:
         "series": series,
         "metric": view.metric,
     }
+
+
+def product_charts(view: "OrderView", limit: int = MAX_CHART_SERIES) -> list[dict]:
+    """Delivery per day, one line per product - and one chart per unit.
+
+    Impressions for a product sold in impressions, client cost for one sold
+    in spend. An order can carry both, and they cannot share an axis: a
+    Display line running 40,000 a day beside a PPC line spending $90 would
+    flatten the one against the other and say nothing about either. So a
+    mixed order gets a chart each, which is also what the tiles above do.
+    """
+    ratios = {
+        r.line_item_id: (r.client_cost_ratio if r.pacing_type == "event" else 1.0)
+        for r in view.rows
+        if r.line_item_id is not None
+    }
+
+    charts: list[dict] = []
+    for group in view.groups:
+        attr = "impressions" if group.pacing_type == "impression" else "cost"
+        labelled: list[tuple[str, dict[dt.date, float], float]] = []
+        for row in group.rows:
+            if row.line_item_id is None:
+                continue
+            gross = ratios.get(row.line_item_id, 1.0)
+            points = view.daily_by_line_item.get(row.line_item_id, [])
+            by_date = {p.date: getattr(p, attr) * gross for p in points}
+            total = sum(by_date.values())
+            if total:
+                labelled.append((row.label, by_date, total))
+        labelled.sort(key=lambda item: -item[2])
+
+        dates = sorted({d for _, by_date, _ in labelled for d in by_date})
+        if not dates or not labelled:
+            continue
+
+        head, tail = labelled[:limit], labelled[limit:]
+        series = [
+            {"label": label, "values": [by_date.get(d, 0.0) for d in dates]}
+            for label, by_date, _ in head
+        ]
+        if tail:
+            series.append({
+                "label": f"Other ({len(tail)} products)",
+                "values": [
+                    sum(by_date.get(d, 0.0) for _, by_date, _ in tail) for d in dates
+                ],
+            })
+        charts.append({
+            "label": group.label,
+            "unit": (
+                "Impressions per day"
+                if attr == "impressions"
+                else "Client cost per day"
+            ),
+            "dates": [d.isoformat() for d in dates],
+            "series": series,
+            "metric": attr,
+        })
+    return charts
 
 
 @dataclass
@@ -1129,6 +1203,24 @@ def _totals_by_line_item(
 # Strategy level
 # --------------------------------------------------------------------------
 @dataclass
+class ObservedStrategy:
+    """Targeting the feed is reporting under a product, and its share.
+
+    What is actually running is knowable without anybody typing it. The
+    split that is missing is the *sold* one - how much of the product each
+    targeting was bought for - and the running shares are the obvious first
+    draft of it.
+    """
+
+    label: str
+    match_key: str | None
+    delivered: float = 0.0
+    share: float = 0.0
+    # True when a sold row already claims this targeting.
+    claimed: bool = False
+
+
+@dataclass
 class StrategyBlock:
     """One product, and the targeting bought under it.
 
@@ -1149,6 +1241,12 @@ class StrategyBlock:
     # Delivery under this product that no sold strategy accounts for.
     unclaimed: float = 0.0
     unclaimed_labels: list[str] = field(default_factory=list)
+    # Every targeting the feed reports under this product, with its share.
+    observed: list[ObservedStrategy] = field(default_factory=list)
+
+    @property
+    def observed_total(self) -> float:
+        return sum(o.delivered for o in self.observed)
 
 
 def _strategy_line_item(term: StrategyTerms, line_items: list[LineItem]) -> LineItem | None:
@@ -1212,7 +1310,6 @@ def strategy_blocks(session, view: "OrderView") -> list[StrategyBlock]:
         if item is not None:
             by_product[item.id].append(term)
 
-    money = view.metric != "impressions"
     blocks: list[StrategyBlock] = []
     for item in line_items:
         entry = products.lookup(item.product)
@@ -1225,6 +1322,7 @@ def strategy_blocks(session, view: "OrderView") -> list[StrategyBlock]:
             terms=by_product.get(item.id, []),
         )
 
+        money = (item.pacing_type or order.pacing_type or "impression") != "impression"
         claimed: set[str] = set()
         for term in block.terms:
             key = sheets.match_key(term.label) or term.label.lower()
@@ -1263,6 +1361,21 @@ def strategy_blocks(session, view: "OrderView") -> list[StrategyBlock]:
             if key not in claimed:
                 block.unclaimed += series.total
                 block.unclaimed_labels.append(series.label)
+
+        running = sum(s.total for s in ran[item.id].values())
+        block.observed = sorted(
+            (
+                ObservedStrategy(
+                    label=series.label,
+                    match_key=sheets.match_key(series.label),
+                    delivered=series.total,
+                    share=(series.total / running) if running else 0.0,
+                    claimed=key in claimed,
+                )
+                for key, series in ran[item.id].items()
+            ),
+            key=lambda o: -o.delivered,
+        )
 
         block.total = total_row(
             block.rows, item.pacing_type or order.pacing_type or "impression"

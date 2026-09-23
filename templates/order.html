@@ -76,7 +76,7 @@
   <a class="tab {{ 'on' if tab == 'order' }}"
      href="{{ url_for('order_detail', order_id=o.id, tab='order') }}">Order</a>
   <a class="tab {{ 'on' if tab == 'campaign' }}"
-     href="{{ url_for('order_detail', order_id=o.id, tab='campaign') }}">Campaign
+     href="{{ url_for('order_detail', order_id=o.id, tab='product') }}">Product
      {% if linking.unmatched_count %}<i class="tabflag">{{ linking.unmatched_count }}</i>{% endif %}</a>
   <a class="tab {{ 'on' if tab == 'strategy' }}"
      href="{{ url_for('order_detail', order_id=o.id, tab='strategy') }}">Strategy</a>
@@ -312,7 +312,7 @@
 {% endif %}
 </div>
 
-<div class="pane"{% if tab != "campaign" %} hidden{% endif %}>
+<div class="pane"{% if tab != "product" %} hidden{% endif %}>
 <div class="tablecard linkcard">
   <div class="charthead">
     <h3>Month to date campaign data</h3>
@@ -465,21 +465,20 @@
   </form>
 </dialog>
 
-{% if chart.series %}
+{% for c in product_charts %}
 <div class="tablecard chartcard">
   <div class="charthead">
-    <h3>Daily delivery by strategy</h3>
-    <span class="hint">{{ 'Impressions' if v.metric == 'impressions' else 'Spend' }} per day.
-      Hover for every strategy on a day.</span>
+    <h3>Daily delivery by product{% if product_charts|length > 1 %} &middot; {{ c.label }}{% endif %}</h3>
+    <span class="hint">{{ c.unit }}. Hover for every product on a day.</span>
   </div>
-  <div id="chartlegend" class="clegends"></div>
-  <div id="strategychart" class="chartbox"></div>
+  <div id="chartlegend-{{ loop.index }}" class="clegends"></div>
+  <div id="strategychart-{{ loop.index }}" class="chartbox"></div>
   {# The chart reads its data from here rather than from inline script, so
-     strategy names - which arrive from the feed - are never concatenated into
+     product names - which arrive from the feed - are never concatenated into
      executable JavaScript. #}
-  <script type="application/json" id="chartdata">{{ chart|tojson }}</script>
+  <script type="application/json" id="chartdata-{{ loop.index }}">{{ c|tojson }}</script>
 </div>
-{% endif %}
+{% endfor %}
 </div>
 
 <div class="pane"{% if tab != "strategy" %} hidden{% endif %}>
@@ -490,10 +489,47 @@
     <h3><span class="pchip" style="background:{{ b.hex }};color:{{ b.text_hex }}">{{ b.code }}</span>
       {{ b.label }}</h3>
     {% if not b.terms %}
-    <span class="hint">No split entered. Add the targeting below to pace this
-      product strategy by strategy.</span>
+    <span class="hint">No split entered. Nothing here says how much of this
+      product each targeting was bought for.</span>
     {% endif %}
   </div>
+
+  {% if b.observed %}
+  <details class="running" {% if not b.terms %}open{% endif %}>
+    <summary>Running now &mdash; {{ b.observed|length }} targeting,
+      {{ b.observed_total|metric(b.total) }} delivered</summary>
+    <div class="scroller">
+      <table class="elements running">
+        <thead><tr><th>Targeting in the feed</th>
+          <th class="num">Delivered</th><th class="num">Share</th>
+          <th>Sold row</th></tr></thead>
+        <tbody>
+        {# Not `o` - that is the order, and shadowing it here would be a
+           long afternoon. #}
+        {% for obs in b.observed %}
+          <tr>
+            <td class="elname">{{ obs.label }}</td>
+            <td class="num ro">{{ obs.delivered|metric(b.total) }}</td>
+            <td class="num ro">
+              <span class="sharebar"><i style="width:{{ (obs.share * 100)|round(1) }}%"></i></span>
+              {{ obs.share|pct(1) }}</td>
+            <td class="muted">{{ 'matched' if obs.claimed else 'none' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="cardfoot">
+      <span class="hint">These are the shares actually running. What is
+        missing is the sold split - how much of the product each was bought
+        for - which nothing can work out on its own.</span>
+      <form method="post" action="{{ url_for('strategy_seed', order_id=o.id) }}">
+        <input type="hidden" name="line_item_id" value="{{ b.line_item.id }}">
+        <button class="btn2 addprod" type="submit">Draft a split from these shares</button>
+      </form>
+    </div>
+  </details>
+  {% endif %}
 
   {% if b.terms %}
   <form method="post" action="{{ url_for('strategies_save', order_id=o.id) }}">
