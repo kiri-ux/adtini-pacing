@@ -301,6 +301,23 @@ def strategy_series(
 
 
 @dataclass
+class PacingGroup:
+    """The rows on an order that pace one particular way."""
+
+    pacing_type: str
+    rows: list[PacingRow]
+    total: PacingRow
+
+    @property
+    def label(self) -> str:
+        return {
+            "impression": "Impressions",
+            "click": "Ad spend",
+            "event": "Client budget",
+        }.get(self.pacing_type, self.pacing_type.capitalize())
+
+
+@dataclass
 class OrderView:
     order: Order
     client: Client
@@ -314,6 +331,11 @@ class OrderView:
     strategies: dict[int, list["StrategySeries"]] = field(default_factory=dict)
     metric: str = "impressions"
     daily_by_line_item: dict[int, list[DailyPoint]] = field(default_factory=dict)
+    # The rows split by how they pace, order's type first. Impressions and
+    # dollars need different columns and cannot share a Total, so an order
+    # carrying both gets a table each rather than one table that lies about
+    # one of them.
+    groups: list["PacingGroup"] = field(default_factory=list)
 
     @property
     def health(self) -> str:
@@ -373,11 +395,27 @@ def order_view(session, order_id: int, as_of: dt.date | None = None) -> OrderVie
         row.line_item_id: row.daily for row in rows if row.line_item_id is not None
     }
 
+    # The order's own type first: it is what the tiles above describe.
+    order_type = order.pacing_type or "impression"
+    seen = [order_type] + sorted(
+        {r.pacing_type for r in rows if r.pacing_type != order_type}
+    )
+    groups = [
+        PacingGroup(
+            pacing_type=kind,
+            rows=[r for r in rows if r.pacing_type == kind],
+            total=total_row([r for r in rows if r.pacing_type == kind], kind),
+        )
+        for kind in seen
+    ]
+    groups = [g for g in groups if g.rows]
+
     return OrderView(
         order=order,
         client=order.client,
         rows=rows,
         total=total,
+        groups=groups,
         as_of=as_of,
         grid_dates=grid_dates,
         grid=grid,
@@ -1085,3 +1123,150 @@ def _totals_by_line_item(
             every=every, in_flight=every, in_month=month
         )
     return out, spilled
+
+
+# --------------------------------------------------------------------------
+# Strategy level
+# --------------------------------------------------------------------------
+@dataclass
+class StrategyBlock:
+    """One product, and the targeting bought under it.
+
+    The hand-kept sheet is laid out this way - a product heading, its
+    strategies beneath, then a Total row - because that is the grain a buyer
+    adjusts at. A line item under-pacing says nothing about which targeting
+    to push; this does.
+    """
+
+    line_item: LineItem
+    label: str
+    code: str
+    hex: str
+    text_hex: str
+    rows: list[PacingRow] = field(default_factory=list)
+    terms: list[StrategyTerms] = field(default_factory=list)
+    total: PacingRow | None = None
+    # Delivery under this product that no sold strategy accounts for.
+    unclaimed: float = 0.0
+    unclaimed_labels: list[str] = field(default_factory=list)
+
+
+def _strategy_line_item(term: StrategyTerms, line_items: list[LineItem]) -> LineItem | None:
+    """Which product a strategy runs under.
+
+    Its own, when a buyer has said so. Otherwise the product its label names,
+    matched against the products actually on this order rather than against
+    every product that exists - "D - Behavioral" on an order with no Display
+    line belongs to nothing, and guessing would be worse than saying so.
+    """
+    if term.line_item_id:
+        found = next((li for li in line_items if li.id == term.line_item_id), None)
+        if found is not None:
+            return found
+
+    wanted = products.product_for_strategy(term.label)
+    if not wanted:
+        return None
+    key = products._key(wanted)
+    return next(
+        (li for li in line_items if products._key(li.product or "") == key), None
+    )
+
+
+def strategy_blocks(session, view: "OrderView") -> list[StrategyBlock]:
+    """Per-strategy pacing, grouped under the product each runs in.
+
+    Each row is computed by the same function that computes a line item's,
+    against a stand-in carrying the strategy's own sold figures and its
+    product's dates. Writing the arithmetic a second time here is how the
+    two would come to disagree.
+    """
+    order = view.order
+    line_items = [r.line_item for r in view.rows if r.line_item is not None]
+    if not line_items:
+        return []
+
+    terms = sorted(
+        session.execute(
+            select(StrategyTerms).where(StrategyTerms.order_id == order.id)
+        ).scalars(),
+        key=lambda t: (t.sort_order, t.id),
+    )
+
+    # What ran, per product, per targeting.
+    ran: dict[int, dict[str, StrategySeries]] = defaultdict(dict)
+    for line_item_id, items in view.strategies.items():
+        for series in items:
+            key = sheets.match_key(series.label) or series.label.lower()
+            existing = ran[line_item_id].get(key)
+            if existing is None:
+                ran[line_item_id][key] = series
+            else:
+                for date, value in series.by_date.items():
+                    existing.by_date[date] = existing.by_date.get(date, 0.0) + value
+                existing.total += series.total
+
+    by_product: dict[int, list[StrategyTerms]] = defaultdict(list)
+    for term in terms:
+        item = _strategy_line_item(term, line_items)
+        if item is not None:
+            by_product[item.id].append(term)
+
+    money = view.metric != "impressions"
+    blocks: list[StrategyBlock] = []
+    for item in line_items:
+        entry = products.lookup(item.product)
+        block = StrategyBlock(
+            line_item=item,
+            label=item.product or item.name,
+            code=products.abbreviation(item.product),
+            hex=entry.hex if entry else "#123A63",
+            text_hex=entry.text_hex if entry else "#FFFFFF",
+            terms=by_product.get(item.id, []),
+        )
+
+        claimed: set[str] = set()
+        for term in block.terms:
+            key = sheets.match_key(term.label) or term.label.lower()
+            series = ran[item.id].get(key)
+            if series is not None:
+                claimed.add(key)
+            points = [
+                DailyPoint(
+                    date=date,
+                    impressions=value if not money else 0.0,
+                    cost=value if money else 0.0,
+                )
+                for date, value in sorted((series.by_date if series else {}).items())
+            ]
+            # A stand-in for the strategy: its own sold figures, its
+            # product's flight and pacing type.
+            ghost = LineItem(
+                name=term.label,
+                product=item.product,
+                pacing_type=item.pacing_type,
+                start_date=item.start_date,
+                end_date=item.end_date,
+                monthly_impressions=term.monthly_target,
+                total_impressions=term.total_target,
+                goal_cpm=term.rate,
+                monthly_spend=term.monthly_target,
+                total_spend=term.total_target,
+                goal_cpc=term.rate,
+            )
+            row = compute_row(ghost, order, points, view.as_of)
+            row.label = term.label
+            row.strategy_id = term.id
+            block.rows.append(row)
+
+        for key, series in ran[item.id].items():
+            if key not in claimed:
+                block.unclaimed += series.total
+                block.unclaimed_labels.append(series.label)
+
+        block.total = total_row(
+            block.rows, item.pacing_type or order.pacing_type or "impression"
+        )
+        blocks.append(block)
+
+    return blocks

@@ -21,6 +21,7 @@ import pytest
 from sqlalchemy import create_engine, text
 
 BEFORE = "0007_delivery_campaign_index"
+REPAIR = "0008_repair_derived_terms"
 
 
 def _alembic(url: str, target: str) -> None:
@@ -117,6 +118,8 @@ def test_running_the_repair_twice_changes_nothing(url):
             text("UPDATE alembic_version SET version_num = :before"),
             {"before": BEFORE},
         )
-    _alembic(url, "head")
+    # Only the repair again - later migrations add columns and would fail a
+    # second time for reasons that have nothing to do with the repair.
+    _alembic(url, REPAIR)
 
     assert _rows(url) == once

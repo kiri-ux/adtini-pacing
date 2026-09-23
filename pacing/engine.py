@@ -115,6 +115,11 @@ class PacingRow:
     days_left: int = 0
 
     needs_setup: bool = False
+    # Set when the row is a strategy rather than a line item.
+    strategy_id: int | None = None
+    # On a total row: the other pacing types among the rows it left out,
+    # because they could not be added to this one.
+    mixed_types: list[str] = field(default_factory=list)
     daily: list[DailyPoint] = field(default_factory=list)
     # The row's sold terms, so a template can read fields the engine does not
     # promote (client budgets and event counts on the Performance Max sheet).
@@ -285,7 +290,9 @@ def compute_row(
     `totals` is the same sums worked out in the database. When it is given,
     `daily` is not read - the caller has nothing to show day by day.
     """
-    pacing_type = order.pacing_type or PACING_IMPRESSION
+    # The line's own, when it has one: products on a single order are not
+    # all sold the same way.
+    pacing_type = line_item.pacing_type or order.pacing_type or PACING_IMPRESSION
     start = line_item.start_date or order.start_date
     end = line_item.end_date or order.end_date
 
@@ -436,6 +443,16 @@ def total_row(rows: Sequence[PacingRow], pacing_type: str) -> PacingRow:
         start_date=min((r.start_date for r in rows if r.start_date), default=None),
         end_date=max((r.end_date for r in rows if r.end_date), default=None),
     )
+    if not rows:
+        return total
+
+    # Only the rows that pace this way. Impressions and dollars do not add
+    # up, and an order can now carry both - a Display line sold in
+    # impressions beside a PPC line sold in spend. Summing them would make a
+    # number that means nothing and looks like it means something.
+    mixed = [r for r in rows if r.pacing_type != pacing_type]
+    total.mixed_types = sorted({r.pacing_type for r in mixed})
+    rows = [r for r in rows if r.pacing_type == pacing_type]
     if not rows:
         return total
 

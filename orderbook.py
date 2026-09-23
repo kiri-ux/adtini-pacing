@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.orm import joinedload, selectinload
 
+import products
 import ratecard
 from ingest.normalize import bound_id, name_key
 from ingest.orders import spend_columns
@@ -37,8 +38,14 @@ log = logging.getLogger(__name__)
 
 # Which sheet a product is paced on. Anything unlisted paces on impressions,
 # which is what most orders are.
-CLICK_PRODUCTS = {"PPC", "LinkedIn"}
-EVENT_PRODUCTS = {"PMax", "Performance Max"}
+# Normalised product names, because the two exports do not use the same
+# ones: the delivery feed says "PPC" and "PMax" where the orders file says
+# "Pay-Per-Click Ads" and "Performance Max Ads". Matching only the feed's
+# spelling meant every one of these imported from an orders file was paced
+# on impressions - which a Pay-Per-Click line does not have and was never
+# sold any - so its sold spend was never even read.
+CLICK_PRODUCTS = {"ppc", "linkedin", "payperclickads", "linkedinads"}
+EVENT_PRODUCTS = {"pmax", "performancemax", "performancemaxads"}
 
 CLICK_SOURCES = {"Google Ads Search", "LinkedIn Targeting"}
 EVENT_SOURCES = {"Google Ads Performance Max"}
@@ -89,10 +96,16 @@ PRODUCT_ABBR = {
 
 
 def pacing_type_for(product: str | None, data_source: str | None = None) -> str:
-    """Which of the three pacing sheets a line item belongs on."""
-    if product in EVENT_PRODUCTS or data_source in EVENT_SOURCES:
+    """Which of the three pacing sheets a line item belongs on.
+
+    The name is canonicalised first, so the feed's spelling and the orders
+    file's both land on the same answer.
+    """
+    entry = products.lookup(product)
+    key = products._key((entry.name if entry else product) or "")
+    if key in EVENT_PRODUCTS or data_source in EVENT_SOURCES:
         return PACING_EVENT
-    if product in CLICK_PRODUCTS or data_source in CLICK_SOURCES:
+    if key in CLICK_PRODUCTS or data_source in CLICK_SOURCES:
         return PACING_CLICK
     return PACING_IMPRESSION
 
@@ -407,7 +420,13 @@ def import_orders(session, frame, cache: dict | None = None) -> ImportResult:
         if not order.terms_locked:
             order.start_date = row.get("start_date") or order.start_date
             order.end_date = row.get("end_date") or order.end_date
-            order.pacing_type = pacing_type
+            # The order's type is whatever its first line item paces on.
+            # It used to be whatever the *last* row happened to be, so an
+            # order carrying Display and Pay-Per-Click got one or the other
+            # depending on the order the export listed them in, and half its
+            # lines were then paced on the wrong thing entirely.
+            if not order.pacing_type:
+                order.pacing_type = pacing_type
         elif order.terms_locked:
             result.locked_skipped += 1
 
@@ -437,6 +456,8 @@ def import_orders(session, frame, cache: dict | None = None) -> ImportResult:
             result.line_items_updated += 1
 
         item.product = product or item.product
+        # A product that paces differently from its order says so on itself.
+        item.pacing_type = pacing_type if pacing_type != order.pacing_type else None
         if item.terms_locked:
             result.locked_skipped += 1
         else:

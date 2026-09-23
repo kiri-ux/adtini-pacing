@@ -125,3 +125,66 @@ def is_paced(name: str | None) -> bool:
     """
     product = lookup(name)
     return product.paced if product else True
+
+
+# The prefix a strategy label carries, mapped onto the product it names.
+# The sheets were kept by hand over years and never agreed on a spelling:
+# Meta is FB, FB/IG, FB/Insta and Meta; Performance Max is PMAX and PM.
+STRATEGY_PREFIXES = {
+    "sm": "Social Mirror Ads",
+    "social mirror": "Social Mirror Ads",
+    "smc": "Social Mirror CTV Ads",
+    "sm ctv": "Social Mirror CTV Ads",
+    "sm ott": "Social Mirror CTV Ads",
+    "mc": "Mobile Conquesting Display & Video Ads",
+    "mobile": "Mobile Conquesting Display & Video Ads",
+    "mobile conquesting": "Mobile Conquesting Display & Video Ads",
+    "fb": "Meta Display & Video Ads",
+    "fb/ig": "Meta Display & Video Ads",
+    "fb/insta": "Meta Display & Video Ads",
+    "meta": "Meta Display & Video Ads",
+    "ctv": "Connected TV Ads",
+    "ott": "Connected TV Ads",
+    "d": "Display Ads",
+    "dis": "Display Ads",
+    "display": "Display Ads",
+    "v": "Video Ads",
+    "video": "Video Ads",
+    "nv": "Native Video Ads",
+    "nd": "Native Display Ads",
+    "geo": "Geo-Framing Display Ads",
+    "gf": "Geo-Framing Display Ads",
+    "geo-framing": "Geo-Framing Display Ads",
+    "audio": "Online Audio Ads",
+    "oa": "Online Audio Ads",
+    "pmax": "Performance Max Ads",
+    "pm": "Performance Max Ads",
+    "performance max": "Performance Max Ads",
+    "ppc": "Pay-Per-Click Ads",
+    "az": "Amazon Premium Display Ads",
+    "ad": "Amazon Premium Display Ads",
+    "av": "Amazon Premium Video (with Twitch) & OTT Ads",
+    "yt": "YouTube Video Ads",
+    "youtube": "YouTube Video Ads",
+    "tt": "TikTok Display & Video Ads",
+    "tiktok": "TikTok Display & Video Ads",
+    "li": "Linkedin Ads",
+    "linkedin": "Linkedin Ads",
+    "cv": "CTV + Video Ads",
+    "dooh": "Digital Out-Of-Home (DOOH) Display & Video Ads",
+}
+
+
+def product_for_strategy(label: str | None) -> str | None:
+    """The product a strategy label names, from the part before the targeting.
+
+    "FB - Retargeting" is Meta's retargeting, not the order's. Longest
+    prefix first, so "SM CTV" is not read as "SM".
+    """
+    text = (label or "").strip().lower()
+    if not text:
+        return None
+    for prefix in sorted(STRATEGY_PREFIXES, key=len, reverse=True):
+        if text == prefix or text.startswith(prefix + " ") or text.startswith(prefix + "-"):
+            return STRATEGY_PREFIXES[prefix]
+    return None

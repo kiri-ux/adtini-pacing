@@ -29,6 +29,8 @@ from sqlalchemy import func, select
 from werkzeug.exceptions import HTTPException
 
 import exports
+import products
+import sheets
 import views
 from config import get_settings
 from db import session_scope
@@ -42,6 +44,7 @@ from models import (
     IngestedFile,
     LineItem,
     Order,
+    StrategyTerms,
 )
 from orderbook import adopt_unmatched_delivery, recompute_terms
 
@@ -407,12 +410,21 @@ def order_detail(order_id: int):
         view = views.order_view(db, order_id, as_of=_as_of())
         if view is None:
             abort(404)
+        tab = request.args.get("tab") or "order"
+        if tab not in ("order", "campaign", "strategy"):
+            tab = "order"
         return render_template(
             "order.html",
             v=view,
             t=view.total,
+            tab=tab,
             chart=views.chart_series(view),
-            strategy_rows=views.strategy_pacing(db, view),
+            blocks=views.strategy_blocks(db, view),
+            pacing_labels={
+                "impression": "Impressions",
+                "click": "Ad spend",
+                "event": "Client budget",
+            },
             linking=views.linking_view(
                 db, view.order, as_of=view.as_of,
                 daily=view.daily_by_line_item,
@@ -465,6 +477,12 @@ def order_save(order_id: int):
             if prefix + "name" not in form:
                 continue
             item.name = (form.get(prefix + "name") or item.name).strip()
+            kind = (form.get(prefix + "pacing_type") or "").strip()
+            # Stored only when it differs from the order's, so a line item
+            # keeps following the order when the order changes.
+            item.pacing_type = (
+                kind if kind in PACING_TYPES and kind != order.pacing_type else None
+            )
             item.start_date = as_date(prefix + "start_date")
             item.end_date = as_date(prefix + "end_date")
             for field_name in (
@@ -524,6 +542,117 @@ def line_item_delete(order_id: int, line_item_id: int):
         if item and item.order_id == order_id:
             db.delete(item)
     return redirect(url_for("order_detail", order_id=order_id))
+
+
+# --------------------------------------------------------------------------
+# Strategies
+# --------------------------------------------------------------------------
+@app.route("/orders/<int:order_id>/strategies/save", methods=["POST"])
+@login_required
+def strategies_save(order_id: int):
+    """Save the sold split across targeting.
+
+    This is the only place the split exists. The orders export stops at the
+    product line item and the delivery feed only says what ran, so nothing
+    else can say that Meta's 128,000 monthly was 10,000 of retargeting and
+    118,000 of categories.
+    """
+    form = request.form
+
+    def as_float(key):
+        raw = (form.get(key) or "").strip().replace(",", "").replace("$", "")
+        try:
+            return float(raw) if raw else None
+        except ValueError:
+            return None
+
+    with session_scope() as db:
+        order = db.get(Order, order_id)
+        if order is None:
+            abort(404)
+        for term in db.execute(
+            select(StrategyTerms).where(StrategyTerms.order_id == order_id)
+        ).scalars():
+            prefix = f"st-{term.id}-"
+            if prefix + "label" not in form:
+                continue
+            label = (form.get(prefix + "label") or "").strip()
+            if label and label != term.label:
+                term.label = label
+                term.match_key = sheets.match_key(label)
+            term.monthly_target = as_float(prefix + "monthly")
+            term.total_target = as_float(prefix + "total")
+            term.rate = as_float(prefix + "rate")
+
+    flash("Saved.")
+    return redirect(url_for("order_detail", order_id=order_id, tab="strategy"))
+
+
+@app.route("/orders/<int:order_id>/strategies", methods=["POST"])
+@login_required
+def strategy_add(order_id: int):
+    """Add a strategy a buyer bought that no sheet or export mentions.
+
+    Extra targeting gets added mid-flight, and the order data will never
+    catch up with it.
+    """
+    line_item_id = request.form.get("line_item_id", type=int)
+    label = (request.form.get("label") or "").strip()
+
+    with session_scope() as db:
+        item = db.get(LineItem, line_item_id) if line_item_id else None
+        if item is None or item.order_id != order_id:
+            abort(404)
+        if not label:
+            flash("Give the strategy a name.")
+            return redirect(url_for("order_detail", order_id=order_id, tab="strategy"))
+
+        # Prefixed with the product's own code, so it reads like the rest and
+        # finds its product again on the next page load.
+        code = products.abbreviation(item.product)
+        if not label.lower().startswith(code.lower()):
+            label = f"{code} - {label}"
+
+        clash = db.execute(
+            select(StrategyTerms).where(
+                StrategyTerms.order_id == order_id, StrategyTerms.label == label
+            )
+        ).scalar_one_or_none()
+        if clash is not None:
+            flash(f"{label} is already on this order.")
+            return redirect(url_for("order_detail", order_id=order_id, tab="strategy"))
+
+        count = db.execute(
+            select(func.count())
+            .select_from(StrategyTerms)
+            .where(StrategyTerms.order_id == order_id)
+        ).scalar()
+        db.add(
+            StrategyTerms(
+                order_id=order_id,
+                line_item_id=item.id,
+                label=label,
+                match_key=sheets.match_key(label),
+                sort_order=count or 0,
+                source="added by hand",
+                added_by_hand=True,
+            )
+        )
+
+    flash(f"Added {label}.")
+    return redirect(url_for("order_detail", order_id=order_id, tab="strategy"))
+
+
+@app.route(
+    "/orders/<int:order_id>/strategies/<int:strategy_id>/delete", methods=["POST"]
+)
+@login_required
+def strategy_delete(order_id: int, strategy_id: int):
+    with session_scope() as db:
+        term = db.get(StrategyTerms, strategy_id)
+        if term and term.order_id == order_id:
+            db.delete(term)
+    return redirect(url_for("order_detail", order_id=order_id, tab="strategy"))
 
 
 # --------------------------------------------------------------------------

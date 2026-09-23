@@ -120,6 +120,11 @@ class LineItem(Base):
     external_id: Mapped[str | None] = mapped_column(String(64), index=True)
     # Sold terms here were edited by hand; the import leaves them alone.
     terms_locked: Mapped[bool] = mapped_column(Boolean, default=False)
+    # How this product paces, when it does not pace the way the rest of the
+    # order does. An order carrying Display alongside PPC has one line sold
+    # in impressions and another in spend, and pacing both the same way
+    # answers neither. Null means "however the order does".
+    pacing_type: Mapped[str | None] = mapped_column(String(20))
 
     # Flight dates default to the order's when null.
     start_date: Mapped[dt.date | None] = mapped_column(Date)
@@ -265,6 +270,13 @@ class StrategyTerms(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
+    # The product this strategy runs under. The sheets split a line item's
+    # sold impressions across its targeting, so a strategy belongs to one
+    # product, and pacing it needs that product's dates and rate. Null for
+    # a row seeded before the product could be worked out.
+    line_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("line_items.id", ondelete="CASCADE"), index=True
+    )
     label: Mapped[str] = mapped_column(String(300))
     # The targeting on its own, normalised, so a sold row finds the delivery
     # that ran under it despite the two naming products differently.
@@ -276,6 +288,9 @@ class StrategyTerms(Base):
 
     source: Mapped[str | None] = mapped_column(String(200))
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    # Added by a buyer rather than seeded from a sheet or the order data.
+    # Extra targeting gets bought mid-flight and has to be sayable here.
+    added_by_hand: Mapped[bool] = mapped_column(Boolean, default=False)
 
     order: Mapped["Order"] = relationship(back_populates="strategy_terms")
 

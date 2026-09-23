@@ -57,16 +57,97 @@ TARGETING = {
     "matching": "matching",
     "cross platform": "cross platform",
     "website retargeting": "retargeting",
+    "categories": "category",
+    "premium": "premium",
+    "event": "event",
+    "b2b": "b2b",
+    "search terms": "search terms",
+    "search term": "search terms",
 }
+
+# What the buying team actually types. A third of the rows in their own
+# sheets are abbreviations - "SM - KW", "MC - GF", "FB - R" - and read by
+# substring against the full names above they matched nothing at all, so a
+# third of every strategy split went unpaired.
+#
+# These are matched against the targeting on its own, after the product has
+# been taken off the front, because a single letter cannot be looked for
+# inside a whole label without hitting the middle of a word.
+ABBREVIATIONS = {
+    "b": "behavioral",
+    "beh": "behavioral",
+    "behav": "behavioral",
+    "behaviors": "behavioral",
+    "behaviours": "behavioral",
+    "behavior": "behavioral",
+    "r": "retargeting",
+    "ret": "retargeting",
+    "retarg": "retargeting",
+    "rt": "retargeting",
+    "gr": "geo-retargeting",
+    "gf": "geo-fencing",
+    "geo": "geo-fencing",
+    "kw": "keyword",
+    "kws": "keyword",
+    "cp": "cross platform",
+    "cat": "category",
+    "cats": "category",
+    "la": "lookalike",
+    "look": "lookalike",
+    "prem": "premium",
+    "ai": "ai",
+    "b2b": "b2b",
+    "st": "search terms",
+}
+
+
+def _targeting_part(text: str) -> str:
+    """The label with the product taken off the front.
+
+    "SM - KW" is Social Mirror's keyword targeting; the part worth matching
+    is "kw". Separators vary - a dash, a space, nothing at all - so the
+    product is found rather than assumed.
+    """
+    import products
+
+    stripped = text.strip()
+    product_name = products.product_for_strategy(stripped)
+    if product_name:
+        for prefix in sorted(products.STRATEGY_PREFIXES, key=len, reverse=True):
+            if products.STRATEGY_PREFIXES[prefix] != product_name:
+                continue
+            if stripped == prefix:
+                return ""
+            for join in (" - ", "-", " "):
+                if stripped.startswith(prefix + join):
+                    return stripped[len(prefix + join):].strip(" -")
+    return stripped
 
 
 def match_key(label: str) -> str | None:
     """The targeting a label is for, or None when it names no known one."""
     text = (label or "").lower()
-    # Longest first, so "geo-retargeting" is not read as "retargeting".
+    if not text.strip():
+        return None
+
+    # The full names first, longest so "geo-retargeting" is not read as
+    # "retargeting". These can sit anywhere in the label.
     for name in sorted(TARGETING, key=len, reverse=True):
         if name in text:
             return TARGETING[name]
+
+    # Then the abbreviations, against the targeting on its own.
+    tail = _targeting_part(text)
+    if not tail:
+        return None
+    if tail in ABBREVIATIONS:
+        return ABBREVIATIONS[tail]
+
+    # "SM - B2B B" is two of them; the last word is the targeting.
+    words = [w for w in re.split(r"[^a-z0-9]+", tail) if w]
+    for word in reversed(words):
+        if word in ABBREVIATIONS:
+            return ABBREVIATIONS[word]
     return None
 
 

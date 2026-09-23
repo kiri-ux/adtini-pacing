@@ -838,3 +838,57 @@ def test_recompute_does_not_hold_the_whole_book_in_memory():
         item = check.query(LineItem).first()
         assert item.goal_cpm == 2.5
         assert item.total_impressions == 600_000
+
+
+def test_a_mixed_order_paces_each_product_its_own_way():
+    """An order carrying Display and Pay-Per-Click is sold two ways.
+
+    The order's type used to be whatever the last row of the export happened
+    to be, so half its lines were then paced on the wrong thing - a PPC line
+    measured in impressions it has none of, or a Display line measured in a
+    budget it was never sold against.
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from models import Base, LineItem
+    from orderbook import import_orders
+
+    text = mcsv(
+        mline(),  # Display, impressions
+        mline().replace("Connected TV Ads", "Pay-Per-Click Ads").replace(
+            ",126000,", ",126001,"
+        ),
+    )
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        import_orders(session, normalize(csv(text)))
+        session.flush()
+        items = {
+            item.product: item
+            for item in session.query(LineItem).all()
+        }
+
+    assert items["Connected TV Ads"].pacing_type is None, (
+        "the order's own kind is not repeated on every line"
+    )
+    assert items["Pay-Per-Click Ads"].pacing_type == "click"
+
+
+def test_both_exports_spell_the_same_product_differently():
+    """The feed says PPC; the orders file says Pay-Per-Click Ads.
+
+    Only the feed's spelling was matched, so every one of these imported
+    from an orders file was paced on impressions - which a Pay-Per-Click
+    line does not have and was never sold any. Its sold spend was never
+    read at all.
+    """
+    from orderbook import pacing_type_for
+
+    for name in ("PPC", "Pay-Per-Click Ads", "LinkedIn", "Linkedin Ads"):
+        assert pacing_type_for(name) == "click", name
+    for name in ("PMax", "Performance Max Ads"):
+        assert pacing_type_for(name) == "event", name
+    for name in ("Display Ads", "Connected TV Ads", "Meta Display & Video Ads"):
+        assert pacing_type_for(name) == "impression", name
