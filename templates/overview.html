@@ -45,6 +45,18 @@
   <button class="btn-cat" type="submit">Apply</button>
 </form>
 
+{% if hidden %}
+<div class="hiddenbar">
+  <b>{{ hidden|length }} hidden</b>
+  {% for h in hidden %}
+  <a class="hchip" href="{{ url_for('order_detail', order_id=h.order.id) }}">
+    {{ h.client.name if h.client else h.order.name }}
+    {%- if h.order.external_order_id %} &middot; {{ h.order.external_order_id }}{% endif %}
+    <i>{{ h.reason }}</i></a>
+  {% endfor %}
+</div>
+{% endif %}
+
 <div class="tablecard">
  <div class="scroller">
   <table class="overview">

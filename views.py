@@ -850,6 +850,78 @@ class OverviewRow:
         return health(self.total.pacing_pct)
 
 
+def _query_clause(query: str):
+    """What the search box matches: the client, the order, or its id.
+
+    The id was not among them, so typing the number off an order page found
+    nothing and the only way back to an order was a link you already had.
+    """
+    text = query.strip()
+    like = f"%{text}%"
+    return (
+        Client.name.ilike(like)
+        | Order.name.ilike(like)
+        | Order.external_order_id.ilike(like)
+    )
+
+
+@dataclass
+class HiddenOrder:
+    """An order the search matched and the filters then dropped."""
+
+    order: Order
+    client: Client
+    reason: str
+
+
+def hidden_matches(
+    session,
+    query: str,
+    shown: set[int],
+    as_of: dt.date,
+    include_ended: bool = False,
+    include_non_io: bool = False,
+) -> list[HiddenOrder]:
+    """Orders the search found that the page is not showing, and why.
+
+    Four of the filters drop an order without leaving a trace, and two of
+    them key off values the export changes under you - an order worked on
+    all week stops appearing and nothing anywhere says where it went.
+
+    `shown` is what the page already lists, so this reports only the gap.
+    """
+    if not query.strip():
+        return []
+
+    orders = [
+        order
+        for order in session.execute(
+            select(Order)
+            .join(Client, Client.id == Order.client_id)
+            .where(_query_clause(query))
+            .options(selectinload(Order.client))
+        ).scalars()
+        if order.id not in shown
+    ]
+
+    out: list[HiddenOrder] = []
+    for order in orders:
+        kind = (order.order_type or "").strip().lower()
+        status = (order.status or "").strip().lower()
+        if not include_non_io and kind != PACEABLE_ORDER_TYPE:
+            reason = order.order_type or "no order type"
+        elif not order.active:
+            reason = order.status or "never ran"
+        elif not include_ended and order.end_date and order.end_date < as_of:
+            reason = f"ended {order.end_date:%-d %b %Y}"
+        elif status in {"cancelled", "canceled"}:
+            reason = "cancelled, nothing delivered"
+        else:
+            reason = "filtered"
+        out.append(HiddenOrder(order=order, client=order.client, reason=reason))
+    return out
+
+
 def overview(
     session,
     as_of: dt.date | None = None,
@@ -881,8 +953,7 @@ def overview(
     if pacing_type:
         stmt = stmt.where(Order.pacing_type == pacing_type)
     if query:
-        like = f"%{query.strip()}%"
-        stmt = stmt.where(Client.name.ilike(like) | Order.name.ilike(like))
+        stmt = stmt.where(_query_clause(query))
     if not include_non_io:
         stmt = stmt.where(
             func.lower(func.coalesce(Order.order_type, "")) == PACEABLE_ORDER_TYPE

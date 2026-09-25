@@ -648,3 +648,17 @@ table.elements th.idhead,table.elements td.idcell{width:1%;white-space:nowrap;
   border-radius:999px;padding:3px 10px;font-size:12px;font-weight:500}
 .schip.off{background:#FBEBC2;border-color:#EBD08A;color:#7A4C09}
 .soldnote{font-size:12px;color:var(--muted)}
+
+/* Orders the search matched and the filters dropped. Returning fewer rows
+   than exist, with nothing saying so, is how an order somebody worked on
+   all week disappears. */
+.hiddenbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;
+  background:#FBEBC2;border:1px solid #EBD08A;border-radius:12px;
+  padding:12px 16px;margin:0 0 14px;font-size:13px;color:#7A4C09}
+.hiddenbar b{font-size:12px;font-weight:700;letter-spacing:.04em;
+  text-transform:uppercase}
+.hchip{display:inline-flex;align-items:center;gap:7px;background:var(--card);
+  border:1px solid #EBD08A;border-radius:999px;padding:4px 12px;
+  color:var(--text);font-weight:500;text-decoration:none}
+.hchip:hover{border-color:var(--blue);text-decoration:none}
+.hchip i{font-style:normal;color:var(--muted);font-size:12px}

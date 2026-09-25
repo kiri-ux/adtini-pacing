@@ -403,9 +403,22 @@ def overview():
         page = min(page, pages)
         window = rows[(page - 1) * per_page : page * per_page]
 
+        # A search that matched orders the filters then dropped says so.
+        # Silently returning fewer rows than exist is how an order somebody
+        # worked on all week disappears with nothing saying where it went.
+        hidden = views.hidden_matches(
+            db,
+            request.args.get("q") or "",
+            shown={r.order.id for r in rows},
+            as_of=as_of,
+            include_ended=request.args.get("ended") == "1",
+            include_non_io=request.args.get("allorders") == "1",
+        )
+
         return render_template(
             "overview.html",
             rows=window,
+            hidden=hidden,
             page_total=views.page_total(window),
             total_rows=total_rows,
             page=page,
