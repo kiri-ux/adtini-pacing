@@ -1,45 +1,45 @@
-rate_name,starting_cpm,max_cpm,average_cpm,goal,forecasting_cpm,partner_hard_cost
-Display,1.00,2.50,1.75,0.40% CTR,0.50,4.00
-Native Display,1.00,2.50,1.75,0.30% CTR,0.50,4.00
-Display B2B,1.50,3.00,2.25,0.30% CTR,0.50,5.00
-Native Display B2B,1.50,3.00,2.25,0.30% CTR,0.50,5.00
-Display Restricted,2.00,4.00,3.00,0.30% CTR,2.00,7.00
-Native Display Restricted,2.00,4.00,3.00,0.30% CTR,2.00,7.00
-Social Mirror,1.50,3.00,2.25,0.60% CTR,1.00,7.00
-Native Video,1.50,3.00,2.25,0.30% CTR,1.00,10.00
-Social Mirror B2B,2.00,4.50,3.25,0.60% CTR,1.00,8.00
-Native Video B2B,2.00,4.00,3.00,0.30% CTR,1.00,11.00
-Social Mirror Restricted,2.50,5.00,3.75,0.60% CTR,2.00,10.00
-Native Video Restricted,2.50,5.00,3.75,0.30% CTR,2.00,13.00
-Video,3.50,6.00,4.75,0.50% CTR,5.00,10.00
-Video B2B,4.00,7.00,5.50,0.50% CTR,5.00,11.00
-Video Restricted,4.50,8.00,6.25,0.50% CTR,5.00,13.00
-Connected TV,10.00,14.00,12.00,90% VR,1.00,20.00
-Social Mirror CTV,10.00,14.00,12.00,90% VR,12.00,30.00
-Connected TV B2B,11.00,15.00,13.00,90% VR,20.00,21.00
-Social Mirror CTV B2B,11.00,15.00,13.00,90% VR,10.00,31.00
-Connected TV Restricted,12.00,16.00,14.00,90% VR,15.00,23.00
-Social Mirror CTV Restricted,12.00,16.00,14.00,90% VR,10.00,33.00
-Online Audio,10.00,13.00,11.50,--,3.00,25.00
-Online Audio B2B,11.00,14.00,12.50,--,3.00,26.00
-Online Audio Restricted,12.00,15.00,13.50,--,3.00,28.00
-Mobile Conquesting,3.50,4.50,4.00,0.50% CTR,3.50,7.00
-Mobile Conquesting Event,5.00,7.00,6.00,0.50% CTR,5.00,10.00
-Mobile Conquesting Political,5.00,7.00,6.00,0.50% CTR,3.50,10.00
-Meta,3.50,7.00,5.25,2.00% CTR,,10.00
-Meta Lead,10.50,20.00,15.25,2.00% CTR,,30.00
-Amazon Display,2.50,5.00,3.75,0.30% CTR,5.00,10.00
-Amazon Video,6.00,14.00,10.00,2.00% CTR,10.00,30.00
-Amazon OTT,15.00,20.00,17.50,90% VR,15.00,30.00
-Amazon Prime OTT,20.00,25.00,22.50,90% VR,20.00,30.00
-Youtube+,5.00,10.00,7.50,0.30% CTR,10.00,20.00
-YouTube TV (bids),3.50,5.00,4.25,90% VR,3.50,
-YouTube TV (actual YT TV CPM),10.00,20.00,15.00,90% VR,,40.00
-TikTok,5.00,8.00,6.50,2.00% CTR,,12.50
-DOOH,10.00,17.00,13.50,--,10.00,30.00
-Dynamic,2.50,3.50,3.00,0.40% CTR,0.50,15.00
-Dynamic B2B,3.00,4.00,3.50,0.40% CTR,0.50,16.00
-IP Targeting Display,10.00,10.00,10.00,,,15.00
-IP Targeting Video,20.00,20.00,20.00,,,17.00
-Geo-Framing,6.00,9.00,7.50,0.30% CTR,,18.00
-CTV + Video,5.00,7.50,6.25,0.50% CTR/90% VR,,
+rate_name,starting_cpm,max_cpm,al_starting_max_cpm,average_cpm,goal,forecasting_cpm,partner_hard_cost
+Display,1.00,2.50,2.00,1.75,0.40% CTR,0.50,4.00
+Native Display,1.00,2.50,2.00,1.75,0.30% CTR,0.50,4.00
+Display B2B,1.50,3.00,,2.25,0.30% CTR,0.50,5.00
+Native Display B2B,1.50,3.00,,2.25,0.30% CTR,0.50,5.00
+Display Restricted,2.00,4.00,,3.00,0.30% CTR,2.00,7.00
+Native Display Restricted,2.00,4.00,,3.00,0.30% CTR,2.00,7.00
+Social Mirror,1.50,3.00,2.50,2.25,0.60% CTR,1.00,7.00
+Native Video,1.50,3.00,3.50,2.25,0.30% CTR,1.00,10.00
+Social Mirror B2B,2.00,4.50,,3.25,0.60% CTR,1.00,8.00
+Native Video B2B,2.00,4.00,,3.00,0.30% CTR,1.00,11.00
+Social Mirror Restricted,2.50,5.00,,3.75,0.60% CTR,2.00,10.00
+Native Video Restricted,2.50,5.00,,3.75,0.30% CTR,2.00,13.00
+Video,3.50,6.00,5.00,4.75,0.50% CTR,5.00,10.00
+Video B2B,4.00,7.00,,5.50,0.50% CTR,5.00,11.00
+Video Restricted,4.50,8.00,,6.25,0.50% CTR,5.00,13.00
+Connected TV,10.00,14.00,10.00,12.00,90% VR,1.00,20.00
+Social Mirror CTV,10.00,14.00,12.50,12.00,90% VR,12.00,30.00
+Connected TV B2B,11.00,15.00,,13.00,90% VR,20.00,21.00
+Social Mirror CTV B2B,11.00,15.00,,13.00,90% VR,10.00,31.00
+Connected TV Restricted,12.00,16.00,,14.00,90% VR,15.00,23.00
+Social Mirror CTV Restricted,12.00,16.00,,14.00,90% VR,10.00,33.00
+Online Audio,10.00,13.00,12.00,11.50,--,3.00,25.00
+Online Audio B2B,11.00,14.00,,12.50,--,3.00,26.00
+Online Audio Restricted,12.00,15.00,,13.50,--,3.00,28.00
+Mobile Conquesting,3.50,4.50,,4.00,0.50% CTR,3.50,7.00
+Mobile Conquesting Event,5.00,7.00,,6.00,0.50% CTR,5.00,10.00
+Mobile Conquesting Political,5.00,7.00,,6.00,0.50% CTR,3.50,10.00
+Meta,3.50,7.00,,5.25,2.00% CTR,,10.00
+Meta Lead,10.50,20.00,,15.25,2.00% CTR,,30.00
+Amazon Display,2.50,5.00,,3.75,0.30% CTR,5.00,10.00
+Amazon Video,6.00,14.00,,10.00,2.00% CTR,10.00,30.00
+Amazon OTT,15.00,20.00,,17.50,90% VR,15.00,30.00
+Amazon Prime OTT,20.00,25.00,,22.50,90% VR,20.00,30.00
+Youtube+,5.00,10.00,,7.50,0.30% CTR,10.00,20.00
+YouTube TV (bids),3.50,5.00,,4.25,90% VR,3.50,
+YouTube TV (actual YT TV CPM),10.00,20.00,,15.00,90% VR,,40.00
+TikTok,5.00,8.00,,6.50,2.00% CTR,,12.50
+DOOH,10.00,17.00,,13.50,--,10.00,30.00
+Dynamic,2.50,3.50,,3.00,0.40% CTR,0.50,15.00
+Dynamic B2B,3.00,4.00,,3.50,0.40% CTR,0.50,16.00
+IP Targeting Display,10.00,10.00,,10.00,,,15.00
+IP Targeting Video,20.00,20.00,,20.00,,,17.00
+Geo-Framing,6.00,9.00,,7.50,0.30% CTR,,18.00
+CTV + Video,5.00,7.50,7.50,6.25,0.50% CTR/90% VR,,

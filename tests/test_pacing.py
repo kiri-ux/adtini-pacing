@@ -241,10 +241,11 @@ def test_pacing_uses_the_setup_cpm_not_the_retail_one():
     """
     from orderbook import resolve_goal_cpm
 
-    # Display is on the card at $2.50; the retail rate here works out to $8.
+    # Display budgets at its AL Starting Max of $2.00; the retail rate here
+    # works out to $8.
     cpm, source = resolve_goal_cpm("Display", False, total_budget=8_000,
                                    total_impressions=1_000_000)
-    assert cpm == 2.50
+    assert cpm == 2.00
     assert source == "rate card"
 
 
@@ -268,18 +269,36 @@ def test_products_bought_on_spend_have_no_cpm_at_all():
 def test_restricted_categories_take_their_own_higher_rate():
     import ratecard
 
-    assert ratecard.setup_cpm("Display") == 2.50
+    assert ratecard.setup_cpm("Display") == 2.00
+    # The restricted rows carry no AL rate of their own, so they still budget
+    # off their own Max - which is the higher number, as intended.
     assert ratecard.setup_cpm("Display", restricted=True) == 4.00
 
 
-def test_the_card_matches_the_hand_kept_sheet():
-    """A Display line on the buying team's sheet reads $2.50, which is the
-    card's Max - not its $1.00 Starting."""
+def test_budgeting_uses_the_al_starting_max_where_the_card_has_one():
+    """The buying team budgets off AL Starting Max, and the 50% margin target
+    is set against it.
+
+    Max is a ceiling a campaign may reach, not the rate it is planned at.
+    Budgeting on the ceiling reads a campaign as cheaper than it was bought
+    and quietly spends the margin.
+    """
     import ratecard
 
-    assert ratecard.setup_cpm("Display") == 2.50
-    assert ratecard.setup_cpm("CTV") == 14.00
+    assert ratecard.setup_cpm("Display") == 2.00      # Max is 2.50
+    assert ratecard.setup_cpm("CTV") == 10.00         # Max is 14.00
+    # No AL rate on the card, so Max still stands.
     assert ratecard.setup_cpm("Meta") == 7.00
+
+
+def test_the_al_rate_hits_the_fifty_percent_margin_target():
+    """That is the whole point of budgeting off it."""
+    import ratecard
+
+    for product in ("Display", "CTV", "Online Audio"):
+        rate = ratecard.lookup(product)
+        margin = rate.margin_at(ratecard.setup_cpm(product))
+        assert margin >= 0.50, f"{product} budgets below the margin target"
 
 
 def test_margin_is_measured_against_the_partner_hard_cost():

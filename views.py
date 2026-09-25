@@ -987,67 +987,64 @@ def chart_series(view: "OrderView", limit: int = MAX_CHART_SERIES) -> dict:
     }
 
 
-# What the performance chart can draw. Visits are not among them: the
-# delivery feed carries impressions, clicks, conversions, viewthroughs and
-# click conversions, and nothing that counts a visit.
+# What the performance chart draws. Visits are not among them: the delivery
+# feed carries impressions, clicks, conversions, viewthroughs and click
+# conversions, and nothing that counts a visit.
 PERFORMANCE_METRICS = (
-    ("ctr", "CTR", "percent"),
     ("clicks", "Clicks", "count"),
     ("conversions", "Conversions", "count"),
+    ("ctr", "CTR", "percent"),
 )
 
 
-def performance_chart(view: "OrderView", limit: int = MAX_CHART_SERIES) -> dict:
-    """CTR, clicks and conversions per day, one line per product.
+def performance_chart(view: "OrderView") -> dict:
+    """CTR, clicks and conversions on one chart, for the order as a whole.
 
-    Three datasets in one payload rather than three charts: they are read
-    against each other, and a click that switches instantly is the
-    difference between looking and not bothering.
+    One frame, because they are read against each other: a CTR that climbs
+    while conversions fall is the thing worth seeing, and it is invisible
+    when each sits behind its own button.
+
+    Two axes, because they are not the same kind of number. Clicks and
+    conversions are counts; CTR is a ratio in the low single-digit percent.
+    On one axis the CTR line is flat against the floor and says nothing.
     """
-    sets: dict[str, list[dict]] = {}
-    dates: list[dt.date] = sorted(
-        {
-            point.date
-            for row in view.rows
-            for point in view.daily_by_line_item.get(row.line_item_id, [])
-        }
-    )
-    if not dates:
-        return {"dates": [], "sets": {}, "metrics": []}
+    points: dict[dt.date, list[float]] = {}
+    for row in view.rows:
+        for point in view.daily_by_line_item.get(row.line_item_id, []):
+            bucket = points.get(point.date)
+            if bucket is None:
+                bucket = points[point.date] = [0.0, 0.0, 0.0]
+            bucket[0] += point.impressions
+            bucket[1] += point.clicks
+            bucket[2] += point.conversions
 
-    ranked = sorted(
-        (r for r in view.rows if r.line_item_id is not None),
-        key=lambda r: -(r.impressions or r.cost or 0),
-    )[:limit]
+    if not points:
+        return {"dates": [], "series": []}
 
-    for key, _, _ in PERFORMANCE_METRICS:
-        series = []
-        for row in ranked:
-            points = {
-                p.date: p for p in view.daily_by_line_item.get(row.line_item_id, [])
-            }
-            values = []
-            for day in dates:
-                point = points.get(day)
-                if point is None:
-                    values.append(0.0)
-                elif key == "ctr":
-                    values.append(
-                        (point.clicks / point.impressions) if point.impressions else 0.0
-                    )
-                else:
-                    values.append(getattr(point, key))
-            if any(values):
-                series.append({"label": row.label, "values": values})
-        sets[key] = series
+    days = sorted(points)
+    clicks = [points[d][1] for d in days]
+    conversions = [points[d][2] for d in days]
+    ctr = [
+        (points[d][1] / points[d][0]) if points[d][0] else 0.0 for d in days
+    ]
+
+    series = []
+    if any(clicks):
+        series.append({"label": "Clicks", "values": clicks, "axis": "left"})
+    if any(conversions):
+        series.append(
+            {"label": "Conversions", "values": conversions, "axis": "left"}
+        )
+    if any(ctr):
+        series.append(
+            {"label": "CTR", "values": ctr, "axis": "right", "format": "percent"}
+        )
 
     return {
-        "dates": [d.isoformat() for d in dates],
-        "sets": sets,
-        "metrics": [
-            {"key": key, "name": name, "format": fmt}
-            for key, name, fmt in PERFORMANCE_METRICS
-        ],
+        "dates": [d.isoformat() for d in days],
+        "series": series,
+        "metric": "count",
+        "right_format": "percent",
     }
 
 

@@ -722,7 +722,7 @@ def test_recompute_fills_the_cpm_and_rebuilds_a_broken_total():
         recompute_terms(session)
         item = session.query(LineItem).one()
 
-    assert item.goal_cpm == 2.5, "the setup CPM comes from the rate card"
+    assert item.goal_cpm == 2.0, "the setup CPM comes from the rate card"
     assert item.goal_cpm_source == "rate card"
     assert item.total_impressions == 600_000, "six months of the monthly figure"
 
@@ -836,7 +836,7 @@ def test_recompute_does_not_hold_the_whole_book_in_memory():
 
     with Session(engine) as check:
         item = check.query(LineItem).first()
-        assert item.goal_cpm == 2.5
+        assert item.goal_cpm == 2.0
         assert item.total_impressions == 600_000
 
 

@@ -108,6 +108,7 @@ def site(tmp_path):
                         strategy_type=name.split(" - ")[-1],
                         impressions=impressions,
                         clicks=4.0,
+                        conversions=1.0,
                         cost=impressions * 0.003,
                     )
                 )
@@ -490,7 +491,7 @@ def test_everything_is_on_one_page(site):
     for marker in (
         "Campaign Elements",          # what was sold
         "Line item pacing",
-        "Month to date campaign data",  # what each product is reading
+        "Campaign links",               # which DSP campaign feeds which line
         "Daily delivery by product",
         "Strategy breakout",
     ):
@@ -965,10 +966,9 @@ def test_serve_is_totalled_per_month(site):
     assert months[0].goal == view.rows[0].monthly_target + view.rows[1].monthly_target
 
 
-def test_the_performance_chart_carries_every_metric_in_one_payload(site):
-    """Three datasets, one request: they are read against each other, and a
-    click that switches instantly is the difference between looking and not
-    bothering."""
+def test_the_performance_chart_draws_every_metric_on_one_frame(site):
+    """One frame, no picker. A CTR that climbs while conversions fall is the
+    thing worth seeing, and it is invisible when each sits behind a button."""
     import db as db_module
     import views
 
@@ -976,18 +976,27 @@ def test_the_performance_chart_carries_every_metric_in_one_payload(site):
     with db_module.session_scope() as session:
         chart = views.performance_chart(views.order_view(session, order_id))
 
-    assert [m["key"] for m in chart["metrics"]] == ["ctr", "clicks", "conversions"]
-    assert set(chart["sets"]) == {"ctr", "clicks", "conversions"}
+    assert "sets" not in chart, "no switching - every series is drawn at once"
     assert len(chart["dates"]) == 20
 
-    # CTR is a ratio, not a count - the chart is told so it does not render
-    # it as dollars.
-    assert dict(
-        (m["key"], m["format"]) for m in chart["metrics"]
-    ) == {"ctr": "percent", "clicks": "count", "conversions": "count"}
+    by_label = {s["label"]: s for s in chart["series"]}
+    assert set(by_label) == {"Clicks", "Conversions", "CTR"}
 
-    meta = next(s for s in chart["sets"]["clicks"] if "Meta" in s["label"])
-    assert meta["values"][0] == 8.0, "two strategies at four clicks a day"
+    # Counts and a ratio cannot share a scale: on one axis CTR lies flat
+    # along the floor. Clicks and conversions left, CTR right.
+    assert by_label["Clicks"]["axis"] == "left"
+    assert by_label["Conversions"]["axis"] == "left"
+    assert by_label["CTR"]["axis"] == "right"
+
+    # And the chart is told CTR is a ratio, so it is not drawn as dollars.
+    assert by_label["CTR"]["format"] == "percent"
+    assert chart["metric"] == "count"
+
+    # The order as a whole, not per strategy: both Meta strategies summed.
+    assert by_label["Clicks"]["values"][0] == 8.0
+
+    impressions = chart["dates"] and by_label["CTR"]["values"][0]
+    assert 0 < impressions < 1, "CTR is a fraction, not a percentage figure"
 
 
 def test_visits_are_not_offered_because_the_feed_has_none(site):

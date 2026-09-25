@@ -24,16 +24,6 @@ function adtiniChart(suffix) {
   } catch (e) {
     return;
   }
-  // A chart can carry several datasets and switch between them, which is
-  // how CTR, clicks and conversions share one frame without three round
-  // trips to draw them.
-  var sets = data.sets || null;
-  var metric = null;
-  if (sets) {
-    metric = (data.metrics && data.metrics[0] && data.metrics[0].key) || null;
-    data.series = metric ? sets[metric] || [] : [];
-    data.metric = metric;
-  }
   if (!data.dates || !data.dates.length || !data.series.length) return;
 
   // Validated against the six checks in the dataviz palette validator
@@ -47,7 +37,16 @@ function adtiniChart(suffix) {
   var OTHER = "#8A93A3";
 
   var NS = "http://www.w3.org/2000/svg";
-  var PAD = { top: 16, right: 18, bottom: 34, left: 62 };
+
+  /* A series can be pinned to a second axis. Counts and ratios live on one
+     chart that way: clicks in the thousands on the left, CTR at 0.4% on the
+     right, instead of the ratio lying flat along the floor. */
+  function onRight(series) {
+    return series.axis === "right";
+  }
+  var HAS_RIGHT = data.series.some(onRight);
+
+  var PAD = { top: 16, right: HAS_RIGHT ? 58 : 18, bottom: 34, left: 62 };
 
   function el(name, attrs) {
     var node = document.createElementNS(NS, name);
@@ -60,28 +59,23 @@ function adtiniChart(suffix) {
   }
 
   function mode() {
-    // A chart carrying named metrics says how each one reads; the rest are
-    // impressions or money, as they always were.
-    if (data.metrics) {
-      for (var i = 0; i < data.metrics.length; i += 1) {
-        if (data.metrics[i].key === data.metric) return data.metrics[i].format;
-      }
-    }
-    return data.metric === "impressions" ? "count" : "money";
+    return data.metric === "impressions" || data.metric === "count"
+      ? "count" : "money";
   }
 
-  function isMoney() {
-    return mode() === "money";
+  /* A series may say how it reads; otherwise it reads like the chart. */
+  function modeOf(series) {
+    return (series && series.format) || mode();
   }
 
-  function format(value) {
+  function format(value, how) {
     if (value === null || value === undefined) return "—";
-    if (mode() === "percent") {
+    if (how === "percent") {
       return (value * 100).toLocaleString(undefined, {
         minimumFractionDigits: 2, maximumFractionDigits: 2
       }) + "%";
     }
-    if (isMoney()) {
+    if (how === "money") {
       return "$" + value.toLocaleString(undefined, {
         minimumFractionDigits: 2, maximumFractionDigits: 2
       });
@@ -89,14 +83,25 @@ function adtiniChart(suffix) {
     return Math.round(value).toLocaleString();
   }
 
-  function axisFormat(value) {
-    if (isMoney()) {
+  function axisFormat(value, how) {
+    if (how === "percent") {
+      return (value * 100).toFixed(value < 0.01 ? 2 : 1) + "%";
+    }
+    if (how === "money") {
       if (value >= 1000) return "$" + Math.round(value / 1000) + "k";
       return "$" + Math.round(value);
     }
     if (value >= 1000000) return (value / 1000000).toFixed(1) + "M";
     if (value >= 1000) return Math.round(value / 1000) + "k";
     return String(Math.round(value));
+  }
+
+  /* The right axis is whatever the right-hand series say they are. */
+  function rightMode() {
+    for (var i = 0; i < data.series.length; i += 1) {
+      if (onRight(data.series[i])) return modeOf(data.series[i]);
+    }
+    return mode();
   }
 
   function dayLabel(iso) {
@@ -107,14 +112,28 @@ function adtiniChart(suffix) {
   }
 
   /* Nice round ticks, so the axis reads in human numbers. */
+  function niceStep(raw) {
+    var mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    return [1, 2, 2.5, 5, 10].map(function (m) { return m * mag; })
+      .filter(function (s) { return s >= raw; })[0] || 10 * mag;
+  }
+
   function ticks(max) {
     if (max <= 0) return [0, 1];
-    var raw = max / 4;
-    var mag = Math.pow(10, Math.floor(Math.log10(raw)));
-    var step = [1, 2, 2.5, 5, 10].map(function (m) { return m * mag; })
-      .filter(function (s) { return s >= raw; })[0] || 10 * mag;
+    var step = niceStep(max / 4);
     var out = [];
     for (var v = 0; v <= max + step * 0.001; v += step) out.push(v);
+    return out;
+  }
+
+  /* The second axis reuses the first one's gridlines: same number of
+     intervals, its own round step. Two sets of gridlines on one frame is
+     a grid nobody can read. */
+  function alignedTicks(max, intervals) {
+    if (max <= 0 || intervals <= 0) return [0, 1];
+    var step = niceStep(max / intervals);
+    var out = [];
+    for (var i = 0; i <= intervals; i += 1) out.push(step * i);
     return out;
   }
 
@@ -128,20 +147,32 @@ function adtiniChart(suffix) {
     var innerW = width - PAD.left - PAD.right;
     var innerH = height - PAD.top - PAD.bottom;
 
-    var max = 0;
+    var max = 0, maxRight = 0;
     data.series.forEach(function (s) {
-      s.values.forEach(function (v) { if (v > max) max = v; });
+      s.values.forEach(function (v) {
+        if (onRight(s)) { if (v > maxRight) maxRight = v; }
+        else if (v > max) max = v;
+      });
     });
     if (max <= 0) max = 1;
 
     var tickValues = ticks(max);
     var top = tickValues[tickValues.length - 1];
+    var rightTicks = HAS_RIGHT
+      ? alignedTicks(maxRight, tickValues.length - 1) : null;
+    var rightTop = rightTicks ? rightTicks[rightTicks.length - 1] : 1;
+    if (rightTop <= 0) rightTop = 1;
     var n = data.dates.length;
 
     function x(i) { return PAD.left + (n === 1 ? innerW / 2 : innerW * i / (n - 1)); }
     function y(v) { return PAD.top + innerH - (v / top) * innerH; }
+    function yr(v) { return PAD.top + innerH - (v / rightTop) * innerH; }
+    function scale(series) { return onRight(series) ? yr : y; }
 
-    geom = { x: x, y: y, innerH: innerH, n: n, width: width };
+    geom = {
+      x: x, y: y, yr: yr, scale: scale,
+      innerH: innerH, n: n, width: width
+    };
 
     svg = el("svg", {
       viewBox: "0 0 " + width + " " + height,
@@ -151,14 +182,24 @@ function adtiniChart(suffix) {
     });
 
     /* Gridlines and the y axis, recessive. */
-    tickValues.forEach(function (value) {
+    var leftMode = mode();
+    var rmode = rightMode();
+    tickValues.forEach(function (value, i) {
       svg.appendChild(el("line", {
         x1: PAD.left, x2: width - PAD.right, y1: y(value), y2: y(value),
         class: "cgrid"
       }));
       var label = el("text", { x: PAD.left - 10, y: y(value) + 4, class: "caxis cright" });
-      label.textContent = axisFormat(value);
+      label.textContent = axisFormat(value, leftMode);
       svg.appendChild(label);
+
+      if (rightTicks) {
+        var rlabel = el("text", {
+          x: width - PAD.right + 10, y: y(value) + 4, class: "caxis"
+        });
+        rlabel.textContent = axisFormat(rightTicks[i], rmode);
+        svg.appendChild(rlabel);
+      }
     });
 
     /* X labels: first, last and a handful between, so they never collide. */
@@ -176,14 +217,20 @@ function adtiniChart(suffix) {
     svg.appendChild(plot);
 
     data.series.forEach(function (series, index) {
+      var scaleFor = scale(series);
       var d = "";
       series.values.forEach(function (value, i) {
-        d += (i === 0 ? "M" : "L") + x(i).toFixed(1) + " " + y(value).toFixed(1);
+        d += (i === 0 ? "M" : "L") + x(i).toFixed(1) + " "
+          + scaleFor(value).toFixed(1);
       });
-      plot.appendChild(el("path", {
+      var attrs = {
         d: d, fill: "none", stroke: color(index), "stroke-width": "2",
         "stroke-linejoin": "round", "stroke-linecap": "round"
-      }));
+      };
+      /* Dashed on the right axis, so which scale a line is read against
+         survives a black-and-white print and a colour-blind reader. */
+      if (onRight(series)) attrs["stroke-dasharray"] = "5 3";
+      plot.appendChild(el("path", attrs));
     });
 
     crosshair = el("g", { class: "ccross", visibility: "hidden" });
@@ -226,7 +273,7 @@ function adtiniChart(suffix) {
     }
     data.series.forEach(function (series, index) {
       crosshair.appendChild(el("circle", {
-        cx: cx, cy: geom.y(series.values[i]), r: "4.5",
+        cx: cx, cy: geom.scale(series)(series.values[i]), r: "4.5",
         fill: color(index), stroke: "#FFFFFF", "stroke-width": "2"
       }));
     });
@@ -252,12 +299,20 @@ function adtiniChart(suffix) {
     tooltip.appendChild(head);
 
     /* Every series at this day, biggest first, so the tooltip reads as a
-       ranking rather than in whatever order the query returned. */
+       ranking rather than in whatever order the query returned. Left-axis
+       series first: ranking a count against a ratio is meaningless, so the
+       two scales are sorted apart rather than mixed. */
     data.series
       .map(function (series, index) {
-        return { label: series.label, value: series.values[i], index: index };
+        return {
+          label: series.label, value: series.values[i], index: index,
+          right: onRight(series), how: modeOf(series)
+        };
       })
-      .sort(function (a, b) { return b.value - a.value; })
+      .sort(function (a, b) {
+        if (a.right !== b.right) return a.right ? 1 : -1;
+        return b.value - a.value;
+      })
       .forEach(function (row) {
         var line = document.createElement("div");
         line.className = "ctiprow";
@@ -271,7 +326,7 @@ function adtiniChart(suffix) {
         line.appendChild(name);
 
         var value = document.createElement("em");
-        value.textContent = format(row.value);
+        value.textContent = format(row.value, row.how);
         line.appendChild(value);
 
         tooltip.appendChild(line);
@@ -300,7 +355,8 @@ function adtiniChart(suffix) {
       swatch.style.background = color(index);
       item.appendChild(swatch);
       var name = document.createElement("span");
-      name.textContent = series.label;
+      name.textContent = onRight(series)
+        ? series.label + " (right)" : series.label;
       item.appendChild(name);
       host2.appendChild(item);
     });
@@ -308,24 +364,6 @@ function adtiniChart(suffix) {
 
   draw();
   legend();
-
-  if (sets) {
-    var picker = document.getElementById("perfpick");
-    if (picker) {
-      picker.addEventListener("click", function (event) {
-        var button = event.target.closest("button[data-metric]");
-        if (!button) return;
-        metric = button.dataset.metric;
-        data.series = sets[metric] || [];
-        data.metric = metric;
-        picker.querySelectorAll("button").forEach(function (other) {
-          other.classList.toggle("on", other === button);
-        });
-        draw();
-        legend();
-      });
-    }
-  }
 
   var resizeTimer;
   window.addEventListener("resize", function () {

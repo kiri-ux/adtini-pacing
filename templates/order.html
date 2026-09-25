@@ -21,11 +21,7 @@
   delivery belongs to another order.</p>
 {% endif %}
 
-{% if v.partial_history and not (t.needs_setup and not t.total_target) %}
-<p class="warnbar">This flight started {{ o.start_date.strftime('%-d %b %Y') }}, before the
-  delivery feed's earliest day ({{ v.covers_from.strftime('%-d %b %Y') }}). Life-of-flight
-  figures are short by whatever ran earlier; month-to-date is unaffected.</p>
-{% endif %}
+
 
 <div class="qtiles">
   {% if t.needs_setup and not t.total_target %}
@@ -267,172 +263,13 @@
   <button class="btn2 addprod" type="submit">Load</button>
 </form>
 
-<div class="tablecard linkcard">
-  <div class="charthead">
-    <h3>Month to date campaign data</h3>
-    <span class="hint">Which DSP campaign each line item is reading. Most
-      match on their line item id and need nothing. A row reading
-      <b>Not matched</b> is serving somewhere the tool cannot see, and its
-      pacing above is wrong until a campaign is attached to it.</span>
-    <label class="lifetoggle">
-      <input type="checkbox" id="lifetime"> Show lifetime
-    </label>
-  </div>
 
-  {% if linking.unmatched_count %}
-  <p class="linkwarn">{{ linking.unmatched_count }} line
-    item{{ '' if linking.unmatched_count == 1 else 's' }} with no delivery
-    reaching {{ 'it' if linking.unmatched_count == 1 else 'them' }}.</p>
-  {% endif %}
-
-  <div class="scroller">
-    <table class="overview linktable">
-      <thead><tr>
-        <th>Match</th><th>Line Item ID</th><th>Product</th>
-        <th>Campaign</th>
-        <th class="num"><span class="mtd">MTD served</span><span class="life">Lifetime served</span></th>
-        <th>Ops verified</th><th>Validated by</th><th></th>
-      </tr></thead>
-      <tbody>
-      {% for r in linking.rows %}
-        <tr class="state-{{ r.state }}">
-          <td><span class="linkstate {{ r.state }}">
-            {%- if r.state == 'verified' %}Verified
-            {%- elif r.state == 'linked' %}Linked
-            {%- elif r.state == 'matched' %}Matched
-            {%- else %}Not matched{% endif -%}
-          </span></td>
-          <td class="num orderid">{{ r.line_item.external_id if r.line_item.external_id
-            and not r.line_item.external_id.startswith('name:') else '—' }}</td>
-          <td>
-            <span class="pchip" style="background:{{ r.hex }};color:{{ r.text_hex }}">{{ r.code }}</span>
-            <span class="clip" title="{{ r.label }}">{{ r.label }}</span>
-          </td>
-          <td class="campcell">
-            {%- if r.links -%}
-              <ul class="camplist">
-              {% for link in r.links %}
-                <li title="{{ link.data_source }} · {{ link.campaign_id }}">
-                  {{ link.campaign_name or link.campaign_id }}</li>
-              {% endfor %}
-              </ul>
-              <span class="byhand" title="Attached by hand, not by id">by hand</span>
-            {%- elif r.matched_campaigns -%}
-              <ul class="camplist">
-              {% for c in r.matched_campaigns %}
-                <li title="{{ c.data_source }} · {{ c.campaign_id }}">{{ c.label }}</li>
-              {% endfor %}
-              </ul>
-            {%- else -%}
-              <span class="muted">—</span>
-            {%- endif -%}
-          </td>
-          <td class="num">
-            {% if r.is_money %}{{ r.served|money }}{% else %}{{ r.served|num }}{% endif %}
-          </td>
-          <td>{{ '✓' if r.state == 'verified' else '' }}</td>
-          <td class="muted">{{ r.linked_by or '—' }}</td>
-          <td class="linkact">
-            <button type="button" class="btn2 linkbtn"
-              data-li="{{ r.line_item.id }}"
-              data-label="{{ r.label }}"
-              data-campaigns="{{ r.linked_keys }}"
-              data-verified="{{ '1' if r.state == 'verified' else '' }}"
-              data-by="{{ r.linked_by or '' }}">
-              {{ 'Edit links' if r.links else 'Link…' }}</button>
-            {% if r.links %}
-            <form method="post" class="inlineform"
-              action="{{ url_for('campaign_unlink', order_id=o.id, line_item_id=r.line_item.id) }}">
-              <button class="btn2 danger" type="submit">Unlink</button>
-            </form>
-            {% endif %}
-          </td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-
-<dialog id="linkdlg" class="linkdlg">
-  <form method="post" action="{{ url_for('campaign_link', order_id=o.id) }}">
-    <input type="hidden" name="line_item_id" id="dlg-li">
-    <div class="dlghead">
-      <h3>Link campaigns</h3>
-      <p class="hint">Pick every DSP campaign this line item was bought on -
-        a Meta line split across an impressions campaign and a leads one needs
-        both. Unticking one removes it. A campaign belongs to one line item,
-        so choosing one already linked elsewhere moves it here.</p>
-      <p class="hint">Listed are the campaigns filed under this client, under
-        this order's number, or named for it. A campaign filed under a
-        differently spelled client and named for no order will not be here.</p>
-      <p class="dlgfor">Line item: <b id="dlg-label"></b></p>
-    </div>
-
-    <input type="search" id="dlgfilter" class="dlgfilter" autocomplete="off"
-      placeholder="Filter by campaign name or id">
-
-    <div class="dlgscroll">
-      {% if linking.candidates %}
-      <table class="elements dlgtable">
-        <thead><tr><th></th><th>Campaign</th><th>Listed because</th><th>Product</th>
-          <th class="num"><span class="mtd">MTD</span><span class="life">Lifetime</span></th>
-          <th>Ran</th><th>Now on</th></tr></thead>
-        <tbody>
-        {% for c in linking.candidates %}
-          <tr data-hay="{{ (c.label ~ ' ' ~ c.campaign_id ~ ' ' ~ (c.product or ''))|lower }}">
-            <td><input type="checkbox" name="campaign" value="{{ c.key }}"
-              id="cand-{{ loop.index }}"></td>
-            <td class="clip"><label for="cand-{{ loop.index }}"
-              title="{{ c.data_source }} · {{ c.campaign_id }}">{{ c.label }}</label></td>
-            <td class="muted nowrap">{{ c.found_by }}</td>
-            <td class="muted">{{ c.product or '—' }}</td>
-            <td class="num">
-              <span class="mtd">{{ c.month_impressions|num if c.month_impressions else c.month_cost|money }}</span>
-              <span class="life">{{ c.impressions|num if c.impressions else c.cost|money }}</span>
-            </td>
-            <td class="muted nowrap">{{ c.first_date.strftime('%b %-d') if c.first_date else '—' }}
-              – {{ c.last_date.strftime('%b %-d') if c.last_date else '—' }}</td>
-            <td class="muted">
-              {%- if c.taken_by -%}
-                <span class="takenby" data-li="{{ c.taken_by }}">{{
-                  'matched by id' if c.taken_how == 'id' else 'linked' }}</span>
-              {%- else -%}—{%- endif -%}
-            </td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <p class="empty">No campaigns in the feed for this client yet. The feed
-        covers a rolling window, so a campaign that stopped before it starts
-        will not be here.</p>
-      {% endif %}
-    </div>
-
-    <div class="dlgfoot">
-      <span id="dlgcount" class="dlgcount none">none picked</span>
-      <label class="chk"><input type="checkbox" name="ops_verified" id="dlg-verified">
-        Ops verified</label>
-      <input type="text" name="linked_by" id="dlg-by" class="dlgby"
-        placeholder="Validated by" autocomplete="off">
-      <span class="spacer"></span>
-      <button type="button" class="btn2" id="dlgcancel">Cancel</button>
-      <button class="btn save" type="submit">Save links</button>
-    </div>
-  </form>
-</dialog>
 
 {% if performance.dates %}
 <div class="tablecard chartcard">
   <div class="charthead">
     <h3>Performance over time</h3>
-    <span class="hint">One line per product. Hover for every product on a day.</span>
-    <span class="metricpick" id="perfpick">
-      {% for m in performance.metrics %}
-      <button type="button" class="{{ 'on' if loop.first }}" data-metric="{{ m.key }}">{{ m.name }}</button>
-      {% endfor %}
-    </span>
+    <span class="hint">Clicks and conversions on the left, CTR on the right.</span>
   </div>
   <div id="chartlegend-perf" class="clegends"></div>
   <div id="strategychart-perf" class="chartbox"></div>
@@ -515,6 +352,156 @@
 </details>
 {% endif %}
 
+
+<details class="tablecard linkcard">
+  <summary class="charthead">
+    <h3>Campaign links</h3>
+    <span class="hint">Which DSP campaign each line item is reading. Most
+      match on their line item id and need nothing. A row reading
+      <b>Not matched</b> is serving somewhere the tool cannot see, and its
+      pacing above is wrong until a campaign is attached to it.</span>
+    {% if linking.unmatched_count %}<i class="tabflag">{{ linking.unmatched_count }} unmatched</i>{% endif %}
+  </summary>
+
+  {% if linking.unmatched_count %}
+  <p class="linkwarn">{{ linking.unmatched_count }} line
+    item{{ '' if linking.unmatched_count == 1 else 's' }} with no delivery
+    reaching {{ 'it' if linking.unmatched_count == 1 else 'them' }}.</p>
+  {% endif %}
+
+  <div class="scroller">
+    <table class="overview linktable">
+      <thead><tr>
+        <th>Match</th><th>Line Item ID</th><th>Product</th>
+        <th>Campaign</th>
+        <th>Ops verified</th><th>Validated by</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for r in linking.rows %}
+        <tr class="state-{{ r.state }}">
+          <td><span class="linkstate {{ r.state }}">
+            {%- if r.state == 'verified' %}Verified
+            {%- elif r.state == 'linked' %}Linked
+            {%- elif r.state == 'matched' %}Matched
+            {%- else %}Not matched{% endif -%}
+          </span></td>
+          <td class="num orderid">{{ r.line_item.external_id if r.line_item.external_id
+            and not r.line_item.external_id.startswith('name:') else '—' }}</td>
+          <td>
+            <span class="pchip" style="background:{{ r.hex }};color:{{ r.text_hex }}">{{ r.code }}</span>
+            <span class="clip" title="{{ r.label }}">{{ r.label }}</span>
+          </td>
+          <td class="campcell">
+            {%- if r.links -%}
+              <ul class="camplist">
+              {% for link in r.links %}
+                <li title="{{ link.data_source }} · {{ link.campaign_id }}">
+                  {{ link.campaign_name or link.campaign_id }}</li>
+              {% endfor %}
+              </ul>
+              <span class="byhand" title="Attached by hand, not by id">by hand</span>
+            {%- elif r.matched_campaigns -%}
+              <ul class="camplist">
+              {% for c in r.matched_campaigns %}
+                <li title="{{ c.data_source }} · {{ c.campaign_id }}">{{ c.label }}</li>
+              {% endfor %}
+              </ul>
+            {%- else -%}
+              <span class="muted">—</span>
+            {%- endif -%}
+          </td>
+          <td>{{ '✓' if r.state == 'verified' else '' }}</td>
+          <td class="muted">{{ r.linked_by or '—' }}</td>
+          <td class="linkact">
+            <button type="button" class="btn2 linkbtn"
+              data-li="{{ r.line_item.id }}"
+              data-label="{{ r.label }}"
+              data-campaigns="{{ r.linked_keys }}"
+              data-verified="{{ '1' if r.state == 'verified' else '' }}"
+              data-by="{{ r.linked_by or '' }}">
+              {{ 'Edit links' if r.links else 'Link…' }}</button>
+            {% if r.links %}
+            <form method="post" class="inlineform"
+              action="{{ url_for('campaign_unlink', order_id=o.id, line_item_id=r.line_item.id) }}">
+              <button class="btn2 danger" type="submit">Unlink</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<dialog id="linkdlg" class="linkdlg">
+  <form method="post" action="{{ url_for('campaign_link', order_id=o.id) }}">
+    <input type="hidden" name="line_item_id" id="dlg-li">
+    <div class="dlghead">
+      <h3>Link campaigns</h3>
+      <p class="hint">Pick every DSP campaign this line item was bought on -
+        a Meta line split across an impressions campaign and a leads one needs
+        both. Unticking one removes it. A campaign belongs to one line item,
+        so choosing one already linked elsewhere moves it here.</p>
+      <p class="hint">Listed are the campaigns filed under this client, under
+        this order's number, or named for it. A campaign filed under a
+        differently spelled client and named for no order will not be here.</p>
+      <p class="dlgfor">Line item: <b id="dlg-label"></b></p>
+    </div>
+
+    <input type="search" id="dlgfilter" class="dlgfilter" autocomplete="off"
+      placeholder="Filter by campaign name or id">
+
+    <div class="dlgscroll">
+      {% if linking.candidates %}
+      <table class="elements dlgtable">
+        <thead><tr><th></th><th>Campaign</th><th>Listed because</th><th>Product</th>
+          <th class="num"><span class="mtd">MTD</span><span class="life">Lifetime</span></th>
+          <th>Ran</th><th>Now on</th></tr></thead>
+        <tbody>
+        {% for c in linking.candidates %}
+          <tr data-hay="{{ (c.label ~ ' ' ~ c.campaign_id ~ ' ' ~ (c.product or ''))|lower }}">
+            <td><input type="checkbox" name="campaign" value="{{ c.key }}"
+              id="cand-{{ loop.index }}"></td>
+            <td class="clip"><label for="cand-{{ loop.index }}"
+              title="{{ c.data_source }} · {{ c.campaign_id }}">{{ c.label }}</label></td>
+            <td class="muted nowrap">{{ c.found_by }}</td>
+            <td class="muted">{{ c.product or '—' }}</td>
+            <td class="num">
+              <span class="mtd">{{ c.month_impressions|num if c.month_impressions else c.month_cost|money }}</span>
+              <span class="life">{{ c.impressions|num if c.impressions else c.cost|money }}</span>
+            </td>
+            <td class="muted nowrap">{{ c.first_date.strftime('%b %-d') if c.first_date else '—' }}
+              – {{ c.last_date.strftime('%b %-d') if c.last_date else '—' }}</td>
+            <td class="muted">
+              {%- if c.taken_by -%}
+                <span class="takenby" data-li="{{ c.taken_by }}">{{
+                  'matched by id' if c.taken_how == 'id' else 'linked' }}</span>
+              {%- else -%}—{%- endif -%}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">No campaigns in the feed for this client yet. The feed
+        covers a rolling window, so a campaign that stopped before it starts
+        will not be here.</p>
+      {% endif %}
+    </div>
+
+    <div class="dlgfoot">
+      <span id="dlgcount" class="dlgcount none">none picked</span>
+      <label class="chk"><input type="checkbox" name="ops_verified" id="dlg-verified">
+        Ops verified</label>
+      <input type="text" name="linked_by" id="dlg-by" class="dlgby"
+        placeholder="Validated by" autocomplete="off">
+      <span class="spacer"></span>
+      <button type="button" class="btn2" id="dlgcancel">Cancel</button>
+      <button class="btn save" type="submit">Save links</button>
+    </div>
+  </form>
+</dialog>
   </div>
 </details>
 

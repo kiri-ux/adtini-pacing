@@ -94,6 +94,9 @@ class Rate:
     name: str
     starting_cpm: float | None
     max_cpm: float | None
+    # What a campaign is actually set up at. The card's own column, and the
+    # one the buying team budgets from - Max is the ceiling, not the plan.
+    al_starting_max_cpm: float | None
     average_cpm: float | None
     goal_metric: str | None      # "ctr" or "vr"
     goal_value: float | None     # a rate, so 0.40% CTR is 0.004
@@ -143,6 +146,7 @@ def card() -> dict[str, Rate]:
                 name=row["rate_name"],
                 starting_cpm=_float(row.get("starting_cpm", "")),
                 max_cpm=_float(row.get("max_cpm", "")),
+                al_starting_max_cpm=_float(row.get("al_starting_max_cpm", "")),
                 average_cpm=_float(row.get("average_cpm", "")),
                 goal_metric=metric,
                 goal_value=value,
@@ -184,4 +188,13 @@ def setup_cpm(product: str | None, restricted: bool = False, b2b: bool = False) 
     rate = lookup(product, restricted=restricted, b2b=b2b)
     if rate is None:
         return None
-    return rate.max_cpm or rate.average_cpm or rate.starting_cpm
+    # AL Starting Max first: it is what the buying team budgets from, and
+    # the margin target of 50% is set against it. Max is the ceiling a
+    # campaign may reach, not the rate it is planned at, and pacing on the
+    # ceiling reads a campaign as cheaper than it was bought.
+    return (
+        rate.al_starting_max_cpm
+        or rate.max_cpm
+        or rate.average_cpm
+        or rate.starting_cpm
+    )
