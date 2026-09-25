@@ -435,3 +435,22 @@ details.soldsplit > summary::before{content:"\25B8 ";display:inline-block;
   transition:transform .12s;margin-right:6px}
 details.soldsplit[open] > summary::before{transform:rotate(90deg)}
 details.soldsplit > summary:hover{color:var(--text)}
+
+/* ---- push-down drawers --------------------------------------------------- */
+details.drawer{margin:18px 0 0;border:1px solid var(--line);border-radius:14px;
+  background:var(--card);overflow:hidden}
+details.drawer > summary{cursor:pointer;list-style:none;display:flex;
+  align-items:baseline;gap:10px;padding:14px 18px;font-size:13px;
+  background:var(--card);flex-wrap:wrap}
+details.drawer > summary::-webkit-details-marker{display:none}
+details.drawer > summary::before{content:"\25B8";display:inline-block;
+  transition:transform .12s;color:var(--muted);flex:0 0 auto}
+details.drawer[open] > summary::before{transform:rotate(90deg)}
+details.drawer > summary b{color:var(--navy);font-size:13.5px}
+details.drawer > summary:hover b{color:var(--rail)}
+.dsub{font-size:12px;color:var(--muted);font-weight:500}
+details.drawer > summary .tabflag{margin-left:auto}
+.drawerbody{border-top:1px solid var(--line);background:var(--page);
+  padding:4px 14px 14px}
+.drawerbody > .tablecard{margin-top:14px}
+.drawerbody > details.qfold{margin-top:14px}

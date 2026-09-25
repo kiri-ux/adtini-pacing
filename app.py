@@ -406,7 +406,24 @@ def overview():
 # The order page's views. The template's tab bar is built from this, so a
 # tab cannot be added to one and forgotten in the other - which is exactly
 # how renaming Campaign to Product left the new link falling back to Order.
-ORDER_TABS = ("order", "product", "strategy")
+# What a product can be sold on, as the page offers it. Performance Max
+# paces the client's budget against the client's cost, which is a kind of
+# spend - it does not need a third name in the picker, and a buyer choosing
+# "Ad spend" on a Performance Max line must not quietly turn it into a
+# platform-spend line and lose the client-cost gross.
+PACING_CHOICES = (
+    ("impression", "Impressions"),
+    ("click", "Ad spend"),
+)
+
+
+def _chosen_pacing_type(chosen: str, current: str | None) -> str | None:
+    """Map the two choices onto the three the engine works in."""
+    if chosen == "impression":
+        return "impression"
+    if chosen == "click":
+        return "event" if current == "event" else "click"
+    return None
 
 
 @app.route("/orders/<int:order_id>")
@@ -416,26 +433,14 @@ def order_detail(order_id: int):
         view = views.order_view(db, order_id, as_of=_as_of())
         if view is None:
             abort(404)
-        tab = request.args.get("tab") or "order"
-        # "campaign" is what this tab was called before it was renamed, and
-        # links to it are out there.
-        tab = {"campaign": "product"}.get(tab, tab)
-        if tab not in ORDER_TABS:
-            tab = "order"
         return render_template(
             "order.html",
             v=view,
             t=view.total,
-            tab=tab,
-            order_tabs=ORDER_TABS,
             chart=views.chart_series(view),
             product_charts=views.product_charts(view),
             blocks=views.strategy_blocks(db, view),
-            pacing_labels={
-                "impression": "Impressions",
-                "click": "Ad spend",
-                "event": "Client budget",
-            },
+            pacing_choices=PACING_CHOICES,
             linking=views.linking_view(
                 db, view.order, as_of=view.as_of,
                 daily=view.daily_by_line_item,
@@ -488,12 +493,12 @@ def order_save(order_id: int):
             if prefix + "name" not in form:
                 continue
             item.name = (form.get(prefix + "name") or item.name).strip()
-            kind = (form.get(prefix + "pacing_type") or "").strip()
+            kind = _chosen_pacing_type(
+                (form.get(prefix + "pacing_type") or "").strip(), item.pacing_type
+            )
             # Stored only when it differs from the order's, so a line item
             # keeps following the order when the order changes.
-            item.pacing_type = (
-                kind if kind in PACING_TYPES and kind != order.pacing_type else None
-            )
+            item.pacing_type = kind if kind and kind != order.pacing_type else None
             item.start_date = as_date(prefix + "start_date")
             item.end_date = as_date(prefix + "end_date")
             for field_name in (
@@ -596,7 +601,7 @@ def strategies_save(order_id: int):
             term.rate = as_float(prefix + "rate")
 
     flash("Saved.")
-    return redirect(url_for("order_detail", order_id=order_id, tab="strategy"))
+    return redirect(url_for("order_detail", order_id=order_id))
 
 
 @app.route("/orders/<int:order_id>/strategies", methods=["POST"])
@@ -616,7 +621,7 @@ def strategy_add(order_id: int):
             abort(404)
         if not label:
             flash("Give the strategy a name.")
-            return redirect(url_for("order_detail", order_id=order_id, tab="strategy"))
+            return redirect(url_for("order_detail", order_id=order_id))
 
         # Prefixed with the product's own code, so it reads like the rest and
         # finds its product again on the next page load.
@@ -632,7 +637,7 @@ def strategy_add(order_id: int):
         ).scalar_one_or_none()
         if clash is not None:
             flash(f"{label} is already on this order.")
-            return redirect(url_for("order_detail", order_id=order_id, tab="strategy"))
+            return redirect(url_for("order_detail", order_id=order_id))
 
         count = db.execute(
             select(func.count())
@@ -652,7 +657,7 @@ def strategy_add(order_id: int):
         )
 
     flash(f"Added {label}.")
-    return redirect(url_for("order_detail", order_id=order_id, tab="strategy"))
+    return redirect(url_for("order_detail", order_id=order_id))
 
 
 @app.route("/orders/<int:order_id>/strategies/seed", methods=["POST"])
@@ -691,7 +696,7 @@ def strategy_seed(order_id: int):
         running = [o for o in (block.observed if block else []) if o.delivered > 0]
         if not running:
             flash("Nothing is running under this product yet to build a split from.")
-            return redirect(url_for("order_detail", order_id=order_id, tab="strategy"))
+            return redirect(url_for("order_detail", order_id=order_id))
 
         taken = {
             term.label
@@ -735,7 +740,7 @@ def strategy_seed(order_id: int):
         flash(f"Drafted {added} strategies from what is running. Check the numbers.")
     else:
         flash("Every running strategy already has a row.")
-    return redirect(url_for("order_detail", order_id=order_id, tab="strategy"))
+    return redirect(url_for("order_detail", order_id=order_id))
 
 
 @app.route(
@@ -747,7 +752,7 @@ def strategy_delete(order_id: int, strategy_id: int):
         term = db.get(StrategyTerms, strategy_id)
         if term and term.order_id == order_id:
             db.delete(term)
-    return redirect(url_for("order_detail", order_id=order_id, tab="strategy"))
+    return redirect(url_for("order_detail", order_id=order_id))
 
 
 # --------------------------------------------------------------------------

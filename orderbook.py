@@ -456,6 +456,8 @@ def import_orders(session, frame, cache: dict | None = None) -> ImportResult:
             result.line_items_updated += 1
 
         item.product = product or item.product
+        if row.get("sold_strategies"):
+            item.sold_strategies = row.get("sold_strategies")
         # A product that paces differently from its order says so on itself.
         item.pacing_type = pacing_type if pacing_type != order.pacing_type else None
         if item.terms_locked:

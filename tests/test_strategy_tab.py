@@ -475,46 +475,76 @@ def test_a_spend_product_reports_its_strategies_in_spend(site):
     assert ppc.observed_total == 550.0, "10 days at $55, not zero impressions"
 
 
-# --- the tab bar and the route have to agree -------------------------------
-def test_every_tab_link_on_the_page_selects_its_own_pane(site):
-    """Renaming Campaign to Product broke this and nothing caught it.
+# --- one page, with drawers ------------------------------------------------
+def test_everything_is_on_one_page(site):
+    """The three tabs were one question split across three page loads.
 
-    The template linked to `tab=product`; the route still only accepted
-    `tab=campaign`, so the new link fell through to the default and clicking
-    Product showed the Order pane. Both are now built from one list, and this
-    follows every link the page actually renders rather than a list written
-    out again here.
+    A buyer checking an order wanted all of it: what was sold, what is
+    reading, what each targeting is doing.
     """
-    import re
+    app_module, order_id = site
+    body = app_module.app.test_client().get(f"/orders/{order_id}").get_data(
+        as_text=True
+    )
 
+    for marker in (
+        "Campaign Elements",          # what was sold
+        "Line item pacing",
+        "Month to date campaign data",  # what each product is reading
+        "Daily delivery by product",
+        "Strategy breakout",
+    ):
+        assert marker in body, marker
+    assert 'class="tabs"' not in body, "the tab bar is gone"
+
+
+def test_an_old_tab_link_still_opens_the_page(site):
+    """Links to the tabs are out there and must not 404 or blow up."""
     app_module, order_id = site
     client = app_module.app.test_client()
-    page = client.get(f"/orders/{order_id}").get_data(as_text=True)
-
-    links = re.findall(r'href="([^"]*\btab=[a-z]+)"', page)
-    assert len(links) >= 3, "the tab bar should be on the page"
-
-    for href in links:
-        name = href.rsplit("tab=", 1)[1]
-        body = client.get(href.replace("&amp;", "&")).get_data(as_text=True)
-        panes = re.findall(r'<div class="pane"[^>]*>', body)
-        shown = [i for i, pane in enumerate(panes) if "hidden" not in pane]
-        assert len(shown) == 1, f"{name}: {len(shown)} panes visible"
-        # And the tab itself reads as the selected one.
-        assert re.search(
-            r'class="tab on"[^>]*href="[^"]*tab=' + name, body
-        ), f"{name} is not marked selected"
+    for tab in ("order", "product", "strategy", "campaign", "nonsense"):
+        assert client.get(f"/orders/{order_id}?tab={tab}").status_code == 200, tab
 
 
-def test_the_old_campaign_link_still_lands_on_product(site):
-    """Links to the old name are out there."""
-    import re
+def test_the_page_is_well_formed(site):
+    """The drawers were spliced into a page that was already nested deep.
+
+    A stray closing tag reparents half the page in a browser and nothing
+    server-side notices.
+    """
+    from html.parser import HTMLParser
 
     app_module, order_id = site
-    body = app_module.app.test_client().get(
-        f"/orders/{order_id}?tab=campaign"
-    ).get_data(as_text=True)
-    assert re.search(r'class="tab on"[^>]*href="[^"]*tab=product', body)
+    body = app_module.app.test_client().get(f"/orders/{order_id}").get_data(
+        as_text=True
+    )
+
+    void = {"input", "br", "hr", "img", "meta", "link", "i"}
+
+    class Check(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.stack: list[str] = []
+            self.bad: list[tuple[str, str]] = []
+
+        def handle_starttag(self, tag, attrs):
+            if tag not in void:
+                self.stack.append(tag)
+
+        def handle_endtag(self, tag):
+            if tag in void:
+                return
+            if tag in self.stack:
+                while self.stack and self.stack[-1] != tag:
+                    self.bad.append(("unclosed", self.stack.pop()))
+                self.stack.pop()
+            else:
+                self.bad.append(("stray close", tag))
+
+    check = Check()
+    check.feed(body)
+    assert check.bad == []
+    assert check.stack == []
 
 
 # --- drafting across the whole book ----------------------------------------
@@ -765,3 +795,136 @@ def test_drafting_names_rows_the_way_the_breakout_does(site):
 
     assert drafted == shown
     assert all(o.claimed for o in meta.observed)
+
+
+# --- the orders export says what was bought --------------------------------
+def test_the_sold_strategies_come_from_the_orders_export():
+    """The export carries a strategy column per product, and none was read.
+
+    "Meta Strategy", "Display Strategy", "OTT + Video Strategy" - the only
+    place the strategies the client actually bought exist. They sat in the
+    unmapped list while the breakout inferred everything from delivery.
+    """
+    import io
+
+    import pandas as pd
+
+    from ingest.orders import normalize
+
+    head = (
+        "client,orders_id,product,id,orders_status,status,orders_start_date,"
+        "end_date,monthly_campaign_impressions,total_campaign_impressions,"
+        "months_running,Meta Strategy,Display Strategy,OTT Strategy,"
+        "campaign_manager,order_type"
+    )
+
+    def row(product, line_item):
+        return ",".join([
+            "Bud's Auto", "44100", product, line_item, "Approved", "Approved",
+            "2026-08-01 21:00:00", "2027-01-31 21:00:00", "100000",
+            "0.999999999999", "6",
+            "Retargeting; Categories", "Behavioral", "Geo-Fencing",
+            "N A (n@x.com)", "Insertion Order",
+        ])
+
+    frame = normalize(pd.read_csv(io.StringIO("\n".join([
+        head,
+        row("Meta Display & Video Ads", "1"),
+        row("Display Ads", "2"),
+        row("Connected TV Ads", "3"),
+    ])), dtype=str))
+
+    sold = dict(zip(frame.rows["product"], frame.rows["sold_strategies"]))
+    # Each product takes its own column, not the first one in the file.
+    assert sold["Meta Display & Video Ads"] == "Retargeting; Categories"
+    assert sold["Display Ads"] == "Behavioral"
+    assert sold["Connected TV Ads"] == "Geo-Fencing"
+    # And they stop being reported as columns nobody understood.
+    assert "Meta Strategy" not in frame.unmapped
+
+
+def test_a_sold_strategy_list_is_split_however_it_was_typed():
+    from models import LineItem
+    from views import sold_strategy_names
+
+    def names(raw):
+        return sold_strategy_names(LineItem(name="x", sold_strategies=raw))
+
+    assert names("Retargeting; Categories") == ["Retargeting", "Categories"]
+    assert names("Behavioral, AI, Keyword") == ["Behavioral", "AI", "Keyword"]
+    assert names("Geo-Fencing / Geo-Retargeting") == [
+        "Geo-Fencing", "Geo-Retargeting"
+    ]
+    assert names("") == []
+    assert names(None) == []
+
+
+def test_what_was_bought_is_paired_with_what_is_running(site):
+    """Bought and not running is as worth seeing as running and not bought."""
+    from models import LineItem
+
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        item = session.query(LineItem).filter(LineItem.external_id == "88001").one()
+        item.sold_strategies = "Retargeting; Categories; Keyword"
+
+    with db_module.session_scope() as session:
+        view = views.order_view(session, order_id)
+        meta = next(b for b in views.strategy_blocks(session, view) if b.code == "M")
+
+    assert meta.sold_names == ["Retargeting", "Categories", "Keyword"]
+    assert {o.label: o.sold for o in meta.observed} == {
+        "M - Categories": True, "M - Retargeting": True
+    }
+    # Bought, but nothing has run under it.
+    assert meta.not_running == ["Keyword"]
+
+
+# --- two ways to be sold, not three ----------------------------------------
+def test_ad_spend_does_not_turn_performance_max_into_platform_spend():
+    """The picker offers two; the engine works in three.
+
+    Performance Max paces the client's budget against the client's cost.
+    Choosing "Ad spend" on one must leave that alone - mapped to plain click
+    pacing it would drop the client-cost gross and read permanently under.
+    """
+    from app import PACING_CHOICES, _chosen_pacing_type
+
+    assert [value for value, _ in PACING_CHOICES] == ["impression", "click"]
+    assert _chosen_pacing_type("click", "event") == "event"
+    assert _chosen_pacing_type("click", "click") == "click"
+    assert _chosen_pacing_type("click", None) == "click"
+    assert _chosen_pacing_type("impression", "event") == "impression"
+
+
+def test_a_status_that_has_not_launched_but_has_delivered_is_called_out(site):
+    """Both cannot be true, and which one is wrong changes everything.
+
+    Either the status is stale in the export, or this delivery is being read
+    onto the wrong order - in which case every figure on the page is wrong.
+    """
+    from models import Order
+
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        session.get(Order, order_id).status = "IO Pending Launch"
+
+    with db_module.session_scope() as session:
+        view = views.order_view(session, order_id)
+        assert view.status_contradicts_delivery
+
+    body = app_module.app.test_client().get(f"/orders/{order_id}").get_data(
+        as_text=True
+    )
+    assert "has delivered" in body
+
+    with db_module.session_scope() as session:
+        session.get(Order, order_id).status = "IO Live"
+    with db_module.session_scope() as session:
+        assert not views.order_view(session, order_id).status_contradicts_delivery

@@ -68,6 +68,54 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "rate_card": ("ratecard", "orderscpmtype"),
 }
 
+# The export carries a strategy column per product - "Meta Strategy",
+# "Display Strategy", "OTT + Video Strategy" - holding the targeting the
+# client actually bought on that product. It is the only place the sold
+# strategies exist, and none of it was being read: the columns went into the
+# unmapped list and the strategy tab had to infer everything from delivery.
+#
+# Which column a line item's strategies come from is decided by its product,
+# so the map is explicit. A product that is not here simply has no sold
+# strategies, which reads as "none entered" rather than as somebody else's.
+PRODUCT_STRATEGY_COLUMNS = {
+    "Meta Display & Video Ads": "metastrategy",
+    "Meta Lead Display & Video Ads": "metaleadstrategy",
+    "Display Ads": "displaystrategy",
+    "Native Display Ads": "nativestrategy",
+    "Native Video Ads": "nativevideostrategy",
+    "Online Audio Ads": "audiostrategy",
+    "Connected TV Ads": "ottstrategy",
+    "CTV + Video Ads": "ottvideostrategy",
+    "Video Ads": "videostrategy",
+    "Social Mirror Ads": "socialmirrorstrategy",
+    "Social Mirror CTV Ads": "socialmirrorctvstrategy",
+    "Mobile Conquesting Display & Video Ads": "mobilestrategy",
+    "Mobile Conquesting EVENT or POLITICAL CATEGORY TARGETING Display & Video Ads":
+        "mobileeventstrategy",
+    "Digital Out-Of-Home (DOOH) Display & Video Ads": "doohstrategy",
+    "Amazon Premium Display Ads": "amazondisplaystrategy",
+    "Amazon Premium Video (with Twitch) & OTT Ads": "amazonstrategy",
+    "TikTok Display & Video Ads": "tiktokstrategy",
+    "Geo-Framing Display Ads": "geoframingstrategy",
+    "YouTube Video Ads": "youtubestrategy",
+    "Live Chat": "chatstrategy",
+}
+
+
+def strategy_column_for(product: str | None, available: dict[str, str]) -> str | None:
+    """The export column holding this product's sold strategies.
+
+    `available` maps a simplified header to the real one, so a file that
+    spells a column differently simply has no match rather than taking
+    another product's.
+    """
+    import products as _products
+
+    entry = _products.lookup(product)
+    name = entry.name if entry else (product or "")
+    wanted = PRODUCT_STRATEGY_COLUMNS.get(name)
+    return available.get(wanted) if wanted else None
+
 REQUIRED = ("client_name", "external_order_id")
 
 DATE_FIELDS = ("start_date", "end_date")
@@ -82,6 +130,7 @@ NUMERIC_FIELDS = (
 TEXT_FIELDS = (
     "client_name", "business_unit", "external_order_id", "external_line_item_id",
     "product", "status", "buyer", "order_type", "notes", "rate_card",
+    "sold_strategies",
 )
 
 # Which spend pair a product paces on, for the click and event sheets.
@@ -165,6 +214,12 @@ def match_columns(columns) -> tuple[dict[str, list[str]], list[str]]:
         if c not in used and simplify(c) and not str(c).startswith("Unnamed:")
     ]
     return mapped, unmapped
+
+
+def _strategy_value(raw, index, column: str | None) -> str | None:
+    if not column:
+        return None
+    return _text(raw.at[index, column])
 
 
 def strip_html(value: object) -> str | None:
@@ -271,6 +326,23 @@ def normalize(raw: pd.DataFrame) -> OrdersFrame:
     computed = monthly * months
     believable = total.notna() & monthly.notna() & (total >= monthly)
     out["total_impressions"] = total.where(believable, computed)
+
+    # The strategies the client bought, taken from whichever strategy column
+    # belongs to the row's product.
+    available = {
+        simplify(column): column
+        for column in raw.columns
+        if simplify(column).endswith("strategy")
+    }
+    # Read, so they are not reported as columns nobody understood.
+    unmapped = [c for c in unmapped if simplify(c) not in available]
+    if available and "product" in out.columns:
+        out["sold_strategies"] = [
+            _strategy_value(raw, index, strategy_column_for(product, available))
+            for index, product in zip(out.index, out["product"])
+        ]
+    else:
+        out["sold_strategies"] = None
 
     out = out[out["client_name"].notna() & out["external_order_id"].notna()]
 

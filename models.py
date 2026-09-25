@@ -118,6 +118,10 @@ class LineItem(Base):
     # The orders file's own line item id. Delivery joins to it, and the next
     # import recognises the row by it rather than by its name.
     external_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    # The targeting the client bought on this product, as the orders export
+    # lists it - "Retargeting, Categories". The only place the sold
+    # strategies exist; the delivery feed says only what ran.
+    sold_strategies: Mapped[str | None] = mapped_column(Text)
     # Sold terms here were edited by hand; the import leaves them alone.
     terms_locked: Mapped[bool] = mapped_column(Boolean, default=False)
     # How this product paces, when it does not pace the way the rest of the

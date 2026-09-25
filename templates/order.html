@@ -15,6 +15,12 @@
   {% if o.status %}&middot; {{ o.status }}{% endif %}
   {% if o.order_type %}&middot; {{ o.order_type }}{% endif %}</p>
 
+{% if v.status_contradicts_delivery %}
+<p class="warnbar">Status is <b>{{ o.status }}</b>, but {{ t.to_date|metric(t) }}
+  has delivered. Either the status is stale in the orders export or this
+  delivery belongs to another order.</p>
+{% endif %}
+
 {% if v.partial_history and not (t.needs_setup and not t.total_target) %}
 <p class="warnbar">This flight started {{ o.start_date.strftime('%-d %b %Y') }}, before the
   delivery feed's earliest day ({{ v.covers_from.strftime('%-d %b %Y') }}). Life-of-flight
@@ -72,18 +78,8 @@
 </div>
 
 
-<nav class="tabs" role="tablist">
-  {# Built from the route's own list, so a tab cannot exist in one and not
-     the other. #}
-  {% for name in order_tabs %}
-  <a class="tab {{ 'on' if tab == name }}"
-     href="{{ url_for('order_detail', order_id=o.id, tab=name) }}">{{ name|capitalize }}
-     {%- if name == 'product' and linking.unmatched_count %}
-     <i class="tabflag">{{ linking.unmatched_count }}</i>{% endif %}</a>
-  {% endfor %}
-</nav>
 
-<div class="pane"{% if tab != "order" %} hidden{% endif %}>
+
 <form method="post" action="{{ url_for('order_save', order_id=o.id) }}">
 <div class="tablecard ordercard">
   <div class="orderterms">
@@ -147,8 +143,12 @@
             title="This row has no sold total or no flight dates, so there is nothing to pace it against">no goal set</span>{% endif %}</td>
         <td class="pacecell"><select class="rowpace" name="li-{{ li }}-pacing_type"
             title="How this product paces. Products on one order are not all sold the same way.">
-            {% for pt in pacing_types %}
-            <option value="{{ pt }}" {% if r.pacing_type == pt %}selected{% endif %}>{{ pacing_labels[pt] }}</option>
+            {# Two choices. Performance Max paces the client's budget, which
+               is a kind of spend and sits under Ad spend rather than needing
+               a third name. #}
+            {% for value, name in pacing_choices %}
+            <option value="{{ value }}"
+              {%- if r.pacing_type == value or (value == 'click' and r.pacing_type == 'event') %} selected{% endif %}>{{ name }}</option>
             {% endfor %}
           </select></td>
         {% if g.pacing_type == 'impression' %}
@@ -237,11 +237,11 @@
   <div class="cardfoot">
     {% if o.terms_locked %}
     <span class="lockmark" title="Edited by hand, so the orders import leaves these alone">
-      Buyer-maintained</span>
+      Edited here, so the import leaves it alone</span>
     <button class="btn2 addprod" type="submit" formnovalidate
-      formaction="{{ url_for('order_unlock', order_id=o.id) }}">Hand back to orders file</button>
+      formaction="{{ url_for('order_unlock', order_id=o.id) }}">Let the import overwrite these</button>
     {% endif %}
-    <button class="btn save" type="submit">Save terms</button>
+    <button class="btn save" type="submit">Save</button>
   </div>
 </div>
 </form>
@@ -250,6 +250,7 @@
   <input type="text" name="name" placeholder="New campaign element">
   <button class="btn2 addprod" type="submit">&#43; Add row</button>
 </form>
+
 
 <div class="tablecard breakoutcard">
   <div class="charthead">
@@ -288,34 +289,16 @@
       </tbody>
     </table>
   </div>
-</div>
-
-{% if v.grid_dates %}
-<details class="qfold dailygrid" open>
-  <summary>Daily delivery — {{ v.grid_dates|length }} days</summary>
-  <div class="scroller">
-    <table class="daily">
-      <thead><tr><th>Campaign Elements</th>
-        {% for d in v.grid_dates %}<th class="num">{{ d.strftime('%-d-%b') }}</th>{% endfor %}</tr></thead>
-      <tbody>
-      {% for r in v.rows %}
-        <tr><td class="elname">{{ r.label }}</td>
-          {% for d in v.grid_dates %}
-            {% set val = v.grid.get(r.line_item_id, {}).get(d) %}
-            <td class="num {% if not val %}zero{% endif %}">{{ val|num if val else '—' }}</td>
-          {% endfor %}
-        </tr>
-      {% endfor %}
-        <tr class="ontrack"><td>On pace / day</td>
-          {% for d in v.grid_dates %}<td class="num">{{ v.on_pace_daily|num }}</td>{% endfor %}</tr>
-      </tbody>
-    </table>
   </div>
-</details>
-{% endif %}
-</div>
 
-<div class="pane"{% if tab != "product" %} hidden{% endif %}>
+
+<details class="drawer" open>
+  <summary><b>Product delivery</b>
+    <span class="dsub">which campaign each product is reading, and what ran per day</span>
+    {% if linking.unmatched_count %}<i class="tabflag">{{ linking.unmatched_count }} unmatched</i>{% endif %}
+  </summary>
+  <div class="drawerbody">
+
 <div class="tablecard linkcard">
   <div class="charthead">
     <h3>Month to date campaign data</h3>
@@ -482,9 +465,39 @@
   <script type="application/json" id="chartdata-{{ loop.index }}">{{ c|tojson }}</script>
 </div>
 {% endfor %}
-</div>
 
-<div class="pane"{% if tab != "strategy" %} hidden{% endif %}>
+{% if v.grid_dates %}
+<details class="qfold dailygrid" open>
+  <summary>Daily delivery — {{ v.grid_dates|length }} days</summary>
+  <div class="scroller">
+    <table class="daily">
+      <thead><tr><th>Campaign Elements</th>
+        {% for d in v.grid_dates %}<th class="num">{{ d.strftime('%-d-%b') }}</th>{% endfor %}</tr></thead>
+      <tbody>
+      {% for r in v.rows %}
+        <tr><td class="elname">{{ r.label }}</td>
+          {% for d in v.grid_dates %}
+            {% set val = v.grid.get(r.line_item_id, {}).get(d) %}
+            <td class="num {% if not val %}zero{% endif %}">{{ val|num if val else '—' }}</td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+        <tr class="ontrack"><td>On pace / day</td>
+          {% for d in v.grid_dates %}<td class="num">{{ v.on_pace_daily|num }}</td>{% endfor %}</tr>
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endif %}
+
+  </div>
+</details>
+
+<details class="drawer" open>
+  <summary><b>Strategy breakout</b>
+    <span class="dsub">how each targeting is performing and what it costs</span>
+  </summary>
+  <div class="drawerbody">
 
 {% for b in blocks %}
 <div class="tablecard stratblock">
@@ -591,7 +604,7 @@
       </table>
     </div>
     <div class="cardfoot">
-      <button class="btn save" type="submit">Save split</button>
+      <button class="btn save" type="submit">Save</button>
     </div>
     </form>
   </details>
@@ -636,7 +649,8 @@
 </details>
 {% endif %}
 
-</div>
+  </div>
+</details>
 
 {% endblock %}
 

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 
@@ -197,6 +198,12 @@ def _daily_by_line_item(
 
 MAX_CHART_SERIES = 8
 
+# Statuses that say an order has not started running yet.
+NOT_LAUNCHED_STATUSES = {
+    "io pending launch", "pending launch", "pending", "not launched",
+    "io pending", "awaiting launch",
+}
+
 
 @dataclass
 class StrategySeries:
@@ -366,6 +373,19 @@ class OrderView:
             and self.order.start_date
             and self.order.start_date < self.covers_from
         )
+
+    @property
+    def status_contradicts_delivery(self) -> bool:
+        """The order says it has not launched, and yet it has delivered.
+
+        Both cannot be true. Either the status is stale in the export - the
+        usual case, an order that went live without anybody moving it on -
+        or this delivery is being read onto the wrong order, which would
+        make every figure on the page wrong. Worth saying either way, and
+        not something to pick between silently.
+        """
+        status = (self.order.status or "").strip().lower()
+        return bool(NOT_LAUNCHED_STATUSES & {status} and self.total.to_date)
 
 
 def order_view(session, order_id: int, as_of: dt.date | None = None) -> OrderView | None:
@@ -1219,6 +1239,25 @@ def _totals_by_line_item(
 # --------------------------------------------------------------------------
 # Strategy level
 # --------------------------------------------------------------------------
+def sold_strategy_names(item: LineItem) -> list[str]:
+    """The targeting the client bought on this product, as the order lists it.
+
+    One cell, several strategies, and no agreement on the separator - the
+    export writes commas, semicolons, slashes and newlines depending on who
+    typed it.
+    """
+    raw = (item.sold_strategies or "").strip()
+    if not raw:
+        return []
+    parts = re.split(r"[;,\n|/]+", raw)
+    seen: list[str] = []
+    for part in parts:
+        name = part.strip(" -\t")
+        if name and name.lower() not in {p.lower() for p in seen}:
+            seen.append(name)
+    return seen
+
+
 @dataclass
 class ObservedStrategy:
     """Targeting the feed is reporting under a product, and its share.
@@ -1235,6 +1274,10 @@ class ObservedStrategy:
     share: float = 0.0
     # True when a sold row already claims this targeting.
     claimed: bool = False
+    # True when the order says the client bought this targeting. A strategy
+    # running that nobody bought, or bought and not running, are both worth
+    # seeing - and only the order can say which is which.
+    sold: bool = False
     # What the feed actually called it. The label above is the targeting -
     # "M - Retargeting" - which is how the buying team writes it; the feed
     # writes "FB - Retargeting Facebook Premium", and both are worth having.
@@ -1283,6 +1326,10 @@ class StrategyBlock:
     unclaimed_labels: list[str] = field(default_factory=list)
     # Every targeting the feed reports under this product, with its share.
     observed: list[ObservedStrategy] = field(default_factory=list)
+    # What the order says the client bought on this product.
+    sold_names: list[str] = field(default_factory=list)
+    # Bought, but nothing running under it.
+    not_running: list[str] = field(default_factory=list)
 
     @property
     def observed_total(self) -> float:
@@ -1497,6 +1544,13 @@ def strategy_blocks(session, view: "OrderView") -> list[StrategyBlock]:
 
         running = sum(series.total for _, _, series, _ in grouped)
         rate = item.goal_cpm or item.goal_cpc or item.goal_cpe or 0.0
+        # What the order says was bought, keyed on targeting so it pairs with
+        # what ran however either side spells it.
+        block.sold_names = sold_strategy_names(item)
+        sold_keys = {
+            sheets.match_key(name) or name.lower(): name
+            for name in block.sold_names
+        }
         block.observed = sorted(
             (
                 ObservedStrategy(
@@ -1505,6 +1559,7 @@ def strategy_blocks(session, view: "OrderView") -> list[StrategyBlock]:
                     delivered=series.total,
                     share=(series.total / running) if running else 0.0,
                     claimed=key in claimed,
+                    sold=key in sold_keys,
                     raw_labels=raw,
                     # Impressions bought at a CPM cost that much; a spend
                     # product's delivery is already money.
@@ -1526,6 +1581,14 @@ def strategy_blocks(session, view: "OrderView") -> list[StrategyBlock]:
             (r for r in view.rows if r.line_item_id == item.id),
             total_row(block.rows, item.pacing_type or order.pacing_type or "impression"),
         )
+        seen_keys = {
+            sheets.match_key(o.label) or o.label.lower() for o in block.observed
+        }
+        block.not_running = [
+            name
+            for key, name in sold_keys.items()
+            if key not in seen_keys
+        ]
         blocks.append(block)
 
     return blocks
