@@ -106,10 +106,20 @@
    impressions line and ad spend on a spend line, and each row formats
    itself - a table per kind split the order up and buried the spend
    products under headers that did not describe them. #}
+{# Running and finished are two different questions. Every row stays in the
+   form so Save still posts the lot; the tabs only change what is shown and
+   which Total is read. #}
+<div class="scopetabs" id="scopetabs" role="tablist">
+  <button type="button" class="scopetab{% if v.default_scope == 'open' %} on{% endif %}"
+    data-scope="open">Running <span class="scopen">{{ v.open_rows|length }}</span></button>
+  <button type="button" class="scopetab{% if v.default_scope == 'closed' %} on{% endif %}"
+    data-scope="closed">Ended <span class="scopen">{{ v.closed_rows|length }}</span></button>
+</div>
  <div class="scroller">
-  <table class="elements">
+  <table class="elements show-{{ v.default_scope }}" id="elements">
     <thead>
-      <tr><th>Campaign Elements:</th><th class="pacehead">Paces on</th>
+      <tr><th>Campaign Elements:</th><th class="idhead">Item ID</th>
+        <th class="pacehead">Paces on</th>
         <th class="num">Serve</th><th class="num">Tot. Serve</th>
         <th class="num">Day Serve</th><th class="num cpmhead">CPM</th>
         <th class="num">Day Budg.</th><th class="num">Tot Budg.</th>
@@ -122,10 +132,12 @@
       {% set goal = {'impression': ('monthly_impressions', 'total_impressions', 'goal_cpm'),
                      'click': ('monthly_spend', 'total_spend', 'goal_cpc'),
                      'event': ('client_monthly_budget', 'client_total_budget', 'goal_cpe')}[r.pacing_type] %}
-      <tr class="{% if r.needs_setup %}needssetup{% endif %}">
+      <tr data-state="{{ r.state }}" class="{% if r.needs_setup %}needssetup{% endif %}">
         <td class="elname"><input type="text" name="li-{{ li }}-name" value="{{ r.label }}">
+          {% if r.state != 'running' %}<span class="statepill {{ r.state }}">{{ r.status or r.state }}</span>{% endif %}
           {% if r.needs_setup %}<span class="setupflag"
             title="No sold total or no flight dates, so there is nothing to pace against">no goal set</span>{% endif %}</td>
+        <td class="idcell">{{ r.line_item.external_id if r.line_item and r.line_item.external_id else '—' }}</td>
         <td class="pacecell"><select class="rowpace" name="li-{{ li }}-pacing_type"
             title="How this product paces. Products on one order are not all sold the same way.">
             {% for value, name in pacing_choices %}
@@ -149,25 +161,29 @@
             title="Remove row">&times;</button></td>
       </tr>
     {% endfor %}
-      <tr class="totalrow">
-        <td>Total:</td><td></td>
-        <td class="num">{{ t.monthly_target|metric(t) }}</td>
-        <td class="num">{{ t.total_target|metric(t) }}</td>
-        <td class="num">{{ t.daily_target|metric(t) }}</td>
-        <td class="num">{{ t.unit_cost|money }}</td>
-        <td class="num">{{ t.daily_budget|money }}</td>
-        <td class="num">{{ t.total_budget|money }}</td>
-        <td class="num">{{ t.to_date|metric(t) }}</td>
-        <td class="num">{{ t.remaining|metric(t) }}</td>
-        <td class="num">{{ t.on_pace|metric(t) }}</td>
-        <td class="num"><span class="pace {{ t.pacing_pct|paceclass }}">{{ t.pacing_pct|pct }}</span></td>
+      {# Each tab totals what it shows. A total that keeps counting rows the
+         reader cannot see is worse than no total. #}
+      {% for scope, tt in (('open', v.open_total or t), ('closed', v.closed_total or t)) %}
+      <tr class="totalrow" data-total="{{ scope }}">
+        <td>{{ 'Running total:' if scope == 'open' else 'Ended total:' }}</td><td></td><td></td>
+        <td class="num">{{ tt.monthly_target|metric(tt) }}</td>
+        <td class="num">{{ tt.total_target|metric(tt) }}</td>
+        <td class="num">{{ tt.daily_target|metric(tt) }}</td>
+        <td class="num">{{ tt.unit_cost|money }}</td>
+        <td class="num">{{ tt.daily_budget|money }}</td>
+        <td class="num">{{ tt.total_budget|money }}</td>
+        <td class="num">{{ tt.to_date|metric(tt) }}</td>
+        <td class="num">{{ tt.remaining|metric(tt) }}</td>
+        <td class="num">{{ tt.on_pace|metric(tt) }}</td>
+        <td class="num"><span class="pace {{ tt.pacing_pct|paceclass }}">{{ tt.pacing_pct|pct }}</span></td>
         <td></td>
       </tr>
-      {% if t.mixed_types %}
-      <tr class="mixednote"><td colspan="13">Total covers the
+      {% if tt.mixed_types %}
+      <tr class="mixednote" data-total="{{ scope }}"><td colspan="14">Total covers the
         {{ pacing_choices|selectattr('0', 'equalto', o.pacing_type)|map(attribute=1)|first|default('impression')|lower }}
         lines. Products sold another way are listed above but not added in.</td></tr>
       {% endif %}
+      {% endfor %}
     </tbody>
   </table>
  </div>
@@ -704,4 +720,5 @@
 
 {% block scripts %}<script src="/static/tips.js" defer></script><script src="/static/chart.js" defer></script>
 <script src="/static/linking.js" defer></script>
-<script src="/static/daylog.js" defer></script>{% endblock %}
+<script src="/static/daylog.js" defer></script>
+<script src="/static/scope.js" defer></script>{% endblock %}

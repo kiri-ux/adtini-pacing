@@ -294,6 +294,35 @@ def _fix_impossible_total(item: LineItem, months) -> None:
     item.total_impressions = monthly * months if months else None
 
 
+def _fill_total_from_monthly(
+    item: LineItem, monthly_field: str, total_field: str, months
+) -> None:
+    """A sold total for the spend sheets, where the export gives only a month.
+
+    Billing Amount is per month. On the impression sheet the total arrives on
+    its own column; on the spend sheets nothing carries it, so a line paced
+    life-of-flight had a monthly goal and no total to pace against and read
+    as having no goal at all.
+
+    Only ever fills a blank. A total the export supplied is left alone, and
+    so is one a buyer typed.
+    """
+    monthly = getattr(item, monthly_field)
+    total = getattr(item, total_field)
+    if not monthly or total:
+        return
+    try:
+        months = float(months) if months is not None else None
+    except (TypeError, ValueError):
+        months = None
+    if months is not None and (math.isnan(months) or months <= 0):
+        months = None
+    if months is None:
+        months = _flight_months(item)
+    if months:
+        setattr(item, total_field, monthly * months)
+
+
 def _flight_months(item: LineItem) -> int | None:
     """How many months the line item runs, from its dates.
 
@@ -333,6 +362,9 @@ def _apply_sold_terms(item: LineItem, row, pacing_type: str) -> None:
             return
         _keep(item, "total_spend", row.get(columns[0]))
         _keep(item, "monthly_spend", row.get(columns[1]))
+        _fill_total_from_monthly(
+            item, "monthly_spend", "total_spend", row.get("months_running")
+        )
         # The orders file prices clicks by budget, not by a CPC, so the goal
         # rate is left for a buyer to set where they want one.
         return
@@ -342,6 +374,10 @@ def _apply_sold_terms(item: LineItem, row, pacing_type: str) -> None:
     # is what turns a delivered platform cost into a client-facing one.
     _keep(item, "client_total_budget", row.get("client_total_budget"))
     _keep(item, "client_monthly_budget", row.get("client_monthly_budget"))
+    _fill_total_from_monthly(
+        item, "client_monthly_budget", "client_total_budget",
+        row.get("months_running"),
+    )
     if columns is not None:
         _keep(item, "google_total_spend", row.get(columns[0]))
         _keep(item, "google_monthly_spend", row.get(columns[1]))
@@ -412,8 +448,12 @@ def import_orders(session, frame, cache: dict | None = None) -> ImportResult:
         # Status and type always come from the file - they are the file's to
         # say, and the pacing rules key off them.
         order.order_type = row.get("order_type")
-        order.status = row.get("status")
-        order.active = not never_ran(row.get("status"))
+        # An export that spells the order's status only once, as the bare
+        # "Status" column, has that column read as the line's. Falling back
+        # to it keeps those files working exactly as they did.
+        order_status = row.get("status") or row.get("item_status")
+        order.status = order_status
+        order.active = not never_ran(order_status)
         if row.get("buyer") and not order.buyer:
             order.buyer = row.get("buyer")
 
@@ -456,6 +496,7 @@ def import_orders(session, frame, cache: dict | None = None) -> ImportResult:
             result.line_items_updated += 1
 
         item.product = product or item.product
+        item.status = row.get("item_status") or row.get("status") or item.status
         if row.get("sold_strategies"):
             item.sold_strategies = row.get("sold_strategies")
         # A product that paces differently from its order says so on itself.
@@ -691,6 +732,17 @@ def recompute_terms(session) -> RecomputeResult:
                 if item.total_impressions is None:
                     result.totals_cleared += 1
                 else:
+                    result.totals_rebuilt += 1
+
+            # The spend sheets get their total the same way: nothing in the
+            # export carries one, so it is the month over the flight.
+            for monthly_field, total_field in (
+                ("monthly_spend", "total_spend"),
+                ("client_monthly_budget", "client_total_budget"),
+            ):
+                had = getattr(item, total_field)
+                _fill_total_from_monthly(item, monthly_field, total_field, None)
+                if getattr(item, total_field) != had:
                     result.totals_rebuilt += 1
 
         last_id = batch[-1].id

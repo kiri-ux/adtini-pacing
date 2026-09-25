@@ -702,9 +702,47 @@ def test_a_strategy_is_named_the_way_the_buying_team_writes_it():
     # Not on a product bought against search terms rather than an audience:
     # calling one of those a category would be wrong, not merely vague.
     assert label("Pay-Per-Click Ads", "Some New Thing") == "Some New Thing"
-    assert label(
-        "Performance Max Ads", "Google Ads Combined order:"
-    ) == "Google Ads Combined order:"
+
+
+def test_performance_max_reports_one_combined_strategy():
+    """PMax runs search themes, categories and retargeting out of one
+    campaign and reports no split. Breaking the feed's rows out by name
+    invented a Retargeting line nobody bought."""
+    import views
+
+    def label(product, feed_name):
+        key = __import__("sheets").match_key(feed_name) or feed_name.lower()
+        return views.strategy_label(product, key, feed_name)
+
+    combined = "Search Theme/Category/Retargeting"
+    for feed_name in (
+        "Google Ads Combined order:", "PMax - Retargeting", "Some New Thing",
+    ):
+        assert label("Performance Max Ads", feed_name) == combined
+
+
+def test_every_performance_max_row_rolls_into_that_one_strategy():
+    """Not just the label - the rows have to merge, or the same combined
+    name appears three times with the delivery split between them."""
+    import views
+
+    def series(name, total):
+        return views.StrategySeries(
+            line_item_id=1, label=name, product="Performance Max Ads",
+            by_date={dt.date(2026, 8, 1): total}, total=total,
+            impressions=0.0, clicks=0.0, cost=total, conversions=0.0,
+        )
+
+    grouped = views.group_by_targeting("Performance Max Ads", [
+        series("PMax - Retargeting", 100.0),
+        series("Google Ads Combined order:", 50.0),
+    ])
+    assert len(grouped) == 1
+    key, label_text, merged, raw = grouped[0]
+    assert label_text == "Search Theme/Category/Retargeting"
+    assert merged.total == 150.0
+    assert merged.by_date[dt.date(2026, 8, 1)] == 150.0
+    assert raw == ["Google Ads Combined order:", "PMax - Retargeting"]
 
 
 def test_the_breakout_costs_each_strategy_at_the_products_rate(site):

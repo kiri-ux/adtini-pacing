@@ -442,6 +442,10 @@ class PacingGroup:
     total: PacingRow
 
     @property
+    def open_rows(self) -> list[PacingRow]:
+        return [r for r in self.rows if r.is_open]
+
+    @property
     def label(self) -> str:
         return {
             "impression": "Impressions",
@@ -484,6 +488,24 @@ class OrderView:
     # carrying both gets a table each rather than one table that lies about
     # one of them.
     groups: list["PacingGroup"] = field(default_factory=list)
+    # The same table, counting only the lines still running. An order runs as
+    # long as its longest line, so a table of every line it ever carried
+    # totals a flight nobody is still buying.
+    open_total: PacingRow | None = None
+    closed_total: PacingRow | None = None
+
+    @property
+    def open_rows(self) -> list[PacingRow]:
+        return [r for r in self.rows if r.is_open]
+
+    @property
+    def closed_rows(self) -> list[PacingRow]:
+        return [r for r in self.rows if not r.is_open]
+
+    @property
+    def default_scope(self) -> str:
+        """Which tab opens. Running, unless nothing is."""
+        return "open" if self.open_rows else "closed"
 
     @property
     def health(self) -> str:
@@ -576,6 +598,8 @@ def order_view(
 
     rows = [compute_row(li, order, daily.get(li.id, []), as_of) for li in line_items]
     total = total_row(rows, order.pacing_type)
+    open_total = total_row([r for r in rows if r.is_open], order.pacing_type)
+    closed_total = total_row([r for r in rows if not r.is_open], order.pacing_type)
 
     # The daily grid runs the length of the flight, so a buyer can see which
     # days actually served - which is the whole point of the hand-kept sheet.
@@ -682,6 +706,8 @@ def order_view(
         client=order.client,
         rows=rows,
         total=total,
+        open_total=open_total,
+        closed_total=closed_total,
         groups=groups,
         as_of=as_of,
         grid_dates=grid_dates,
@@ -1701,8 +1727,12 @@ def group_by_targeting(
     """
     merged: dict[str, StrategySeries] = {}
     raw: dict[str, list[str]] = defaultdict(list)
+    combined = combined_strategy(product)
     for series in running:
-        key = sheets.match_key(series.label) or series.label.lower()
+        key = (
+            COMBINED_KEY if combined
+            else sheets.match_key(series.label) or series.label.lower()
+        )
         raw[key].append(series.label)
         existing = merged.get(key)
         if existing is None:
@@ -1746,6 +1776,25 @@ def _found_by(order: Order, client_name, line_item_id, campaign_name) -> str:
     return " · ".join(reasons)
 
 
+# Products the platform runs as one campaign and reports as one line.
+# Performance Max serves search themes, categories and retargeting out of a
+# single campaign and gives back no split, so every row that arrives under
+# it is the same row - and breaking it out by whatever the feed happened to
+# name a row invented a "Retargeting" line that nobody bought.
+COMBINED_STRATEGY = {
+    "performancemaxads": "Search Theme/Category/Retargeting",
+    "performancemaxadsmgmt": "Search Theme/Category/Retargeting",
+}
+COMBINED_KEY = "combined"
+
+
+def combined_strategy(product: str | None) -> str | None:
+    """The one strategy label this product reports under, if it has one."""
+    entry = products.lookup(product)
+    name = entry.name if entry else (product or "")
+    return COMBINED_STRATEGY.get(products._key(name))
+
+
 def strategy_label(product: str | None, key: str, fallback: str) -> str:
     """What to call a strategy: the product, then the targeting.
 
@@ -1757,6 +1806,9 @@ def strategy_label(product: str | None, key: str, fallback: str) -> str:
     Where nothing matches a known targeting the feed's own name is kept -
     a name nobody recognises is better than a wrong one that looks tidy.
     """
+    combined = combined_strategy(product)
+    if combined:
+        return combined
     code = products.abbreviation(product)
     targeting = sheets.TARGETING_LABELS.get(key)
     if not targeting and _does_category_targeting(product):

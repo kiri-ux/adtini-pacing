@@ -602,3 +602,31 @@ button.rangepick{border:0;cursor:pointer;font-family:inherit}
 .statusro{display:inline-block;font-size:12.5px;font-weight:600;color:var(--text);
   background:var(--fill);border-radius:10px;padding:10px 12px;min-height:41px;
   box-sizing:border-box}
+
+/* ---- running / ended ---------------------------------------------------
+   Every row stays in the form so Save posts the lot. The tabs hide the rows
+   the reader is not asking about, and swap which Total is on show with them:
+   a total that keeps counting hidden rows is worse than no total. */
+.scopetabs{display:flex;gap:6px;margin:0 0 10px}
+.scopetab{border:1px solid var(--line);background:var(--card);color:var(--muted);
+  border-radius:999px;padding:6px 14px;font:inherit;font-size:12.5px;
+  font-weight:600;cursor:pointer}
+.scopetab:hover{border-color:var(--blue);color:var(--text)}
+.scopetab.on{background:var(--navy);border-color:var(--navy);color:#FFFFFF}
+.scopetab .scopen{opacity:.72;margin-left:5px;font-variant-numeric:tabular-nums}
+
+table.elements.show-open tbody tr[data-state="ended"],
+table.elements.show-open tbody tr[data-state="cancelled"],
+table.elements.show-open [data-total="closed"],
+table.elements.show-closed tbody tr[data-state="running"],
+table.elements.show-closed [data-total="open"]{display:none}
+
+.statepill{display:inline-block;margin:5px 0 0 6px;border-radius:999px;
+  font-size:10.5px;font-weight:700;letter-spacing:.04em;padding:3px 9px;
+  text-transform:uppercase;white-space:nowrap}
+.statepill.ended{background:var(--fill);color:var(--muted)}
+.statepill.cancelled{background:#FADBD8;color:#8C2A1C}
+
+table.elements th.idhead,table.elements td.idcell{width:1%;white-space:nowrap;
+  text-align:right;color:var(--muted);font-variant-numeric:tabular-nums;
+  font-size:12.5px}

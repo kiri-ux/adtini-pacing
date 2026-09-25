@@ -132,6 +132,12 @@ class LineItem(Base):
     # in impressions and another in spend, and pacing both the same way
     # answers neither. Null means "however the order does".
     pacing_type: Mapped[str | None] = mapped_column(String(20))
+    # The line item's own status - "IO Live", "IO Complete", "Cancelled".
+    # Not the order's: an order runs for as long as its longest line and
+    # carries finished and cancelled lines the whole time. Writing the line's
+    # status onto the order made whichever line imported last speak for all
+    # of them.
+    status: Mapped[str | None] = mapped_column(String(60))
 
     # Flight dates default to the order's when null.
     start_date: Mapped[dt.date | None] = mapped_column(Date)

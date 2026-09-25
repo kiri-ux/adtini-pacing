@@ -115,6 +115,8 @@ class PacingRow:
     days_left: int = 0
 
     needs_setup: bool = False
+    # The line item's own status, as the orders export spells it.
+    status: str | None = None
     # Set when the row is a strategy rather than a line item.
     strategy_id: int | None = None
     # On a total row: the other pacing types among the rows it left out,
@@ -183,6 +185,38 @@ class PacingRow:
         if not self.days_left:
             return None
         return max(self.remaining, 0.0) / self.days_left
+
+    # Statuses that mean the line was called off rather than finished.
+    CANCELLED_STATUSES = frozenset({"cancelled", "canceled", "declined", "rejected"})
+    # And the ones that mean it is done. Matched on the word, because the
+    # export spells them "IO Complete" and "Complete" both.
+    DONE_WORDS = ("complete", "finished", "fulfilled", "closed")
+
+    @property
+    def state(self) -> str:
+        """"running", "ended" or "cancelled".
+
+        An order runs for as long as its longest line, so most of what sits
+        on an open order finished months ago. Read together with the live
+        line the page is really about, the finished ones drag every total
+        toward a flight nobody is still buying.
+
+        The status wins over the dates. A line marked complete is complete
+        whatever its end date says, and a cancelled line's dates run on as
+        if it never stopped.
+        """
+        status = (self.status or "").strip().lower()
+        if status in self.CANCELLED_STATUSES:
+            return "cancelled"
+        if any(word in status for word in self.DONE_WORDS):
+            return "ended"
+        if self.end_date and self.days_left <= 0:
+            return "ended"
+        return "running"
+
+    @property
+    def is_open(self) -> bool:
+        return self.state == "running"
 
     @property
     def metric_label(self) -> str:
@@ -303,6 +337,7 @@ def compute_row(
         start_date=start,
         end_date=end,
         line_item=line_item,
+        status=line_item.status,
     )
 
     if pacing_type == PACING_IMPRESSION:

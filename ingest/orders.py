@@ -34,7 +34,14 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "external_order_id": ("ordersid",),
     "external_line_item_id": ("id",),
     "product": ("product",),
-    "status": ("ordersstatus", "status", "ordersorderstatus"),
+    # The line item's own status, which is a different column from the
+    # order's and a different thing. An order carrying six finished lines
+    # and one live one is still live; each of its lines is not. It claims
+    # the bare "Status" column first, because that is the line's - the
+    # order's is spelled "Orders Status" - and reading it as the order's
+    # let whichever line imported last speak for the whole order.
+    "item_status": ("itemstatus", "lineitemstatus", "linestatus", "status"),
+    "status": ("ordersstatus", "ordersorderstatus"),
     "buyer": ("campaignmanager",),
     "start_date": ("ordersstartdate", "startdate"),
     "end_date": ("ordersenddate", "enddate"),
@@ -63,7 +70,11 @@ ALIASES: dict[str, tuple[str, ...]] = {
 
     # What the client is billed, which the event sheet shows beside spend.
     "client_total_budget": ("clienttotalbudget", "totalbudgetcombined", "totalbudget"),
-    "client_monthly_budget": ("clientmonthlybudget",),
+    # Billing Amount is what the client pays per month for the line. It is
+    # the only budget the export carries for Performance Max, whose own
+    # Client Monthly Budget column comes through empty - so every PMax line
+    # imported with no goal while delivering fine.
+    "client_monthly_budget": ("clientmonthlybudget", "billingamount"),
 
     "rate_card": ("ratecard", "orderscpmtype"),
 }
@@ -129,8 +140,8 @@ NUMERIC_FIELDS = (
 )
 TEXT_FIELDS = (
     "client_name", "business_unit", "external_order_id", "external_line_item_id",
-    "product", "status", "buyer", "order_type", "notes", "rate_card",
-    "sold_strategies",
+    "product", "status", "item_status", "buyer", "order_type", "notes",
+    "rate_card", "sold_strategies",
 )
 
 # Which spend pair a product paces on, keyed on the canonical product name.

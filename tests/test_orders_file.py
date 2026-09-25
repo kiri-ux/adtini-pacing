@@ -941,3 +941,117 @@ def test_recompute_paces_a_spend_product_on_spend():
     # The order's own kind is not repeated on every line.
     assert kinds["Mobile Conquesting Display & Video Ads"] is None
     assert result.pacing_fixed == 2
+
+
+# --- the line item's own status --------------------------------------------
+def test_the_bare_status_column_belongs_to_the_line_item():
+    """It was read as the order's, and whichever line imported last then
+    spoke for the whole order - an order showed live while every line on it
+    but one had finished."""
+    mapped, _ = match_columns(["client", "orders_id", "orders_status", "status"])
+    assert mapped["item_status"] == ["status"]
+    assert mapped["status"] == ["orders_status"]
+
+
+def test_each_status_lands_on_its_own_field():
+    out = normalize(
+        csv(HEAD + "\n" + line(ostatus="IO Live", status="IO Complete"))
+    ).rows
+    assert out.iloc[0]["status"] == "IO Live"
+    assert out.iloc[0]["item_status"] == "IO Complete"
+
+
+def _loaded(frame):
+    """Import one frame into a fresh in-memory book and hand back the session."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from models import Base
+    from orderbook import import_orders
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    session = Session(engine)
+    import_orders(session, frame)
+    return session
+
+
+def test_an_export_with_only_one_status_column_still_gives_the_order_one():
+    """Not every export spells the order's status separately, and losing it
+    would take the order's `active` flag with it."""
+    from models import Order
+
+    head = HEAD.replace("orders_status,", "")
+    row = ",".join(p for i, p in enumerate(line().split(",")) if i != 1)
+    frame = normalize(csv(head + "\n" + row))
+    assert frame.rows.iloc[0]["item_status"] == "Approved"
+
+    with _loaded(frame) as session:
+        order = session.query(Order).one()
+        assert order.status == "Approved"
+        assert order.active is True
+
+
+def test_a_line_item_carries_its_own_status():
+    """An order runs as long as its longest line and carries finished and
+    cancelled lines the whole time."""
+    from models import LineItem, Order
+
+    second = line(
+        id='"<a href=""/x/viewLineItem/126398"">126398</a>"',
+        product="CTV", ostatus="IO Live", status="Cancelled",
+    )
+    frame = normalize(
+        csv(HEAD + "\n" + line(ostatus="IO Live", status="IO Complete")
+            + "\n" + second)
+    )
+
+    with _loaded(frame) as session:
+        by_id = {li.external_id: li.status for li in session.query(LineItem)}
+        assert by_id == {"126397": "IO Complete", "126398": "Cancelled"}
+        # And the order keeps its own, which is neither of them.
+        assert session.query(Order).one().status == "IO Live"
+
+
+# --- what a spend line is sold for -----------------------------------------
+PMAX_HEAD = (
+    "client,orders_id,product,id,status,orders_start_date,orders_end_date,"
+    "billing_amount,client_monthly_budget,total_pm_ad_spend,order_type"
+)
+PMAX_ROW = (
+    "Service One,52753,Performance Max Ads,121176,IO Live,"
+    "2026-01-01 00:00:00,2026-07-31 00:00:00,1750.00,,437.50,Insertion Order"
+)
+
+
+def test_performance_max_is_sold_on_its_billing_amount():
+    """Its own Client Monthly Budget column comes through empty. Billing
+    Amount is the only budget the export carries for the line, so a PMax
+    line imported with no goal at all while delivering fine."""
+    from models import LineItem
+
+    with _loaded(normalize(csv(PMAX_HEAD + "\n" + PMAX_ROW))) as session:
+        item = session.query(LineItem).one()
+        assert item.client_monthly_budget == 1750.00
+        # Billing Amount is a month. Seven of them, Jan through Jul.
+        assert item.client_total_budget == 1750.00 * 7
+        assert item.google_monthly_spend is None
+        assert item.google_total_spend == 437.50
+
+
+def test_a_client_monthly_budget_of_its_own_still_wins():
+    from models import LineItem
+
+    row = PMAX_ROW.replace(",1750.00,,", ",1750.00,2000.00,")
+    with _loaded(normalize(csv(PMAX_HEAD + "\n" + row))) as session:
+        assert session.query(LineItem).one().client_monthly_budget == 2000.00
+
+
+def test_a_total_the_export_supplies_is_not_overwritten():
+    """The fill is for a blank, not a correction."""
+    from models import LineItem
+
+    head = PMAX_HEAD.replace("billing_amount", "billing_amount,client_total_budget")
+    row = PMAX_ROW.replace(",1750.00,,", ",1750.00,9000.00,,")
+    with _loaded(normalize(csv(head + "\n" + row))) as session:
+        assert session.query(LineItem).one().client_total_budget == 9000.00
