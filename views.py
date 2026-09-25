@@ -355,6 +355,8 @@ class OrderView:
     strategies: dict[int, list["StrategySeries"]] = field(default_factory=dict)
     metric: str = "impressions"
     daily_by_line_item: dict[int, list[DailyPoint]] = field(default_factory=dict)
+    # (product label, [(strategy label, {date: value})]) for the daily grid.
+    strategy_grid: list = field(default_factory=list)
     # The rows split by how they pace, order's type first. Impressions and
     # dollars need different columns and cannot share a Total, so an order
     # carrying both gets a table each rather than one table that lies about
@@ -441,6 +443,23 @@ def order_view(session, order_id: int, as_of: dt.date | None = None) -> OrderVie
         for row in rows
         if row.line_item_id is not None
     }
+    # Day by day, per strategy under each product - the grid a buyer reads
+    # across to see which targeting stopped on which day.
+    strategy_grid = [
+        (
+            row.label,
+            [
+                (label, series.by_date)
+                for _, label, series, _ in group_by_targeting(
+                    row.line_item.product if row.line_item else None,
+                    strategies.get(row.line_item_id, []),
+                )
+            ],
+        )
+        for row in rows
+        if row.line_item_id is not None
+    ]
+
     # Kept so the linking section does not aggregate the same delivery again.
     daily_by_line_item = {
         row.line_item_id: row.daily for row in rows if row.line_item_id is not None
@@ -475,6 +494,7 @@ def order_view(session, order_id: int, as_of: dt.date | None = None) -> OrderVie
         strategies=strategies,
         metric=attr,
         daily_by_line_item=daily_by_line_item,
+        strategy_grid=strategy_grid,
     )
 
 
@@ -916,6 +936,9 @@ class CampaignCandidate:
     taken_by: int | None = None
     taken_how: str | None = None  # "id" or "link"
 
+    # Which net caught this one, so the dialog can say why it is listed.
+    found_by: str = ""
+
     @property
     def key(self) -> str:
         return f"{self.data_source}␟{self.campaign_id}"
@@ -997,15 +1020,35 @@ def campaign_candidates(
 ) -> list[CampaignCandidate]:
     """Every campaign in the feed that plausibly belongs to this order.
 
-    Cast by client name and by order id, because the two are not reliably
-    both present: a campaign built before the order was written carries the
-    client but no order id, which is exactly the case linking exists for.
+    Three nets, because none of them is reliable on its own:
+
+    * the **client name** exactly as the feed writes it. A campaign built
+      before the order was written carries the client but no order id,
+      which is the case linking exists for.
+    * the **order id**, which catches a campaign the feed files under a
+      differently-spelled client - the shop that is "Peters Heating & Air"
+      on one side and "Peters Heating and Air Conditioning" on the other.
+    * the **order number appearing in the campaign's own name**, which is
+      how the buying team names them and the only net that catches a
+      campaign where both of the other two are wrong.
+
+    Each candidate says which net caught it, because "why is this one here"
+    and "why is that one not" are the two questions the dialog gets asked.
     """
     conditions = []
+    reasons: list[tuple[str, object]] = []
     if order.client and order.client.name:
-        conditions.append(DailyDelivery.client_name == order.client.name)
+        clause = DailyDelivery.client_name == order.client.name
+        conditions.append(clause)
+        reasons.append(("client", clause))
     if order.external_order_id:
-        conditions.append(DailyDelivery.external_order_id == order.external_order_id)
+        clause = DailyDelivery.external_order_id == order.external_order_id
+        conditions.append(clause)
+        reasons.append(("order id", clause))
+        # The team writes the order number into the campaign name.
+        named = DailyDelivery.campaign_name.like(f"%{order.external_order_id}%")
+        conditions.append(named)
+        reasons.append(("named", named))
     if not conditions:
         return []
 
@@ -1033,6 +1076,7 @@ def campaign_candidates(
             func.max(DailyDelivery.date),
             func.sum(month_impressions),
             func.sum(month_cost),
+            func.max(DailyDelivery.client_name),
         )
         .where(or_(*conditions))
         .group_by(DailyDelivery.data_source, DailyDelivery.campaign_id)
@@ -1041,7 +1085,7 @@ def campaign_candidates(
     out: list[CampaignCandidate] = []
     for (
         source, campaign, name, product, li_id, impressions, cost, first, last,
-        month_impr, month_spend,
+        month_impr, month_spend, client_name,
     ) in session.execute(stmt):
         candidate = CampaignCandidate(
             data_source=source,
@@ -1055,6 +1099,7 @@ def campaign_candidates(
             cost=float(cost or 0),
             first_date=first,
             last_date=last,
+            found_by=_found_by(order, client_name, li_id, name),
         )
         by_id = join.resolve(order.external_order_id, li_id)
         if by_id is not None:
@@ -1419,6 +1464,19 @@ def group_by_targeting(
     ]
 
 
+def _found_by(order: Order, client_name, line_item_id, campaign_name) -> str:
+    """Why this campaign is on the list."""
+    reasons = []
+    if order.client and client_name == order.client.name:
+        reasons.append("client")
+    order_id = order.external_order_id
+    if order_id and campaign_name and order_id in str(campaign_name):
+        reasons.append("named for this order")
+    if not reasons:
+        reasons.append("order id")
+    return " · ".join(reasons)
+
+
 def strategy_label(product: str | None, key: str, fallback: str) -> str:
     """What to call a strategy: the product, then the targeting.
 
@@ -1432,9 +1490,33 @@ def strategy_label(product: str | None, key: str, fallback: str) -> str:
     """
     code = products.abbreviation(product)
     targeting = sheets.TARGETING_LABELS.get(key)
+    if not targeting and _does_category_targeting(product):
+        # An audience list with no targeting word in it is category
+        # targeting: "M - Air Conditioning & Heating Mobile" is Mobile
+        # Conquesting's category targeting, not a strategy of its own. The
+        # feed's own name stays visible under it, so a genuinely new kind of
+        # targeting shows up as something to correct rather than vanishing.
+        targeting = sheets.TARGETING_LABELS["category"]
     if not targeting:
         return fallback
     return f"{code} - {targeting}" if code else targeting
+
+
+# Products bought against an audience. Search and Performance Max are not:
+# an unrecognised strategy on one of those is a search term or an asset
+# group, and calling it a category would be wrong rather than merely vague.
+NO_CATEGORY_TARGETING = {
+    "payperclickads", "linkedinads", "performancemaxads",
+    "performancemaxadsmgmt", "searchengineoptimization", "livechat",
+    "websitevisitorid", "onlinereputationmanagement",
+}
+
+
+def _does_category_targeting(product: str | None) -> bool:
+    entry = products.lookup(product)
+    if entry is None:
+        return False
+    return products._key(entry.name) not in NO_CATEGORY_TARGETING
 
 
 def _strategy_line_item(term: StrategyTerms, line_items: list[LineItem]) -> LineItem | None:

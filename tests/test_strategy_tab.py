@@ -688,9 +688,22 @@ def test_a_strategy_is_named_the_way_the_buying_team_writes_it():
         meta, "FB - Home Improvement Center/Interior Design Facebook Premium"
     ) == "M - Premium"
     assert label("Display Ads", "D - Behavioral") == "D - Behavioral"
-    # Nothing recognised keeps the feed's own name: a name nobody knows beats
-    # a tidy one that is wrong.
-    assert label(meta, "Some New Audience") == "Some New Audience"
+
+    # An audience list with no targeting word in it is category targeting.
+    # "M - Air Conditioning & Heating Mobile" is Mobile Conquesting's
+    # category targeting, and Mobile Conquesting has no AI targeting to
+    # confuse it with - though "ai" inside "Air" said otherwise until the
+    # match was made to respect word boundaries.
+    mobile = "Mobile Conquesting Display & Video Ads"
+    assert label(mobile, "M - Air Conditioning & Heating Mobile") == "MC - Categories"
+    assert label(meta, "Some New Audience") == "M - Categories"
+
+    # Not on a product bought against search terms rather than an audience:
+    # calling one of those a category would be wrong, not merely vague.
+    assert label("Pay-Per-Click Ads", "Some New Thing") == "Some New Thing"
+    assert label(
+        "Performance Max Ads", "Google Ads Combined order:"
+    ) == "Google Ads Combined order:"
 
 
 def test_the_breakout_costs_each_strategy_at_the_products_rate(site):

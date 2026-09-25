@@ -318,17 +318,26 @@ def test_the_row_carries_its_goal_and_margin():
 # --- what spend products pace on -------------------------------------------
 def test_ppc_paces_on_ad_spend_not_the_client_budget():
     """The client's budget carries the management fee, which never reaches
-    the platform - pacing on it would read as permanently under."""
+    the platform - pacing on it would read as permanently under.
+
+    Checked under both vocabularies. The orders export says "Pay-Per-Click
+    Ads" and the delivery feed says "PPC"; the spend columns were found by
+    looking for a keyword inside the name, and "Pay-Per-Click Ads" does not
+    contain "ppc" - so every one of these imported from an orders file
+    stored no sold spend at all and showed as having no goal while it
+    delivered fine.
+    """
     from orderbook import _apply_sold_terms
 
-    item = LineItem(id=200, order_id=200, name="PPC", product="PPC Ads")
-    _apply_sold_terms(item, {
-        "product": "PPC Ads",
-        "total_ppc_spend": 23_814.0, "monthly_ppc_spend": 3_969.0,
-        "total_campaign_budget": 40_000.0, "monthly_budget": 6_666.0,
-    }, "click")
-    assert item.total_spend == 23_814.0
-    assert item.monthly_spend == 3_969.0
+    for name in ("Pay-Per-Click Ads", "PPC"):
+        item = LineItem(id=200, order_id=200, name="PPC", product=name)
+        _apply_sold_terms(item, {
+            "product": name,
+            "total_ppc_spend": 23_814.0, "monthly_ppc_spend": 3_969.0,
+            "total_campaign_budget": 40_000.0, "monthly_budget": 6_666.0,
+        }, "click")
+        assert item.total_spend == 23_814.0, name
+        assert item.monthly_spend == 3_969.0, name
 
 
 def test_linkedin_paces_on_its_own_ad_spend():

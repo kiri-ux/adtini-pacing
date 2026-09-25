@@ -133,31 +133,33 @@ TEXT_FIELDS = (
     "sold_strategies",
 )
 
-# Which spend pair a product paces on, for the click and event sheets.
-# Matched on a keyword rather than the whole name, because two vocabularies
-# arrive here: the delivery feed says "PPC", the orders export says something
-# longer. An exact-name map silently missed the longer one and fell back to
-# the monthly budget, which is not what these pace on.
-SPEND_KEYWORDS = (
-    ("linkedin", ("total_linkedin_spend", "monthly_linkedin_spend")),
-    ("performance max", ("total_pm_spend", "monthly_pm_spend")),
-    ("pmax", ("total_pm_spend", "monthly_pm_spend")),
-    ("ppc", ("total_ppc_spend", "monthly_ppc_spend")),
-    ("paid search", ("total_ppc_spend", "monthly_ppc_spend")),
-    ("search", ("total_ppc_spend", "monthly_ppc_spend")),
-    ("meta", ("total_meta_spend", "monthly_meta_spend")),
-)
+# Which spend pair a product paces on, keyed on the canonical product name.
+#
+# This was matched on a keyword found anywhere in the name, and "Pay-Per-Click
+# Ads" does not contain "ppc" - so every Pay-Per-Click line item imported from
+# an orders file found no spend columns, stored no sold spend at all, and
+# showed on the page as having no goal set while delivering fine.
+SPEND_COLUMNS = {
+    "payperclickads": ("total_ppc_spend", "monthly_ppc_spend"),
+    "ppc": ("total_ppc_spend", "monthly_ppc_spend"),
+    "linkedinads": ("total_linkedin_spend", "monthly_linkedin_spend"),
+    "linkedin": ("total_linkedin_spend", "monthly_linkedin_spend"),
+    "performancemaxads": ("total_pm_spend", "monthly_pm_spend"),
+    "pmax": ("total_pm_spend", "monthly_pm_spend"),
+    "metadisplayvideoads": ("total_meta_spend", "monthly_meta_spend"),
+    "metaleaddisplayvideoads": ("total_meta_spend", "monthly_meta_spend"),
+}
 
 
 def spend_columns(product: str | None) -> tuple[str, str] | None:
     """The ad-spend pair a product paces on, or None when it has none."""
-    text = (product or "").strip().lower()
-    if not text:
+    import products as _products
+
+    if not (product or "").strip():
         return None
-    for keyword, columns in SPEND_KEYWORDS:
-        if keyword in text:
-            return columns
-    return None
+    entry = _products.lookup(product)
+    key = _products._key((entry.name if entry else product) or "")
+    return SPEND_COLUMNS.get(key)
 
 ANCHOR = re.compile(r"<[^>]+>")
 MONEY = re.compile(r"[^0-9.\-]")

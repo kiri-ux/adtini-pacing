@@ -454,3 +454,21 @@ details.drawer > summary .tabflag{margin-left:auto}
   padding:4px 14px 14px}
 .drawerbody > .tablecard{margin-top:14px}
 .drawerbody > details.qfold{margin-top:14px}
+
+/* ---- one elements table, whatever a product is sold on ------------------- */
+th.cpmhead,td.cpmcell{width:1%}
+td.cpmcell input{min-width:0;width:72px}
+tr.mixednote td{font-size:11.5px;color:var(--muted);padding:8px 12px;
+  background:var(--fill)}
+
+/* An off-pace number has to be findable scanning forty rows. */
+.mval.pill{border-radius:999px;padding:3px 9px;font-weight:700;font-size:11.5px}
+.mval.pill.on-pace{background:#E4F3EA;color:#1E7D46}
+.mval.pill.under{background:#FBE7E6;color:#B3261E}
+.mval.pill.over{background:#FDF3E7;color:#8A4B06}
+.mval.pill.unknown{background:var(--fill);color:var(--muted)}
+
+/* The daily grid runs product, then its targeting beneath. */
+tr.gridproduct td{font-weight:600}
+tr.gridstrategy td.elname{padding-left:26px;color:var(--muted);font-weight:500}
+tr.gridstrategy td{color:var(--muted)}

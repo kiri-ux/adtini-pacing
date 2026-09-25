@@ -13,7 +13,9 @@
       <span class="mmark" style="left:{{ [mark * 100, 100]|min|round(1) }}%"></span>
     {% endif %}
   </span>
-  <span class="mval pace {{ health }}">{{ ratio|pct(2) if ratio is not none else '—' }}</span>
+  {# A pill, not coloured text: an off-pace number has to be findable
+     scanning a page of forty rows, not read one by one. #}
+  <span class="mval pace pill {{ health }}">{{ ratio|pct(2) if ratio is not none else '—' }}</span>
   <span class="mtip">
     <b>{{ '{:,.0f}'.format(served) if not is_money else '${:,.2f}'.format(served) }}</b> served<br>
     <b>{{ '{:,.0f}'.format(expected) if not is_money else '${:,.2f}'.format(expected) }}</b> expected by now<br>

@@ -153,9 +153,12 @@ def match_key(label: str) -> str | None:
         return None
 
     # The full names first, longest so "geo-retargeting" is not read as
-    # "retargeting". These can sit anywhere in the label.
+    # "retargeting". These can sit anywhere in the label, but only as whole
+    # words: "ai" found inside "Air Conditioning & Heating" labelled a
+    # Mobile Conquesting category audience as AI targeting, which Mobile
+    # Conquesting does not even offer.
     for name in sorted(TARGETING, key=len, reverse=True):
-        if name in text:
+        if re.search(r"\b" + re.escape(name) + r"\b", text):
             return TARGETING[name]
 
     # Then the abbreviations, against the targeting on its own.

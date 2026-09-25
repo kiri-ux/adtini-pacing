@@ -82,6 +82,7 @@
 
 <form method="post" action="{{ url_for('order_save', order_id=o.id) }}">
 <div class="tablecard ordercard">
+  <div class="charthead"><h3>Budgeting</h3></div>
   <div class="orderterms">
     <div class="f"><label for="pacing_type">Pacing type</label>
       <select id="pacing_type" name="pacing_type" title="How this order paces unless a product says otherwise">
@@ -109,80 +110,46 @@
       {% if o.paused %}checked{% endif %}> Paused</label></div>
   </div>
 
-{% for g in v.groups %}
-{% if v.groups|length > 1 %}
-  <p class="groupname">{{ g.label }}</p>
-{% endif %}
+{# One table, whatever a product is sold on. "Serve" is impressions on an
+   impressions line and ad spend on a spend line, and each row formats
+   itself - a table per kind split the order up and buried the spend
+   products under headers that did not describe them. #}
  <div class="scroller">
   <table class="elements">
     <thead>
-      {% if g.pacing_type == 'impression' %}
-      <tr><th>Campaign Elements:</th><th class="pacehead">Paces on</th><th class="num">Impr.</th><th class="num">Tot. Impr.</th>
-        <th class="num">Day Impr.</th><th class="num">CPM</th><th class="num">Day Budg.</th>
-        <th class="num">Tot Budg.</th><th class="num">TD Impr.</th><th class="num">Impr. Left</th>
+      <tr><th>Campaign Elements:</th><th class="pacehead">Paces on</th>
+        <th class="num">Serve</th><th class="num">Tot. Serve</th>
+        <th class="num">Day Serve</th><th class="num cpmhead">CPM</th>
+        <th class="num">Day Budg.</th><th class="num">Tot Budg.</th>
+        <th class="num">TD Serve</th><th class="num">Serve Left</th>
         <th class="num">On Pace</th><th class="num">Pacing</th><th></th></tr>
-      {% elif g.pacing_type == 'click' %}
-      <tr><th>Campaign Elements</th><th class="pacehead">Paces on</th><th class="num">Mon Spend</th><th class="num">Total Spend</th>
-        <th class="num">Daily Spend</th><th class="num">CPC</th><th class="num">Mon Clicks</th>
-        <th class="num">Total Clicks</th><th class="num">TD Spend</th><th class="num">Spend Left</th>
-        <th class="num">On Pace</th><th class="num">Pacing</th><th></th></tr>
-      {% else %}
-      <tr><th>Campaign Elements</th><th class="pacehead">Paces on</th><th class="num">Client Mon. Budget</th>
-        <th class="num">Client Tot. Budget</th><th class="num">Google Mon. Spend</th>
-        <th class="num">Google Tot. Spend</th><th class="num">Client Daily</th>
-        <th class="num">CPE</th><th class="num">Mon. Events</th><th class="num">TD Client Cost</th>
-        <th class="num">Left</th><th class="num">On Pace</th><th class="num">Pacing</th><th></th></tr>
-      {% endif %}
     </thead>
     <tbody>
     {% for r in v.rows %}
       {% set li = r.line_item_id %}
+      {% set goal = {'impression': ('monthly_impressions', 'total_impressions', 'goal_cpm'),
+                     'click': ('monthly_spend', 'total_spend', 'goal_cpc'),
+                     'event': ('client_monthly_budget', 'client_total_budget', 'goal_cpe')}[r.pacing_type] %}
       <tr class="{% if r.needs_setup %}needssetup{% endif %}">
         <td class="elname"><input type="text" name="li-{{ li }}-name" value="{{ r.label }}">
           {% if r.needs_setup %}<span class="setupflag"
-            title="This row has no sold total or no flight dates, so there is nothing to pace it against">no goal set</span>{% endif %}</td>
+            title="No sold total or no flight dates, so there is nothing to pace against">no goal set</span>{% endif %}</td>
         <td class="pacecell"><select class="rowpace" name="li-{{ li }}-pacing_type"
             title="How this product paces. Products on one order are not all sold the same way.">
-            {# Two choices. Performance Max paces the client's budget, which
-               is a kind of spend and sits under Ad spend rather than needing
-               a third name. #}
             {% for value, name in pacing_choices %}
             <option value="{{ value }}"
               {%- if r.pacing_type == value or (value == 'click' and r.pacing_type == 'event') %} selected{% endif %}>{{ name }}</option>
             {% endfor %}
           </select></td>
-        {% if g.pacing_type == 'impression' %}
-          <td class="num"><input type="text" name="li-{{ li }}-monthly_impressions" value="{{ r.monthly_target|entry }}"></td>
-          <td class="num"><input type="text" name="li-{{ li }}-total_impressions" value="{{ r.total_target|entry }}"></td>
-          <td class="num ro">{{ r.daily_target|num(2) }}</td>
-          <td class="num"><input type="text" name="li-{{ li }}-goal_cpm" value="{{ r.unit_cost|entry }}"></td>
-          <td class="num ro">{{ r.daily_budget|money }}</td>
-          <td class="num ro">{{ r.total_budget|money }}</td>
-          <td class="num ro">{{ r.to_date|num }}</td>
-          <td class="num ro">{{ r.remaining|num if r.total_target else '—' }}</td>
-          <td class="num ro">{{ r.on_pace|num if r.total_target else '—' }}</td>
-        {% elif g.pacing_type == 'click' %}
-          <td class="num"><input type="text" name="li-{{ li }}-monthly_spend" value="{{ r.monthly_target|entry }}"></td>
-          <td class="num"><input type="text" name="li-{{ li }}-total_spend" value="{{ r.total_target|entry }}"></td>
-          <td class="num ro">{{ r.daily_target|money }}</td>
-          <td class="num"><input type="text" name="li-{{ li }}-goal_cpc" value="{{ r.unit_cost|entry }}"></td>
-          <td class="num ro">{{ ((r.monthly_target / r.unit_cost) if r.unit_cost else None)|num }}</td>
-          <td class="num ro">{{ ((r.total_target / r.unit_cost) if r.unit_cost else None)|num }}</td>
-          <td class="num ro">{{ r.to_date|money }}</td>
-          <td class="num ro">{{ r.remaining|money if r.total_target else '—' }}</td>
-          <td class="num ro">{{ r.on_pace|money if r.total_target else '—' }}</td>
-        {% else %}
-          <td class="num"><input type="text" name="li-{{ li }}-client_monthly_budget" value="{{ r.monthly_target|entry }}"></td>
-          <td class="num"><input type="text" name="li-{{ li }}-client_total_budget" value="{{ r.total_target|entry }}"></td>
-          <td class="num"><input type="text" name="li-{{ li }}-google_monthly_spend" value="{{ r.google_monthly_spend|entry }}"></td>
-          <td class="num"><input type="text" name="li-{{ li }}-google_total_spend" value="{{ r.google_total_spend|entry }}"></td>
-          <td class="num ro">{{ r.daily_target|money }}</td>
-          <td class="num"><input type="text" name="li-{{ li }}-goal_cpe" value="{{ r.unit_cost|entry }}"></td>
-          <td class="num"><input type="text" name="li-{{ li }}-monthly_events" value="{{ r.monthly_events|entry }}"></td>
-          <td class="num ro">{{ r.to_date|money }}</td>
-          <td class="num ro">{{ r.remaining|money if r.total_target else '—' }}</td>
-          <td class="num ro">{{ r.on_pace|money if r.total_target else '—' }}</td>
-        {% endif %}
+        <td class="num"><input type="text" name="li-{{ li }}-{{ goal[0] }}" value="{{ r.monthly_target|entry }}"></td>
+        <td class="num"><input type="text" name="li-{{ li }}-{{ goal[1] }}" value="{{ r.total_target|entry }}"></td>
+        <td class="num ro">{{ r.daily_target|metric(r) }}</td>
+        <td class="num cpmcell"><input type="text" name="li-{{ li }}-{{ goal[2] }}" value="{{ r.unit_cost|entry }}"></td>
+        <td class="num ro">{{ r.daily_budget|money }}</td>
+        <td class="num ro">{{ r.total_budget|money }}</td>
+        <td class="num ro">{{ r.to_date|metric(r) }}</td>
+        <td class="num ro">{{ r.remaining|metric(r) if r.total_target else '—' }}</td>
+        <td class="num ro">{{ r.on_pace|metric(r) if r.total_target else '—' }}</td>
         <td class="num ro"><span class="pace {{ r.pacing_pct|paceclass }}">{{ r.pacing_pct|pct }}</span></td>
         <td class="rowdel">
           <button class="btn-del" type="submit" formnovalidate
@@ -191,47 +158,27 @@
       </tr>
     {% endfor %}
       <tr class="totalrow">
-        <td>Total:</td>
-        <td></td>
-        {% if g.pacing_type == 'impression' %}
-          <td class="num">{{ g.total.monthly_target|num }}</td>
-          <td class="num">{{ g.total.total_target|num }}</td>
-          <td class="num">{{ g.total.daily_target|num(2) }}</td>
-          <td class="num">{{ g.total.unit_cost|money }}</td>
-          <td class="num">{{ g.total.daily_budget|money }}</td>
-          <td class="num">{{ g.total.total_budget|money }}</td>
-          <td class="num">{{ g.total.to_date|num }}</td>
-          <td class="num">{{ g.total.remaining|num }}</td>
-          <td class="num">{{ g.total.on_pace|num }}</td>
-        {% elif g.pacing_type == 'click' %}
-          <td class="num">{{ g.total.monthly_target|money }}</td>
-          <td class="num">{{ g.total.total_target|money }}</td>
-          <td class="num">{{ g.total.daily_target|money }}</td>
-          <td class="num">{{ g.total.unit_cost|money }}</td>
-          <td class="num">{{ ((t.monthly_target / t.unit_cost) if t.unit_cost else None)|num }}</td>
-          <td class="num">{{ ((t.total_target / t.unit_cost) if t.unit_cost else None)|num }}</td>
-          <td class="num">{{ g.total.to_date|money }}</td>
-          <td class="num">{{ g.total.remaining|money }}</td>
-          <td class="num">{{ g.total.on_pace|money }}</td>
-        {% else %}
-          <td class="num">{{ g.total.monthly_target|money }}</td>
-          <td class="num">{{ g.total.total_target|money }}</td>
-          <td class="num">{{ g.total.google_monthly_spend|money }}</td>
-          <td class="num">{{ g.total.google_total_spend|money }}</td>
-          <td class="num">{{ g.total.daily_target|money }}</td>
-          <td class="num">{{ g.total.unit_cost|money }}</td>
-          <td class="num">{{ g.total.monthly_events|num }}</td>
-          <td class="num">{{ g.total.to_date|money }}</td>
-          <td class="num">{{ g.total.remaining|money }}</td>
-          <td class="num">{{ g.total.on_pace|money }}</td>
-        {% endif %}
-        <td class="num"><span class="pace {{ g.total.pacing_pct|paceclass }}">{{ g.total.pacing_pct|pct }}</span></td>
+        <td>Total:</td><td></td>
+        <td class="num">{{ t.monthly_target|metric(t) }}</td>
+        <td class="num">{{ t.total_target|metric(t) }}</td>
+        <td class="num">{{ t.daily_target|metric(t) }}</td>
+        <td class="num">{{ t.unit_cost|money }}</td>
+        <td class="num">{{ t.daily_budget|money }}</td>
+        <td class="num">{{ t.total_budget|money }}</td>
+        <td class="num">{{ t.to_date|metric(t) }}</td>
+        <td class="num">{{ t.remaining|metric(t) }}</td>
+        <td class="num">{{ t.on_pace|metric(t) }}</td>
+        <td class="num"><span class="pace {{ t.pacing_pct|paceclass }}">{{ t.pacing_pct|pct }}</span></td>
         <td></td>
       </tr>
+      {% if t.mixed_types %}
+      <tr class="mixednote"><td colspan="13">Total covers the
+        {{ pacing_choices|selectattr('0', 'equalto', o.pacing_type)|map(attribute=1)|first|default('impression')|lower }}
+        lines. Products sold another way are listed above but not added in.</td></tr>
+      {% endif %}
     </tbody>
   </table>
  </div>
-{% endfor %}
 
 
   <div class="cardfoot">
@@ -395,6 +342,9 @@
         a Meta line split across an impressions campaign and a leads one needs
         both. Unticking one removes it. A campaign belongs to one line item,
         so choosing one already linked elsewhere moves it here.</p>
+      <p class="hint">Listed are the campaigns filed under this client, under
+        this order's number, or named for it. A campaign filed under a
+        differently spelled client and named for no order will not be here.</p>
       <p class="dlgfor">Line item: <b id="dlg-label"></b></p>
     </div>
 
@@ -404,7 +354,7 @@
     <div class="dlgscroll">
       {% if linking.candidates %}
       <table class="elements dlgtable">
-        <thead><tr><th></th><th>Campaign</th><th>Product</th>
+        <thead><tr><th></th><th>Campaign</th><th>Listed because</th><th>Product</th>
           <th class="num"><span class="mtd">MTD</span><span class="life">Lifetime</span></th>
           <th>Ran</th><th>Now on</th></tr></thead>
         <tbody>
@@ -414,6 +364,7 @@
               id="cand-{{ loop.index }}"></td>
             <td class="clip"><label for="cand-{{ loop.index }}"
               title="{{ c.data_source }} · {{ c.campaign_id }}">{{ c.label }}</label></td>
+            <td class="muted nowrap">{{ c.found_by }}</td>
             <td class="muted">{{ c.product or '—' }}</td>
             <td class="num">
               <span class="mtd">{{ c.month_impressions|num if c.month_impressions else c.month_cost|money }}</span>
@@ -474,13 +425,22 @@
       <thead><tr><th>Campaign Elements</th>
         {% for d in v.grid_dates %}<th class="num">{{ d.strftime('%-d-%b') }}</th>{% endfor %}</tr></thead>
       <tbody>
-      {% for r in v.rows %}
-        <tr><td class="elname">{{ r.label }}</td>
+      {% for label, strategies in v.strategy_grid %}
+        {% set product_row = v.rows|selectattr('label', 'equalto', label)|first %}
+        <tr class="gridproduct"><td class="elname">{{ label }}</td>
           {% for d in v.grid_dates %}
-            {% set val = v.grid.get(r.line_item_id, {}).get(d) %}
-            <td class="num {% if not val %}zero{% endif %}">{{ val|num if val else '—' }}</td>
+            {% set val = v.grid.get(product_row.line_item_id, {}).get(d) if product_row else None %}
+            <td class="num {% if not val %}zero{% endif %}">{{ val|metric(product_row) if val else '—' }}</td>
           {% endfor %}
         </tr>
+        {% for sname, by_date in strategies %}
+        <tr class="gridstrategy"><td class="elname">{{ sname }}</td>
+          {% for d in v.grid_dates %}
+            {% set val = by_date.get(d) %}
+            <td class="num {% if not val %}zero{% endif %}">{{ val|metric(product_row) if val else '—' }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
       {% endfor %}
         <tr class="ontrack"><td>On pace / day</td>
           {% for d in v.grid_dates %}<td class="num">{{ v.on_pace_daily|num }}</td>{% endfor %}</tr>
