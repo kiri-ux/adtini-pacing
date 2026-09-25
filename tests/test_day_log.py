@@ -84,7 +84,8 @@ def site(tmp_path):
 
 
 def _days(body):
-    return re.findall(r'<th class="num">(\d+-\w+)</th>', body)
+    """The grid's day headers, which now carry their range classes too."""
+    return re.findall(r'<th class="num gcell[^"]*">(\d+-\w+)</th>', body)
 
 
 def test_a_note_can_be_written_against_a_day(site):
@@ -171,35 +172,45 @@ def test_a_note_is_removable(site):
 
 
 # --- the grid shows the days worth looking at ------------------------------
-def test_the_grid_shows_this_month_by_default(site):
-    """A year-long flight is hundreds of columns and the interesting ones
-    are always at the end."""
+def test_the_grid_carries_the_whole_flight(site):
+    """Switching range used to fetch the page again, which felt slow.
+
+    Every day is rendered once and tagged with the ranges it falls in, so
+    the buttons hide columns instead of asking the server for the same table
+    with fewer columns in it.
+    """
     app_module, order_id = site
-    days = _days(
-        app_module.app.test_client().get(f"/orders/{order_id}").get_data(as_text=True)
+    body = app_module.app.test_client().get(f"/orders/{order_id}").get_data(
+        as_text=True
     )
-    assert days[0] == "1-Sep"
-    assert days[-1] == "21-Sep"
-    assert len(days) == 21
+    days = _days(body)
+    assert (days[0], days[-1]) == ("1-Aug", "21-Sep")
+    assert len(days) == 52
 
 
-def test_the_grid_range_can_be_widened(site):
+def test_each_day_says_which_ranges_it_is_in(site):
+    """Which is what the buttons filter on."""
+    import datetime as dt
+
+    import db as db_module
+    import views
+
     app_module, order_id = site
-    client = app_module.app.test_client()
+    with db_module.session_scope() as session:
+        view = views.order_view(session, order_id)
 
-    thirty = _days(client.get(f"/orders/{order_id}?grid=30").get_data(as_text=True))
-    assert len(thirty) == 30
-    assert (thirty[0], thirty[-1]) == ("23-Aug", "21-Sep")
+    # September is this month; 23 August on is the last thirty days.
+    assert view.range_classes[dt.date(2026, 9, 1)] == "in-month in-30"
+    assert view.range_classes[dt.date(2026, 8, 25)] == "in-30"
+    assert view.range_classes[dt.date(2026, 8, 1)] == ""
+    assert view.month_days == 21
 
-    flight = _days(
-        client.get(f"/orders/{order_id}?grid=flight").get_data(as_text=True)
+    body = app_module.app.test_client().get(f"/orders/{order_id}").get_data(
+        as_text=True
     )
-    assert (flight[0], flight[-1]) == ("1-Aug", "21-Sep")
-
-    # Anything unrecognised falls back to the month rather than erroring.
-    assert len(_days(
-        client.get(f"/orders/{order_id}?grid=nonsense").get_data(as_text=True)
-    )) == 21
+    # The container starts on the month, so that is what is shown.
+    assert 'class="scroller gridscroll range-month"' in body
+    assert body.count("in-month") >= 21
 
 
 def test_the_row_labels_are_pinned(site):

@@ -941,3 +941,59 @@ def test_a_status_that_has_not_launched_but_has_delivered_is_called_out(site):
         session.get(Order, order_id).status = "IO Live"
     with db_module.session_scope() as session:
         assert not views.order_view(session, order_id).status_contradicts_delivery
+
+
+# --- serve per month, and performance over time ----------------------------
+def test_serve_is_totalled_per_month(site):
+    """A month is how the buying team thinks about pacing.
+
+    The sold figures are monthly and the conversations are monthly, and
+    reading that off a grid of fifty columns is work nobody should have to
+    do.
+    """
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        view = views.order_view(session, order_id)
+        months = views.month_serve(view)
+
+    assert [m.label for m in months] == ["Aug 2026"]
+    # 20 days at 3,800 plus 20 at 400, on the Meta line.
+    assert months[0].served == 84_000
+    assert months[0].goal == view.rows[0].monthly_target + view.rows[1].monthly_target
+
+
+def test_the_performance_chart_carries_every_metric_in_one_payload(site):
+    """Three datasets, one request: they are read against each other, and a
+    click that switches instantly is the difference between looking and not
+    bothering."""
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        chart = views.performance_chart(views.order_view(session, order_id))
+
+    assert [m["key"] for m in chart["metrics"]] == ["ctr", "clicks", "conversions"]
+    assert set(chart["sets"]) == {"ctr", "clicks", "conversions"}
+    assert len(chart["dates"]) == 20
+
+    # CTR is a ratio, not a count - the chart is told so it does not render
+    # it as dollars.
+    assert dict(
+        (m["key"], m["format"]) for m in chart["metrics"]
+    ) == {"ctr": "percent", "clicks": "count", "conversions": "count"}
+
+    meta = next(s for s in chart["sets"]["clicks"] if "Meta" in s["label"])
+    assert meta["values"][0] == 8.0, "two strategies at four clicks a day"
+
+
+def test_visits_are_not_offered_because_the_feed_has_none(site):
+    """The delivery feed carries impressions, clicks, conversions,
+    viewthroughs and click conversions. There is no visit in it, and a chart
+    of zeroes would read as a product that gets none."""
+    import views
+
+    assert "visits" not in {key for key, _, _ in views.PERFORMANCE_METRICS}

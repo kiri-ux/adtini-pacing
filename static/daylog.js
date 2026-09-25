@@ -46,3 +46,40 @@
     grid.scrollLeft = grid.scrollWidth;
   }
 })();
+
+/* The daily grid's range buttons.
+ *
+ * The table carries the whole flight and every column says which ranges it
+ * is in, so this is a class on the container rather than another page load.
+ */
+(function () {
+  "use strict";
+
+  var scroll = document.querySelector(".gridscroll");
+  var head = document.querySelector(".gridhead");
+  if (!scroll || !head) return;
+
+  var count = document.getElementById("griddays");
+
+  function apply(range) {
+    scroll.className = scroll.className.replace(/\brange-\S+/g, "").trim();
+    scroll.classList.add("range-" + range);
+    head.querySelectorAll(".rangepick").forEach(function (button) {
+      button.classList.toggle("on", button.dataset.range === range);
+    });
+    if (count) {
+      var shown = scroll.querySelectorAll("thead th.gcell");
+      var n = 0;
+      for (var i = 0; i < shown.length; i += 1) {
+        if (shown[i].offsetParent !== null) n += 1;
+      }
+      count.textContent = n;
+    }
+    scroll.scrollLeft = scroll.scrollWidth;
+  }
+
+  head.addEventListener("click", function (event) {
+    var button = event.target.closest(".rangepick");
+    if (button) apply(button.dataset.range);
+  });
+})();

@@ -374,6 +374,66 @@ def strategy_series(
 
 
 @dataclass
+class MonthServe:
+    """One month of an order's delivery, against what it sold for it."""
+
+    label: str
+    start: dt.date
+    served: float
+    goal: float
+    is_money: bool = False
+    partial: bool = False
+
+    @property
+    def ratio(self) -> float | None:
+        return (self.served / self.goal) if self.goal else None
+
+    @property
+    def health(self) -> str:
+        if self.ratio is None:
+            return "unknown"
+        return health(1.0 - self.ratio)
+
+
+def month_serve(view: "OrderView") -> list[MonthServe]:
+    """Serve per calendar month, for the tiles across the top.
+
+    A month is how the buying team thinks about pacing - the sold figures
+    are monthly and the conversations are monthly - and reading it off a
+    grid of fifty columns is work nobody should have to do.
+    """
+    by_month: dict[tuple[int, int], float] = defaultdict(float)
+    attr = view.metric
+    for row in view.rows:
+        gross = row.client_cost_ratio if row.pacing_type == "event" else 1.0
+        for point in view.daily_by_line_item.get(row.line_item_id, []):
+            by_month[(point.date.year, point.date.month)] += (
+                getattr(point, attr) * gross
+            )
+    if not by_month:
+        return []
+
+    goal = sum(r.monthly_target for r in view.rows)
+    covers = view.covers_from
+    out = []
+    for (year, month) in sorted(by_month):
+        start = dt.date(year, month, 1)
+        out.append(
+            MonthServe(
+                label=start.strftime("%b %Y"),
+                start=start,
+                served=by_month[(year, month)],
+                goal=goal,
+                is_money=view.metric != "impressions",
+                # The feed is a rolling window, so the first month it covers
+                # is short by whatever ran before it.
+                partial=bool(covers and covers > start),
+            )
+        )
+    return out
+
+
+@dataclass
 class PacingGroup:
     """The rows on an order that pace one particular way."""
 
@@ -407,6 +467,12 @@ class OrderView:
     # (product label, [(strategy label, {date: value})]) for the daily grid.
     strategy_grid: list = field(default_factory=list)
     grid_range: str = "month"
+    # Which ranges each day belongs to, for the grid's range buttons.
+    range_classes: dict[dt.date, str] = field(default_factory=dict)
+    month_days: int = 0
+    # Which ranges each day belongs to, for the grid's range buttons.
+    range_classes: dict[dt.date, str] = field(default_factory=dict)
+    month_days: int = 0
     # The rows split by how they pace, order's type first. Impressions and
     # dollars need different columns and cannot share a Total, so an order
     # carrying both gets a table each rather than one table that lies about
@@ -507,17 +573,27 @@ def order_view(
 
     # The daily grid runs the length of the flight, so a buyer can see which
     # days actually served - which is the whole point of the hand-kept sheet.
+    # The whole flight, always. Each day is tagged with the ranges it falls
+    # in, so the range buttons hide columns rather than fetching the page
+    # again - which is what made them feel slow.
     grid_dates: list[dt.date] = []
+    range_classes: dict[dt.date, str] = {}
+    month_days = 0
     if order.start_date and order.end_date:
         first = max(order.start_date, covers_from) if covers_from else order.start_date
         last = min(order.end_date, as_of)
-        if grid_range == "month":
-            first = max(first, month_bounds(as_of)[0])
-        elif grid_range == "30":
-            first = max(first, last - dt.timedelta(days=29))
+        month_start = month_bounds(as_of)[0]
+        thirty = last - dt.timedelta(days=29)
         day = first
         while day <= last:
             grid_dates.append(day)
+            tags = []
+            if day >= month_start:
+                tags.append("in-month")
+                month_days += 1
+            if day >= thirty:
+                tags.append("in-30")
+            range_classes[day] = " ".join(tags)
             day += dt.timedelta(days=1)
 
     grid = {
@@ -578,6 +654,8 @@ def order_view(
         daily_by_line_item=daily_by_line_item,
         strategy_grid=strategy_grid,
         grid_range=grid_range,
+        range_classes=range_classes,
+        month_days=month_days,
     )
 
 
@@ -865,6 +943,70 @@ def chart_series(view: "OrderView", limit: int = MAX_CHART_SERIES) -> dict:
         "dates": [d.isoformat() for d in dates],
         "series": series,
         "metric": view.metric,
+    }
+
+
+# What the performance chart can draw. Visits are not among them: the
+# delivery feed carries impressions, clicks, conversions, viewthroughs and
+# click conversions, and nothing that counts a visit.
+PERFORMANCE_METRICS = (
+    ("ctr", "CTR", "percent"),
+    ("clicks", "Clicks", "count"),
+    ("conversions", "Conversions", "count"),
+)
+
+
+def performance_chart(view: "OrderView", limit: int = MAX_CHART_SERIES) -> dict:
+    """CTR, clicks and conversions per day, one line per product.
+
+    Three datasets in one payload rather than three charts: they are read
+    against each other, and a click that switches instantly is the
+    difference between looking and not bothering.
+    """
+    sets: dict[str, list[dict]] = {}
+    dates: list[dt.date] = sorted(
+        {
+            point.date
+            for row in view.rows
+            for point in view.daily_by_line_item.get(row.line_item_id, [])
+        }
+    )
+    if not dates:
+        return {"dates": [], "sets": {}, "metrics": []}
+
+    ranked = sorted(
+        (r for r in view.rows if r.line_item_id is not None),
+        key=lambda r: -(r.impressions or r.cost or 0),
+    )[:limit]
+
+    for key, _, _ in PERFORMANCE_METRICS:
+        series = []
+        for row in ranked:
+            points = {
+                p.date: p for p in view.daily_by_line_item.get(row.line_item_id, [])
+            }
+            values = []
+            for day in dates:
+                point = points.get(day)
+                if point is None:
+                    values.append(0.0)
+                elif key == "ctr":
+                    values.append(
+                        (point.clicks / point.impressions) if point.impressions else 0.0
+                    )
+                else:
+                    values.append(getattr(point, key))
+            if any(values):
+                series.append({"label": row.label, "values": values})
+        sets[key] = series
+
+    return {
+        "dates": [d.isoformat() for d in dates],
+        "sets": sets,
+        "metrics": [
+            {"key": key, "name": name, "format": fmt}
+            for key, name, fmt in PERFORMANCE_METRICS
+        ],
     }
 
 

@@ -458,6 +458,8 @@ def order_detail(order_id: int):
             t=view.total,
             chart=views.chart_series(view),
             product_charts=views.product_charts(view),
+            months=views.month_serve(view),
+            performance=views.performance_chart(view),
             blocks=views.strategy_blocks(db, view),
             pacing_choices=PACING_CHOICES,
             notes=views.day_log(db, order_id),

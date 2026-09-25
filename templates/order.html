@@ -81,6 +81,19 @@
 
 
 
+{% if months %}
+<div class="months">
+  {% for m in months %}
+  <div class="mtile {{ m.health }}">
+    <small>{{ m.label }}{% if m.partial %} <i title="The feed starts mid-month, so this is short by whatever ran before it">part</i>{% endif %}</small>
+    <b>{% if m.is_money %}{{ m.served|money(0) }}{% else %}{{ m.served|num }}{% endif %}</b>
+    <u>{% if m.goal %}of {% if m.is_money %}{{ m.goal|money(0) }}{% else %}{{ m.goal|num }}{% endif %}
+      &middot; <span class="pace {{ m.health }}">{{ m.ratio|pct(0) }}</span>{% else %}no monthly goal{% endif %}</u>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 <form method="post" action="{{ url_for('order_save', order_id=o.id) }}">
 <div class="tablecard ordercard">
   <div class="charthead"><h3>Budgeting</h3></div>
@@ -403,6 +416,23 @@
   </form>
 </dialog>
 
+{% if performance.dates %}
+<div class="tablecard chartcard">
+  <div class="charthead">
+    <h3>Performance over time</h3>
+    <span class="hint">One line per product. Hover for every product on a day.</span>
+    <span class="metricpick" id="perfpick">
+      {% for m in performance.metrics %}
+      <button type="button" class="{{ 'on' if loop.first }}" data-metric="{{ m.key }}">{{ m.name }}</button>
+      {% endfor %}
+    </span>
+  </div>
+  <div id="chartlegend-perf" class="clegends"></div>
+  <div id="strategychart-perf" class="chartbox"></div>
+  <script type="application/json" id="chartdata-perf">{{ performance|tojson }}</script>
+</div>
+{% endif %}
+
 {% for c in product_charts %}
 <div class="tablecard chartcard">
   <div class="charthead">
@@ -420,43 +450,46 @@
 
 {% if v.grid_dates %}
 <details class="qfold dailygrid" open>
-  <summary>Daily delivery &mdash; {{ v.grid_dates|length }} days</summary>
+  <summary>Daily delivery &mdash; <span id="griddays">{{ v.month_days }}</span> days</summary>
   <div class="gridhead">
+    {# Buttons, not links. The table carries the whole flight and each column
+       knows which ranges it belongs to, so switching hides columns instead of
+       fetching the page again. #}
     {% for value, name in grid_ranges %}
-    <a class="rangepick {{ 'on' if grid_range == value }}"
-       href="{{ url_for('order_detail', order_id=o.id, grid=value) }}#grid">{{ name }}</a>
+    <button type="button" class="rangepick {{ 'on' if grid_range == value }}"
+      data-range="{{ value }}">{{ name }}</button>
     {% endfor %}
   </div>
-  <div class="scroller gridscroll" id="grid">
+  <div class="scroller gridscroll range-{{ grid_range }}" id="grid">
     <table class="daily pinned">
       <thead><tr><th class="pin">Campaign Elements</th>
-        {% for d in v.grid_dates %}<th class="num">{{ d.strftime('%-d-%b') }}</th>{% endfor %}</tr></thead>
+        {% for d in v.grid_dates %}<th class="num gcell {{ v.range_classes[d] }}">{{ d.strftime('%-d-%b') }}</th>{% endfor %}</tr></thead>
       <tbody>
       {% for label, strategies in v.strategy_grid %}
         {% set product_row = v.rows|selectattr('label', 'equalto', label)|first %}
         <tr class="gridproduct"><th class="pin">{{ label }}</th>
           {% for d in v.grid_dates %}
             {% set val = v.grid.get(product_row.line_item_id, {}).get(d) if product_row else None %}
-            <td class="num {% if not val %}zero{% endif %}">{{ val|metric(product_row) if val else '—' }}</td>
+            <td class="num gcell {{ v.range_classes[d] }} {% if not val %}zero{% endif %}">{{ val|metric(product_row) if val else '—' }}</td>
           {% endfor %}
         </tr>
         {% for sname, by_date in strategies %}
         <tr class="gridstrategy"><th class="pin">{{ sname }}</th>
           {% for d in v.grid_dates %}
             {% set val = by_date.get(d) %}
-            <td class="num {% if not val %}zero{% endif %}">{{ val|metric(product_row) if val else '—' }}</td>
+            <td class="num gcell {{ v.range_classes[d] }} {% if not val %}zero{% endif %}">{{ val|metric(product_row) if val else '—' }}</td>
           {% endfor %}
         </tr>
         {% endfor %}
       {% endfor %}
         <tr class="ontrack"><th class="pin">On pace / day</th>
-          {% for d in v.grid_dates %}<td class="num">{{ v.on_pace_daily|num }}</td>{% endfor %}</tr>
+          {% for d in v.grid_dates %}<td class="num gcell {{ v.range_classes[d] }}">{{ v.on_pace_daily|num }}</td>{% endfor %}</tr>
         {% if notes %}
         {% set by_day = {} %}
         {% for n in notes %}{% if by_day.update({n.date: (by_day.get(n.date, []) + [n])}) %}{% endif %}{% endfor %}
         <tr class="gridnotes"><th class="pin">Notes</th>
           {% for d in v.grid_dates %}
-          <td class="num">
+          <td class="num gcell {{ v.range_classes[d] }}">
             {%- if by_day.get(d) -%}
             <span class="notemark" title="{{ by_day[d]|map(attribute='body')|join(' · ') }}">&#9679;</span>
             {%- else -%}&nbsp;{%- endif -%}
@@ -610,32 +643,7 @@
 <p class="empty">No products on this order to break out.</p>
 {% endif %}
 
-{% if v.strategies %}
-<details class="qfold strategytable">
-  <summary>Strategy totals</summary>
-  <div class="scroller">
-    <table class="daily">
-      <thead><tr><th>Strategy</th><th>Line item</th><th class="num">Total</th>
-        <th class="num">Days served</th><th class="num">Best day</th>
-        <th class="num">Flights</th></tr></thead>
-      <tbody>
-      {% for li_id, items in v.strategies.items() %}
-        {% for s in items %}
-        <tr>
-          <td class="elname">{{ s.label }}</td>
-          <td class="muted">{{ lineitem_names.get(li_id, '—') }}</td>
-          <td class="num">{{ s.total|metric(t) }}</td>
-          <td class="num">{{ s.by_date.values()|select|list|length }}</td>
-          <td class="num">{{ (s.by_date.values()|max if s.by_date else None)|metric(t) }}</td>
-          <td class="num muted" title="Strategy records in the feed under this targeting">{{ s.strategy_count }}</td>
-        </tr>
-        {% endfor %}
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</details>
-{% endif %}
+
 
   </div>
 </details>
@@ -694,6 +702,6 @@
 
 {% endblock %}
 
-{% block scripts %}<script src="/static/chart.js" defer></script>
+{% block scripts %}<script src="/static/tips.js" defer></script><script src="/static/chart.js" defer></script>
 <script src="/static/linking.js" defer></script>
 <script src="/static/daylog.js" defer></script>{% endblock %}

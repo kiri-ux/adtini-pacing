@@ -24,6 +24,16 @@ function adtiniChart(suffix) {
   } catch (e) {
     return;
   }
+  // A chart can carry several datasets and switch between them, which is
+  // how CTR, clicks and conversions share one frame without three round
+  // trips to draw them.
+  var sets = data.sets || null;
+  var metric = null;
+  if (sets) {
+    metric = (data.metrics && data.metrics[0] && data.metrics[0].key) || null;
+    data.series = metric ? sets[metric] || [] : [];
+    data.metric = metric;
+  }
   if (!data.dates || !data.dates.length || !data.series.length) return;
 
   // Validated against the six checks in the dataviz palette validator
@@ -49,12 +59,28 @@ function adtiniChart(suffix) {
     return index < PALETTE.length ? PALETTE[index] : OTHER;
   }
 
+  function mode() {
+    // A chart carrying named metrics says how each one reads; the rest are
+    // impressions or money, as they always were.
+    if (data.metrics) {
+      for (var i = 0; i < data.metrics.length; i += 1) {
+        if (data.metrics[i].key === data.metric) return data.metrics[i].format;
+      }
+    }
+    return data.metric === "impressions" ? "count" : "money";
+  }
+
   function isMoney() {
-    return data.metric !== "impressions";
+    return mode() === "money";
   }
 
   function format(value) {
     if (value === null || value === undefined) return "—";
+    if (mode() === "percent") {
+      return (value * 100).toLocaleString(undefined, {
+        minimumFractionDigits: 2, maximumFractionDigits: 2
+      }) + "%";
+    }
     if (isMoney()) {
       return "$" + value.toLocaleString(undefined, {
         minimumFractionDigits: 2, maximumFractionDigits: 2
@@ -282,6 +308,24 @@ function adtiniChart(suffix) {
 
   draw();
   legend();
+
+  if (sets) {
+    var picker = document.getElementById("perfpick");
+    if (picker) {
+      picker.addEventListener("click", function (event) {
+        var button = event.target.closest("button[data-metric]");
+        if (!button) return;
+        metric = button.dataset.metric;
+        data.series = sets[metric] || [];
+        data.metric = metric;
+        picker.querySelectorAll("button").forEach(function (other) {
+          other.classList.toggle("on", other === button);
+        });
+        draw();
+        legend();
+      });
+    }
+  }
 
   var resizeTimer;
   window.addEventListener("resize", function () {

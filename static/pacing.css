@@ -241,14 +241,17 @@ table.overview th.meterhead{min-width:200px}
    not appear on focus. */
 /* Below, not above: above it covered the header on the first row, which is
    the row most likely to be read. */
+/* The in-cell copy is the content only; what is shown is the floating one
+   on the body, because every table these sit in scrolls and a box that
+   scrolls on one axis clips on both. */
 .mtip{position:absolute;top:calc(100% + 7px);left:0;z-index:20;
   background:var(--navy);color:#fff;border-radius:8px;padding:8px 10px;
   font-size:11.5px;line-height:1.55;white-space:nowrap;pointer-events:none;
   opacity:0;visibility:hidden;transition:opacity .12s;
   box-shadow:0 6px 18px rgba(11,36,64,.28)}
 .mtip b{font-weight:600}
-.meter:hover .mtip,.meter:focus-within .mtip,
-.pill-prod:hover .mtip,.pill-prod:focus .mtip{opacity:1;visibility:visible}
+.mtip.floating{position:fixed;top:0;left:0;z-index:200;display:none;
+  max-width:min(360px,92vw);white-space:normal}
 
 /* ---- product pills ------------------------------------------------------ */
 .pills{display:flex;gap:5px;flex-wrap:wrap;align-items:center;min-width:130px}
@@ -544,3 +547,30 @@ tr.gridnotes th.pin,tr.gridnotes td{border-top:2px solid var(--line)}
   color:var(--muted);font-weight:600}
 .pager .perpage a:hover{color:var(--text);background:var(--fill)}
 .pager .perpage a.on{background:var(--navy);color:#fff}
+
+/* The grid holds the whole flight; the range buttons hide columns. */
+.gridscroll.range-month .gcell:not(.in-month){display:none}
+.gridscroll.range-30 .gcell:not(.in-30){display:none}
+button.rangepick{border:0;cursor:pointer;font-family:inherit}
+
+/* ---- serve per month ----------------------------------------------------- */
+.months{display:flex;gap:10px;margin:0 0 16px;overflow-x:auto;padding-bottom:2px}
+.mtile{flex:0 0 auto;min-width:132px;background:var(--card);border:1px solid var(--line);
+  border-radius:12px;padding:11px 14px}
+.mtile small{display:block;font-size:10.5px;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--muted)}
+.mtile small i{font-style:normal;background:var(--fill);border-radius:5px;
+  padding:1px 5px;letter-spacing:0;cursor:help}
+.mtile b{display:block;font-size:19px;margin:3px 0 2px;color:var(--navy)}
+.mtile u{display:block;text-decoration:none;font-size:11.5px;color:var(--muted)}
+.mtile.under{border-color:#F0C9C6}
+.mtile.over{border-color:#F3DDBB}
+.mtile.on-pace{border-color:#BFE3CD}
+
+/* The performance chart's metric picker. */
+.metricpick{margin-left:auto;display:inline-flex;gap:4px}
+.metricpick button{border:0;cursor:pointer;font-family:inherit;font-size:12px;
+  font-weight:600;color:var(--muted);background:var(--fill);border-radius:999px;
+  padding:5px 11px}
+.metricpick button:hover{color:var(--text)}
+.metricpick button.on{background:var(--navy);color:#fff}
