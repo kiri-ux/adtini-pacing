@@ -43,8 +43,16 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "item_status": ("itemstatus", "lineitemstatus", "linestatus", "status"),
     "status": ("ordersstatus", "ordersorderstatus"),
     "buyer": ("campaignmanager",),
-    "start_date": ("ordersstartdate", "startdate"),
-    "end_date": ("ordersenddate", "enddate"),
+    # The order's flight, and the line item's own, are different columns and
+    # different things. They were read as one field with the order's copy
+    # preferred, so every line item stored the order's dates - a Display line
+    # that ran March to May read as running the order's nineteen months, and
+    # its daily target, its days left and whether it had finished at all were
+    # all worked out against a flight it never had.
+    "order_start_date": ("ordersstartdate",),
+    "order_end_date": ("ordersenddate",),
+    "start_date": ("startdate",),
+    "end_date": ("enddate",),
     "order_type": ("ordertype", "orderstype"),
     "notes": ("orderswhatisthegoalforthiscampaign",),
 
@@ -129,7 +137,7 @@ def strategy_column_for(product: str | None, available: dict[str, str]) -> str |
 
 REQUIRED = ("client_name", "external_order_id")
 
-DATE_FIELDS = ("start_date", "end_date")
+DATE_FIELDS = ("start_date", "end_date", "order_start_date", "order_end_date")
 NUMERIC_FIELDS = (
     "total_impressions", "monthly_impressions", "months_running",
     "total_campaign_budget",

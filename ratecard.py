@@ -49,6 +49,8 @@ PRODUCT_TO_RATE = {
     "Mobile Conquesting Display & Video Ads": "Mobile Conquesting",
     "Mobile Conquesting Event/Political Display & Video Ads":
         "Mobile Conquesting Event",
+    "Mobile Conquesting EVENT or POLITICAL CATEGORY TARGETING Display & Video Ads":
+        "Mobile Conquesting Event",
     "Meta Display & Video Ads": "Meta",
     "Meta Lead Display & Video Ads": "Meta Lead",
     "Amazon Premium Display Ads": "Amazon Display",
@@ -56,12 +58,18 @@ PRODUCT_TO_RATE = {
     "Amazon Premium CTV Ads": "Amazon OTT",
     "Amazon Prime CTV Ads": "Amazon Prime OTT",
     "Amazon Premium CTV + Video Ads": "Amazon OTT",
+    # Video and OTT sold together. Priced off Video, which is the cheaper of
+    # the two rates - a setup CPM guessed high reads a campaign as spending
+    # more than it did.
+    "Amazon Premium Video (with Twitch) & OTT Ads": "Amazon Video",
     "Youtube+ Video Ads": "Youtube+",
+    "YouTube Video Ads": "Youtube+",
     "YouTube TV Video Ads (bids)": "YouTube TV (bids)",
     "YouTube TV Video Ads (actuals)": "YouTube TV (actual YT TV CPM)",
     "TikTok Display & Video Ads": "TikTok",
     "Digital Out-Of-Home (DOOH) Display & Video Ads": "DOOH",
     "Dynamic Display Ads": "Dynamic",
+    "Dynamic Ads": "Dynamic",
     "Geo-Framing Display Ads": "Geo-Framing",
 
     # --- as the delivery feed names them -------------------------------
@@ -156,13 +164,30 @@ def card() -> dict[str, Rate]:
     return out
 
 
+@lru_cache(maxsize=1)
+def _by_key() -> dict[str, str]:
+    """`PRODUCT_TO_RATE`, keyed so punctuation and case cannot miss it."""
+    import products as _products
+
+    return {_products._key(name): rate for name, rate in PRODUCT_TO_RATE.items()}
+
+
 def rate_name(product: str | None, restricted: bool = False, b2b: bool = False) -> str | None:
     """The card entry a line item is priced from.
 
     Restricted and B2B categories carry their own rates, so the variant is
     looked up first and the base rate is the fallback.
+
+    The name is canonicalised through the product registry first. Matched on
+    the raw string, four live products missed the card entirely - Dynamic,
+    YouTube, Amazon Video and Mobile Conquesting's event rate - and every
+    line of them fell through to the client's retail CPM.
     """
-    base = PRODUCT_TO_RATE.get((product or "").strip())
+    import products as _products
+
+    entry = _products.lookup(product)
+    key = _products._key((entry.name if entry else product) or "")
+    base = _by_key().get(key)
     if base is None:
         return None
     entries = card()

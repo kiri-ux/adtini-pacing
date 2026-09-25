@@ -396,6 +396,15 @@ def compute_row(
     row.ctr = (row.clicks / row.impressions) if row.impressions else None
     row.to_date = counted.of(attr) * gross
 
+    # Where the flight is up to does not depend on anything being sold, and
+    # it is read outside the pacing columns - whether a line has finished is
+    # the tabs' question, not the pacing's. Left until after the early
+    # return, every line with no goal set read as having no days left, which
+    # put every one of them in the Ended tab on its first day.
+    if start and end:
+        row.days_elapsed = elapsed_days(as_of, start, end)
+        row.days_left = max(inclusive_days(start, end) - row.days_elapsed, 0)
+
     # Without dates or a sold total there is nothing to pace against. Delivery
     # still shows, flagged so the order book can be filled in.
     if not paceable:

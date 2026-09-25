@@ -249,13 +249,52 @@ def test_pacing_uses_the_setup_cpm_not_the_retail_one():
     assert source == "rate card"
 
 
-def test_a_product_the_card_does_not_price_falls_back_to_the_orders_file():
+def test_the_retail_rate_is_never_paced_on():
+    """The orders file's budget over its impressions is what the end client
+    pays. It is several times the setup rate - Display bills at $10 and is
+    bought at $2 - so pacing on it read every line as spending four or five
+    times what it spent. Better blank: an unset rate reads as unset."""
     from orderbook import resolve_goal_cpm
 
-    cpm, source = resolve_goal_cpm("Some New Product", False, total_budget=8_000,
-                                   total_impressions=1_000_000)
-    assert cpm == 8.0
-    assert source == "orders file"
+    assert resolve_goal_cpm(
+        "Some New Product", False, total_budget=8_000, total_impressions=1_000_000
+    ) == (None, None)
+
+
+def test_every_paced_impression_product_is_priced_off_the_card():
+    """Which is what makes dropping the retail fallback safe. Matched on the
+    raw product name, four live products missed the card entirely - Dynamic,
+    YouTube, Amazon Video and Mobile Conquesting's event rate - and every
+    line of them paced on the client's rate instead."""
+    import csv
+
+    import orderbook
+    import ratecard
+
+    unpriced = []
+    with open("data/products.csv", newline="") as handle:
+        for row in csv.DictReader(handle):
+            name = row["product"]
+            if row.get("paced") != "1":
+                continue
+            if orderbook.pacing_type_for(name) != "impression":
+                continue
+            if not ratecard.setup_cpm(name):
+                unpriced.append(name)
+
+    assert unpriced == []
+
+
+def test_a_product_is_priced_whichever_export_names_it():
+    """The feed and the orders file spell the same product differently, and
+    the card was matched on the raw string."""
+    import ratecard
+
+    assert ratecard.setup_cpm("Dynamic Ads") == ratecard.setup_cpm("Dynamic Display Ads")
+    assert ratecard.setup_cpm("YouTube Video Ads") == ratecard.setup_cpm("YouTube+")
+    assert ratecard.setup_cpm(
+        "Mobile Conquesting EVENT or POLITICAL CATEGORY TARGETING Display & Video Ads"
+    ) == 7.00
 
 
 def test_products_bought_on_spend_have_no_cpm_at_all():

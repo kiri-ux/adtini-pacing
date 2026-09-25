@@ -203,3 +203,23 @@ def test_a_completed_line_is_ended_even_with_months_left_on_its_flight(site):
     row = {r.label: r for r in _view(order_id).rows}["Social Mirror Ads"]
     assert row.end_date == dt.date(2026, 12, 31)
     assert row.state == "ended"
+
+
+def test_a_line_with_no_goal_is_not_ended_just_for_having_none(site):
+    """Where the flight is up to does not depend on anything being sold.
+    Worked out only on the pacing path, every line with no goal set read as
+    having no days left - which put all of them in the Ended tab on day
+    one, including the only one actually running."""
+    import db as db_module
+    from models import LineItem
+
+    _, order_id = site
+    with db_module.session_scope() as session:
+        item = session.query(LineItem).filter_by(external_id="134625").one()
+        item.monthly_impressions = None
+        item.total_impressions = None
+
+    row = {r.label: r for r in _view(order_id).rows}["Social Mirror Ads"]
+    assert row.needs_setup is True
+    assert row.days_left > 0
+    assert row.state == "running"

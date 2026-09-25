@@ -155,19 +155,14 @@ def line_item_label(
 def unique_label(label: str, taken: set[str], external_id: str | None = None) -> str:
     """Keep two same-named rows apart on the same order.
 
-    Two line items of the same product are the normal case, and they differ
-    by their line item id - so that is what distinguishes them, rather than a
-    counter that says only "this is the second one".
+    Two line items of the same product are the normal case. The id used to be
+    appended to the name to tell them apart; the table shows it in its own
+    column now, so the name stays the product's and only a genuine collision
+    a reader could not otherwise resolve gets a counter.
     """
     if label not in taken:
         taken.add(label)
         return label
-
-    if external_id and not str(external_id).startswith("name:"):
-        candidate = f"{label} · {external_id}"
-        if candidate not in taken:
-            taken.add(candidate)
-            return candidate
 
     n = 2
     while f"{label} ({n})" in taken:
@@ -194,18 +189,26 @@ def resolve_goal_cpm(
 ) -> tuple[float | None, str | None]:
     """The CPM to pace against, and where it came from.
 
-    The rate card wins: it holds what the DSP campaign is actually set up at,
-    which is what the buying team's sheet works in. The orders file's budget
-    over its impressions is the retail rate the client pays, which is higher
-    and would pace the line against a budget nobody bought at - it is only
-    the fallback for a product the card does not price.
+    Only the rate card. It holds what the DSP campaign is actually set up at,
+    which is what the buying team's sheet works in and what the budget
+    columns on this page mean.
+
+    The orders file's budget over its impressions is the retail rate the end
+    client pays. It is several times the setup rate - Display bills at $10
+    and is bought at $2 - because the internal cost is lower, so pacing on it
+    read every line as spending four or five times what it spent. It used to
+    be the fallback for a product the card does not price, and it caught four
+    live products whose names simply did not match the card. With the names
+    fixed there is nothing left it should catch, and a line the card cannot
+    price is better left blank for a buyer to fill in: an unset rate reads as
+    unset, where the retail rate reads as a fact.
+
+    `total_budget` and `total_impressions` are kept on the signature because
+    the margin figures still work in retail; they are no longer paced on.
     """
     from_card = ratecard.setup_cpm(product, restricted=restricted)
     if from_card:
         return from_card, "rate card"
-    derived = retail_cpm(total_budget, total_impressions)
-    if derived:
-        return derived, "orders file"
     return None, None
 
 
@@ -458,8 +461,15 @@ def import_orders(session, frame, cache: dict | None = None) -> ImportResult:
             order.buyer = row.get("buyer")
 
         if not order.terms_locked:
-            order.start_date = row.get("start_date") or order.start_date
-            order.end_date = row.get("end_date") or order.end_date
+            # The order's own columns, and the line's only where an export
+            # does not spell the order's separately.
+            order.start_date = (
+                row.get("order_start_date") or row.get("start_date")
+                or order.start_date
+            )
+            order.end_date = (
+                row.get("order_end_date") or row.get("end_date") or order.end_date
+            )
             # The order's type is whatever its first line item paces on.
             # It used to be whatever the *last* row happened to be, so an
             # order carrying Display and Pay-Per-Click got one or the other

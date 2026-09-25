@@ -607,7 +607,9 @@ button.rangepick{border:0;cursor:pointer;font-family:inherit}
    Every row stays in the form so Save posts the lot. The tabs hide the rows
    the reader is not asking about, and swap which Total is on show with them:
    a total that keeps counting hidden rows is worse than no total. */
-.scopetabs{display:flex;gap:6px;margin:0 0 10px}
+/* Lined up with the fields above: the card pads its rows 18px, and a tab
+   strip flush to the edge reads as part of the table header instead. */
+.scopetabs{display:flex;gap:8px;margin:0;padding:16px 18px 14px}
 .scopetab{border:1px solid var(--line);background:var(--card);color:var(--muted);
   border-radius:999px;padding:6px 14px;font:inherit;font-size:12.5px;
   font-weight:600;cursor:pointer}

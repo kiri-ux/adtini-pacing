@@ -68,7 +68,58 @@ def test_a_field_reads_every_copy_of_its_column():
     mapped, _ = match_columns(
         ["client", "orders_id", "start_date", "start_date.1", "orders_start_date"]
     )
-    assert mapped["start_date"] == ["orders_start_date", "start_date", "start_date.1"]
+    assert mapped["start_date"] == ["start_date", "start_date.1"]
+
+
+def test_the_orders_flight_and_the_lines_own_are_different_columns():
+    """They were read as one field with the order's copy preferred, so every
+    line item stored the order's dates. A Display line that ran March to May
+    read as running the order's nineteen months - and its daily target, its
+    days left and whether it had finished at all came out of that."""
+    mapped, _ = match_columns(
+        ["client", "orders_id", "orders_start_date", "start_date",
+         "end_date", "orders_end_date"]
+    )
+    assert mapped["order_start_date"] == ["orders_start_date"]
+    assert mapped["order_end_date"] == ["orders_end_date"]
+    assert mapped["start_date"] == ["start_date"]
+    assert mapped["end_date"] == ["end_date"]
+
+
+def test_a_line_item_keeps_its_own_flight():
+    from models import LineItem, Order
+
+    head = (
+        "client,orders_id,product,id,status,orders_start_date,orders_end_date,"
+        "start_date,end_date,monthly_campaign_impressions,order_type"
+    )
+    row = (
+        "Ram Jack,44807,Display Ads,101789,IO Complete,"
+        "2025-03-01 00:00:00,2026-09-30 00:00:00,"
+        "2025-03-01 00:00:00,2025-05-31 00:00:00,175000,Insertion Order"
+    )
+    with _loaded(normalize(csv(head + "\n" + row))) as session:
+        order = session.query(Order).one()
+        item = session.query(LineItem).one()
+        assert order.end_date == dt.date(2026, 9, 30)
+        assert item.end_date == dt.date(2025, 5, 31)
+
+
+def test_an_export_with_only_the_orders_flight_still_dates_the_order():
+    from models import LineItem, Order
+
+    head = (
+        "client,orders_id,product,id,orders_start_date,orders_end_date,order_type"
+    )
+    row = (
+        "Ram Jack,44807,Display Ads,101789,"
+        "2025-03-01 00:00:00,2026-09-30 00:00:00,Insertion Order"
+    )
+    with _loaded(normalize(csv(head + "\n" + row))) as session:
+        assert session.query(Order).one().end_date == dt.date(2026, 9, 30)
+        # Nothing of its own, so it runs the order's - worked out at read
+        # time rather than copied in, so the day the order moves it moves.
+        assert session.query(LineItem).one().end_date is None
 
 
 def test_the_value_is_taken_from_whichever_copy_has_it():
