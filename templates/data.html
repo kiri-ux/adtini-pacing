@@ -40,6 +40,20 @@
   </div>
 
   <div class="datarow">
+    <form method="post" action="{{ url_for('data_action') }}">
+      <input type="hidden" name="action" value="reread-orders">
+      <div>
+        <h4>Re-read the orders files</h4>
+        <p class="hint">Every <code>orders*</code> drop, including ones already
+          loaded. Minutes, not the hours a forced sweep of the delivery
+          history takes.</p>
+      </div>
+      <button class="btn preview" type="submit" {% if sweep_running %}disabled{% endif %}>
+        {{ 'Sweep running…' if sweep_running else 'Re-read orders' }}</button>
+    </form>
+  </div>
+
+  <div class="datarow">
     <form method="post" action="{{ url_for('data_action') }}" enctype="multipart/form-data">
       <input type="hidden" name="action" value="upload">
       <div>

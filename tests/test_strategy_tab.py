@@ -1001,7 +1001,41 @@ def test_serve_is_totalled_per_month(site):
     assert [m.label for m in months] == ["Aug 2026"]
     # 20 days at 3,800 plus 20 at 400, on the Meta line.
     assert months[0].served == 84_000
-    assert months[0].goal == view.rows[0].monthly_target + view.rows[1].monthly_target
+    # The order's own metric, and only the lines read in it. The PPC line is
+    # sold in dollars: adding its $3,000 into an impressions goal made a
+    # number that meant nothing and looked like it meant something.
+    assert months[0].goal == view.rows[0].monthly_target
+    assert months[0].spend_goal == view.rows[1].monthly_target
+    assert months[0].has_spend is True
+
+
+def test_a_spend_line_is_counted_in_dollars_not_impressions(site):
+    """Both figures on one tile, each in its own units."""
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        months = views.month_serve(views.order_view(session, order_id))
+
+    # The Meta line's impressions. Nothing under the PPC line delivered.
+    assert months[0].served == 84_000
+    assert months[0].spent == 0.0
+    assert months[0].is_money is False
+
+
+def test_an_order_with_no_spend_line_shows_no_spend_figure(site):
+    import db as db_module
+    import views
+    from models import LineItem
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        session.query(LineItem).filter_by(external_id="88002").delete()
+    with db_module.session_scope() as session:
+        months = views.month_serve(views.order_view(session, order_id))
+
+    assert months[0].has_spend is False
 
 
 def test_the_performance_chart_draws_every_metric_on_one_frame(site):

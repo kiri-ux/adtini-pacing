@@ -174,6 +174,10 @@ body.loginpage{padding-left:0;display:flex;align-items:center;justify-content:ce
 .clegend{display:inline-flex;align-items:center;gap:7px;font-size:12px;
   color:var(--muted)}
 .clegend i{width:11px;height:11px;border-radius:3px;flex:0 0 11px}
+/* A series read against the right-hand axis is drawn dashed; its swatch
+   carries the same dash, so the legend says which axis without a word. */
+.clegend i.dashed{width:16px;height:0;flex:0 0 16px;border-radius:0;
+  background:none !important;border-top:3px dashed currentColor}
 .chartbox{position:relative;padding:0 8px}
 .chartbox svg{display:block;overflow:visible}
 /* Grid and axes recede; the lines are what is read. */
@@ -632,3 +636,15 @@ table.elements.show-closed [data-total="open"]{display:none}
 table.elements th.idhead,table.elements td.idcell{width:1%;white-space:nowrap;
   text-align:right;color:var(--muted);font-variant-numeric:tabular-nums;
   font-size:12.5px}
+
+/* What the order says the client bought, beside what actually ran. It is
+   the only place the sold targeting exists - the feed says only what
+   served - and it was being read off the export and shown nowhere. */
+.soldnames{display:flex;flex-wrap:wrap;align-items:center;gap:6px;
+  padding:0 18px 14px}
+.soldnames small{font-size:11px;font-weight:700;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--muted);margin-right:2px}
+.schip{display:inline-block;background:var(--fill);border:1px solid var(--line);
+  border-radius:999px;padding:3px 10px;font-size:12px;font-weight:500}
+.schip.off{background:#FBEBC2;border-color:#EBD08A;color:#7A4C09}
+.soldnote{font-size:12px;color:var(--muted)}

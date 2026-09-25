@@ -289,6 +289,7 @@ def run(
     limit: int | None = None,
     only: str | None = None,
     max_bytes: int | None = None,
+    kind: str | None = None,
 ) -> IngestResult:
     """Sweep the bucket and load anything new.
 
@@ -296,6 +297,10 @@ def run(
     tried on its own. `max_bytes` skips anything larger, so a sweep is not
     held up by the multi-gigabyte bulk exports when the per-unit files say
     the same thing.
+
+    `kind` narrows the sweep to one side of the drop. A re-read of the
+    orders files is minutes; a re-read of everything is the delivery
+    history, which is gigabytes and says nothing new about what was sold.
 
     Orders are loaded before delivery so a line item exists for delivery to
     join to on the same sweep. A file already logged with the same ETag is
@@ -325,10 +330,12 @@ def run(
         objects = objects[-limit:]
 
     # Orders first, then delivery, each oldest key first so later drops win.
+    wanted = (kind,) if kind else (ORDERS, DELIVERY)
     ordered: list[tuple[str, s3.S3Object]] = []
-    for kind in (ORDERS, DELIVERY):
-        ordered += [(kind, o) for o in objects if classify(o.key) == kind]
-    result.files_unknown = len(objects) - len(ordered)
+    for side in wanted:
+        ordered += [(side, o) for o in objects if classify(o.key) == side]
+    if not kind:
+        result.files_unknown = len(objects) - len(ordered)
 
     # One transaction per file, not one for the sweep. A single transaction
     # around the whole run meant nothing was visible until it finished - the
@@ -341,7 +348,7 @@ def run(
             for row in session.execute(select(IngestedFile)).scalars().all()
         }
 
-    for kind, obj in ordered:
+    for side, obj in ordered:
         etag, status = seen.get(obj.key, (None, None))
         if etag == obj.etag and status == "ok" and not force:
             result.files_skipped += 1
@@ -351,20 +358,20 @@ def run(
         try:
             # Logged before the work, not after: a delivery file is about a
             # minute and logging only on completion looks like a stall.
-            log.info("reading %s (%s, %.1f MB)", obj.key, kind, obj.size / 1e6)
+            log.info("reading %s (%s, %.1f MB)", obj.key, side, obj.size / 1e6)
             # And recorded before the work, in its own transaction, so the
             # page can show the file as in flight instead of looking idle
             # for the minute it takes.
             with session_scope() as session:
-                _log_file(session, obj, kind=kind, status="loading")
+                _log_file(session, obj, kind=side, status="loading")
             path = s3.fetch_csv_file(obj.key)
             with session_scope() as session:
-                if kind == DELIVERY:
+                if side == DELIVERY:
                     written, summary = load_delivery_file(session, path, obj.key)
                     result.delivery_loaded += 1
                     result.rows_written += written
                     _log_file(
-                        session, obj, kind=kind, status="ok",
+                        session, obj, kind=side, status="ok",
                         rows_read=summary["rows_read"], rows_written=written,
                         min_date=summary["min_date"], max_date=summary["max_date"],
                     )
@@ -374,7 +381,7 @@ def run(
                     )
                     result.orders_loaded += 1
                     _log_file(
-                        session, obj, kind=kind, status="ok",
+                        session, obj, kind=side, status="ok",
                         rows_read=rows_read,
                         rows_written=imported.line_items_added + imported.line_items_updated,
                         message=imported.summary(),
@@ -386,7 +393,7 @@ def run(
             # Its own transaction, so the failure is recorded even though the
             # one that was loading it rolled back.
             with session_scope() as session:
-                _log_file(session, obj, kind=kind, status="error", message=str(exc))
+                _log_file(session, obj, kind=side, status="error", message=str(exc))
             continue
         finally:
             if path and os.path.exists(path):

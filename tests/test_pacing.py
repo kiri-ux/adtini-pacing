@@ -496,3 +496,38 @@ def test_over_delivery_never_asks_for_a_negative_daily_rate():
                       dt.date(2026, 9, 20))
     assert row.remaining < 0
     assert row.daily_needed == 0.0
+
+
+# --- merged CPM products ---------------------------------------------------
+def test_a_merged_cpm_product_prices_each_half_at_its_own_rate():
+    """CTV + Video is sold at one blended CPM and set up as two: the video
+    lines run at the video rate and the CTV lines at the CTV rate."""
+    import ratecard
+
+    assert ratecard.setup_cpm("CTV + Video Ads") == 7.50       # what it sold at
+    assert ratecard.merged_strategy_cpm("CTV + Video Ads", "CTV - Retargeting") == 10.00
+    assert ratecard.merged_strategy_cpm("CTV + Video Ads", "Video - Behavioral") == 5.00
+
+
+def test_amazon_video_and_ctv_splits_the_same_way():
+    import ratecard
+
+    product = "Amazon Premium Video (with Twitch) & OTT Ads"
+    assert ratecard.merged_strategy_cpm(product, "AMZ OTT") == 20.00
+    assert ratecard.merged_strategy_cpm(product, "Amazon Video Retargeting") == 14.00
+
+
+def test_a_name_carrying_both_words_is_the_ctv_half():
+    """A CTV line described as video is still bought as CTV."""
+    import ratecard
+
+    assert ratecard.merged_strategy_cpm("CTV + Video Ads", "OTT Video") == 10.00
+
+
+def test_a_strategy_naming_neither_half_keeps_the_lines_own_rate():
+    """None, so the caller falls back. The card has no business overruling
+    a rate a buyer typed on the strength of a name it did not recognise."""
+    import ratecard
+
+    assert ratecard.merged_strategy_cpm("CTV + Video Ads", "Categories") is None
+    assert ratecard.merged_strategy_cpm("Display Ads", "D - Retargeting") is None

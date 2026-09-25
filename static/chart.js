@@ -353,10 +353,15 @@ function adtiniChart(suffix) {
       item.className = "clegend";
       var swatch = document.createElement("i");
       swatch.style.background = color(index);
+      /* The swatch carries the line's own dash, so the legend says which
+         axis a series is read against without a word for it. */
+      if (onRight(series)) {
+        swatch.className = "dashed";
+        swatch.style.borderTopColor = color(index);
+      }
       item.appendChild(swatch);
       var name = document.createElement("span");
-      name.textContent = onRight(series)
-        ? series.label + " (right)" : series.label;
+      name.textContent = series.label;
       item.appendChild(name);
       host2.appendChild(item);
     });

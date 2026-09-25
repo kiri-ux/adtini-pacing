@@ -261,7 +261,7 @@ def _sweep_running() -> bool:
 
 
 def _start_sweep(force: bool = False, only: str | None = None,
-                 max_mb: float | None = None) -> str:
+                 max_mb: float | None = None, kind: str | None = None) -> str:
     """Kick off an S3 sweep outside this process, and return immediately.
 
     A sweep is minutes of work and hundreds of megabytes. Run inside the web
@@ -286,6 +286,8 @@ def _start_sweep(force: bool = False, only: str | None = None,
         command += ["--only", only]
     elif max_mb:
         command += ["--max-mb", str(max_mb)]
+    if kind:
+        command += ["--kind", kind]
     try:
         # Output is inherited, not discarded, so the sweep's own logging lands
         # in the service log. A sweep that cannot reach the bucket writes no
@@ -1033,6 +1035,11 @@ def data_action():
             force=request.form.get("force") == "on",
             max_mb=float(request.form["max_mb"]) if request.form.get("max_mb") else None,
         )
+    elif action == "reread-orders":
+        # The sold side only. It is minutes, where a forced sweep of
+        # everything is the whole delivery history - gigabytes that say
+        # nothing new about what was sold.
+        message = _start_sweep(force=True, kind=loader.ORDERS)
     elif action == "load-one":
         message = _start_sweep(only=request.form.get("key"), force=True)
     elif action == "upload":

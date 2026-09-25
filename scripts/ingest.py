@@ -42,15 +42,22 @@ def main() -> int:
 
     only = None
     max_bytes = None
+    kind = None
     for i, arg in enumerate(sys.argv):
         if arg == "--only" and i + 1 < len(sys.argv):
             only = sys.argv[i + 1]
         if arg == "--max-mb" and i + 1 < len(sys.argv):
             max_bytes = int(float(sys.argv[i + 1]) * 1_000_000)
+        if arg == "--kind" and i + 1 < len(sys.argv):
+            kind = sys.argv[i + 1]
 
     if only:
         log.info("loading one file: %s", only)
-    result = loader.run(force="--force" in sys.argv, only=only, max_bytes=max_bytes)
+    if kind:
+        log.info("only the %s files", kind)
+    result = loader.run(
+        force="--force" in sys.argv, only=only, max_bytes=max_bytes, kind=kind
+    )
     log.info("sweep finished: %s", result.summary())
     for error in result.errors:
         log.error("%s", error)

@@ -94,6 +94,26 @@ PRODUCT_TO_RATE = {
     "Geo-Framing": "Geo-Framing",
 }
 
+# Products sold at one blended CPM that are set up as two. The line is
+# bought as a single product, but its video lines run at the video rate and
+# its CTV lines at the CTV rate - so costing every strategy under it at one
+# number is wrong for both halves.
+#
+# Keyed by the card entry the product resolves to, and read at the strategy
+# level, where which half a row is is knowable. The line item itself keeps
+# its single card rate, because that is what the budget was struck at.
+MERGED_RATES: dict[str, dict[str, str]] = {
+    "CTV + Video": {"video": "Video", "ctv": "Connected TV"},
+    "Amazon Video": {"video": "Amazon Video", "ctv": "Amazon OTT"},
+    "Amazon OTT": {"video": "Amazon Video", "ctv": "Amazon OTT"},
+}
+
+# What a strategy name has to carry to be one half or the other. CTV first:
+# "CTV + Video" contains both words and is the CTV half of nothing - it is
+# the product, not a strategy - but a strategy named "OTT Video" is CTV.
+CTV_WORDS = ("ctv", "ott", "connected tv", "streaming")
+VIDEO_WORDS = ("video", "pre-roll", "preroll", "instream", "in-stream")
+
 GOAL = re.compile(r"^\s*([\d.]+)\s*%\s*(CTR|VR)\s*$", re.I)
 
 
@@ -202,6 +222,43 @@ def lookup(product: str | None, restricted: bool = False, b2b: bool = False) -> 
     return card().get(name) if name else None
 
 
+def merged_halves(product: str | None) -> dict[str, str] | None:
+    """The two rates a merged-CPM product is actually set up at, or None."""
+    base = rate_name(product)
+    return MERGED_RATES.get(base) if base else None
+
+
+def merged_strategy_cpm(product: str | None, strategy: str | None) -> float | None:
+    """The half of a merged-CPM product this strategy is set up at.
+
+    None for everything else, and for a strategy on a merged product that
+    names neither half - the caller then keeps the line item's own rate,
+    which may be one a buyer typed and is not the card's to overrule.
+    """
+    halves = merged_halves(product)
+    if not halves:
+        return None
+    text = (strategy or "").lower()
+    # CTV wins a name carrying both, because a CTV line described as video
+    # is still bought as CTV.
+    for half, words in (("ctv", CTV_WORDS), ("video", VIDEO_WORDS)):
+        if any(word in text for word in words):
+            entry = card().get(halves[half])
+            if entry:
+                return _pick(entry)
+    return None
+
+
+def _pick(rate: Rate) -> float | None:
+    """AL Starting Max first, then the ceiling, then the middle."""
+    return (
+        rate.al_starting_max_cpm
+        or rate.max_cpm
+        or rate.average_cpm
+        or rate.starting_cpm
+    )
+
+
 def setup_cpm(product: str | None, restricted: bool = False, b2b: bool = False) -> float | None:
     """The rate to pace against when nothing more specific is known.
 
@@ -217,9 +274,4 @@ def setup_cpm(product: str | None, restricted: bool = False, b2b: bool = False) 
     # the margin target of 50% is set against it. Max is the ceiling a
     # campaign may reach, not the rate it is planned at, and pacing on the
     # ceiling reads a campaign as cheaper than it was bought.
-    return (
-        rate.al_starting_max_cpm
-        or rate.max_cpm
-        or rate.average_cpm
-        or rate.starting_cpm
-    )
+    return _pick(rate)

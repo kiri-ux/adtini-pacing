@@ -23,6 +23,7 @@ from models import (
     Order,
     StrategyTerms,
 )
+import ratecard
 import products
 import sheets
 from orderbook import PACEABLE_ORDER_TYPE, line_item_label
@@ -375,7 +376,13 @@ def strategy_series(
 
 @dataclass
 class MonthServe:
-    """One month of an order's delivery, against what it sold for it."""
+    """One month of an order's delivery, against what it sold for it.
+
+    Two figures, because an order can carry both kinds of line. Impressions
+    and dollars were being added into one number and shown under one goal:
+    a month that served 110,700 impressions and spent $19,000 read as
+    110,700 of an impressions goal that had the dollars folded into it.
+    """
 
     label: str
     start: dt.date
@@ -383,16 +390,43 @@ class MonthServe:
     goal: float
     is_money: bool = False
     partial: bool = False
+    # The other kind of line on the same order, kept apart.
+    spent: float = 0.0
+    spend_goal: float = 0.0
 
     @property
     def ratio(self) -> float | None:
         return (self.served / self.goal) if self.goal else None
 
     @property
+    def spend_ratio(self) -> float | None:
+        return (self.spent / self.spend_goal) if self.spend_goal else None
+
+    @property
+    def has_spend(self) -> bool:
+        return bool(self.spent or self.spend_goal)
+
+    @property
     def health(self) -> str:
         if self.ratio is None:
             return "unknown"
         return health(1.0 - self.ratio)
+
+    @property
+    def spend_health(self) -> str:
+        if self.spend_ratio is None:
+            return "unknown"
+        return health(1.0 - self.spend_ratio)
+
+
+def row_metric(row: PacingRow) -> str:
+    """Which delivery figure a row is read in.
+
+    Not the order's. An order carrying Display alongside Performance Max has
+    one line counted in impressions and another in dollars, and reading both
+    off the order's own type shows one of them somebody else's number.
+    """
+    return "cost" if row.is_money else "impressions"
 
 
 def month_serve(view: "OrderView") -> list[MonthServe]:
@@ -402,29 +436,53 @@ def month_serve(view: "OrderView") -> list[MonthServe]:
     are monthly and the conversations are monthly - and reading it off a
     grid of fifty columns is work nobody should have to do.
     """
-    by_month: dict[tuple[int, int], float] = defaultdict(float)
-    attr = view.metric
+    main = view.metric
+    served: dict[tuple[int, int], float] = defaultdict(float)
+    spent: dict[tuple[int, int], float] = defaultdict(float)
+
     for row in view.rows:
+        # A row read in the order's own metric fills the headline; anything
+        # sold the other way is a spend line and gets its own figure.
+        here = served if row_metric(row) == main else spent
         gross = row.client_cost_ratio if row.pacing_type == "event" else 1.0
+        attr = row_metric(row)
         for point in view.daily_by_line_item.get(row.line_item_id, []):
-            by_month[(point.date.year, point.date.month)] += (
+            here[(point.date.year, point.date.month)] += (
                 getattr(point, attr) * gross
             )
-    if not by_month:
+
+    months = sorted(set(served) | set(spent))
+    if not months:
         return []
 
-    goal = sum(r.monthly_target for r in view.rows)
     covers = view.covers_from
     out = []
-    for (year, month) in sorted(by_month):
+    for (year, month) in months:
         start = dt.date(year, month, 1)
+        last = month_bounds(start)[1]
+        # What was sold *for this month* - the lines whose flight covers it.
+        # Summing every line the order ever carried put two Display lines
+        # that finished in May into September's goal, which read as the
+        # month delivering 9% of a target it was never given.
+        goal = spend_goal = 0.0
+        for row in view.rows:
+            if row.start_date and row.start_date > last:
+                continue
+            if row.end_date and row.end_date < start:
+                continue
+            if row_metric(row) == main:
+                goal += row.monthly_target
+            else:
+                spend_goal += row.monthly_target
         out.append(
             MonthServe(
                 label=start.strftime("%b %Y"),
                 start=start,
-                served=by_month[(year, month)],
+                served=served[(year, month)],
                 goal=goal,
-                is_money=view.metric != "impressions",
+                spent=spent[(year, month)],
+                spend_goal=spend_goal,
+                is_money=main != "impressions",
                 # The feed is a rolling window, so the first month it covers
                 # is short by whatever ran before it.
                 partial=bool(covers and covers > start),
@@ -626,8 +684,14 @@ def order_view(
             range_classes[day] = " ".join(tags)
             day += dt.timedelta(days=1)
 
+    # Each row in its own metric. The grid used the order's, so on an order
+    # sold in impressions every spend line showed its impression count in
+    # the money column - a Performance Max day that spent $8.77 read $293.00,
+    # which was its impressions.
     grid = {
-        row.line_item_id: {p.date: getattr(p, attr) for p in row.daily}
+        row.line_item_id: {
+            p.date: getattr(p, row_metric(row)) for p in row.daily
+        }
         for row in rows
         if row.line_item_id is not None
     }
@@ -665,7 +729,7 @@ def order_view(
     for row in rows:
         if row.line_item_id is None or not row.monthly_target:
             continue
-        served = {p.date: getattr(p, attr) for p in row.daily}
+        served = {p.date: getattr(p, row_metric(row)) for p in row.daily}
         for day in grid_dates:
             window = month_window(day, row.start_date, row.end_date) if (
                 row.start_date and row.end_date
@@ -1622,8 +1686,10 @@ class ObservedStrategy:
     # "M - Retargeting" - which is how the buying team writes it; the feed
     # writes "FB - Retargeting Facebook Premium", and both are worth having.
     raw_labels: list[str] = field(default_factory=list)
-    # What it cost, at the product's setup rate.
+    # What it cost, at the rate this strategy is set up at - which is the
+    # product's, except on a merged-CPM product where each half has its own.
     spend: float = 0.0
+    cpm: float | None = None
     days: int = 0
     # Performance, which is the other half of why a buyer opens this tab.
     impressions: float = 0.0
@@ -1965,8 +2031,18 @@ def strategy_blocks(session, view: "OrderView") -> list[StrategyBlock]:
                     sold=key in sold_keys,
                     raw_labels=raw,
                     # Impressions bought at a CPM cost that much; a spend
-                    # product's delivery is already money.
-                    spend=series.total if money else series.total * rate / 1000.0,
+                    # product's delivery is already money. On a merged-CPM
+                    # product - CTV + Video, Amazon Video & CTV - the rate
+                    # is the half this strategy is actually set up at, not
+                    # the blended one the line was bought at.
+                    spend=series.total if money else (
+                        series.total
+                        * (ratecard.merged_strategy_cpm(item.product, label) or rate)
+                        / 1000.0
+                    ),
+                    cpm=None if money else (
+                        ratecard.merged_strategy_cpm(item.product, label) or rate
+                    ),
                     days=len([v for v in series.by_date.values() if v]),
                     clicks=series.clicks,
                     conversions=series.conversions,

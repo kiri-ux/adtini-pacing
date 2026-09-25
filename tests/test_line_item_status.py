@@ -223,3 +223,63 @@ def test_a_line_with_no_goal_is_not_ended_just_for_having_none(site):
     assert row.needs_setup is True
     assert row.days_left > 0
     assert row.state == "running"
+
+
+def test_a_spend_line_is_gridded_in_dollars_on_an_impressions_order(site):
+    """The grid used the order's metric for every row, so a Performance Max
+    day that spent $8.77 showed $293.00 - which was its impressions."""
+    import datetime as dt
+
+    import db as db_module
+    from models import DailyDelivery, LineItem
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        session.add(
+            LineItem(
+                order_id=order_id, external_id="121176",
+                name="Performance Max Ads", product="Performance Max Ads",
+                sort_order=3, status="IO Live", pacing_type="event",
+                start_date=dt.date(2026, 8, 1), end_date=dt.date(2026, 12, 31),
+                client_monthly_budget=1_750.0, client_total_budget=8_750.0,
+            )
+        )
+        session.add(
+            DailyDelivery(
+                date=dt.date(2026, 9, 10),
+                data_source="Google Ads Performance Max",
+                campaign_id="CMP-P", strategy_id="P-1", client_name="Ram Jack",
+                external_order_id="44807", external_line_item_id="121176",
+                product="Performance Max Ads",
+                strategy_name="Google Ads Combined order:", strategy_type="",
+                impressions=293.0, clicks=9.0, cost=8.77, conversions=2.0,
+            )
+        )
+
+    view = _view(order_id)
+    pmax = next(r for r in view.rows if r.label == "Performance Max Ads")
+    smirror = next(r for r in view.rows if r.label == "Social Mirror Ads")
+
+    day = dt.date(2026, 9, 10)
+    assert view.grid[pmax.line_item_id][day] == 8.77, "dollars, not impressions"
+    assert view.grid[smirror.line_item_id][day] == 2_000.0, "impressions"
+
+
+def test_a_months_goal_is_what_was_sold_for_that_month(site):
+    """Two Display lines finished in May. Folding their targets into
+    September's goal read the month as delivering 9% of a target it was
+    never given."""
+    import datetime as dt
+
+    import db as db_module
+    import views
+
+    _, order_id = site
+    with db_module.session_scope() as session:
+        months = views.month_serve(views.order_view(session, order_id))
+
+    sept = next(m for m in months if m.start == dt.date(2026, 9, 1))
+    # Social Mirror only: the Display lines ran March-May and June-December,
+    # and the June one is cancelled but its flight still covers September.
+    assert sept.goal == 66_666 + 75_000
+    assert 175_000 not in (sept.goal, sept.spend_goal), "the spring line is out"

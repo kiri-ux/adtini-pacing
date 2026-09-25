@@ -262,6 +262,10 @@
     <b>{% if m.is_money %}{{ m.served|money(0) }}{% else %}{{ m.served|num }}{% endif %}</b>
     <u>{% if m.goal %}of {% if m.is_money %}{{ m.goal|money(0) }}{% else %}{{ m.goal|num }}{% endif %}
       &middot; <span class="pace {{ m.health }}">{{ m.ratio|pct(0) }}</span>{% else %}no monthly goal{% endif %}</u>
+    {% if m.has_spend %}
+    <u class="mspend">{{ m.spent|money(0) }}{% if m.spend_goal %} of {{ m.spend_goal|money(0) }}
+      &middot; <span class="pace {{ m.spend_health }}">{{ m.spend_ratio|pct(0) }}</span>{% endif %}</u>
+    {% endif %}
   </div>
   {% endfor %}
 </div>
@@ -539,6 +543,16 @@
     {% endif %}
   </div>
 
+  {% if b.sold_names %}
+  <div class="soldnames">
+    <small>Sold</small>
+    {% for name in b.sold_names %}
+    <span class="schip {{ 'off' if name in b.not_running }}">{{ name }}</span>
+    {% endfor %}
+    {% if b.not_running %}<span class="soldnote">{{ b.not_running|length }} not running</span>{% endif %}
+  </div>
+  {% endif %}
+
   {% if b.observed %}
   <div class="scroller">
     <table class="elements stratbreak">
@@ -572,7 +586,7 @@
           <td class="num ro">{{ obs.delivered|metric(b.total) }}</td>
           <td class="num ro">{{ obs.per_day|metric(b.total) }}</td>
           {% if not b.total.is_money %}
-          <td class="num ro">{{ b.rate|money }}</td>
+          <td class="num ro">{{ (obs.cpm or b.rate)|money }}</td>
           <td class="num ro">{{ obs.spend|money }}</td>
           <td class="num ro">{{ obs.spend_per_day|money }}</td>
           {% endif %}
