@@ -224,3 +224,71 @@ def test_the_row_labels_are_pinned(site):
     # Row labels are header cells, so a screen reader announces them too.
     assert re.search(r'<tr class="gridproduct"><th class="pin">', body)
     assert re.search(r'<tr class="gridstrategy"><th class="pin">', body)
+
+
+# --- what a day should have served -----------------------------------------
+def test_the_daily_target_is_the_months_not_the_flights(site):
+    """A flight sells a figure per month, and the grid shows a month.
+
+    Held against the life-of-flight daily figure, a month serving exactly to
+    plan read as doubling its target - 3,280 a day against 1,583 - which is
+    the opposite of what was happening.
+    """
+    import datetime as dt
+
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        view = views.order_view(session, order_id)
+
+    # 100,000 a month over the 30 days of September that the flight covers.
+    september = view.on_pace_by_date[dt.date(2026, 9, 10)]
+    assert round(september) == round(100_000 / 30)
+
+    # August too, on its own 31 days.
+    august = view.on_pace_by_date[dt.date(2026, 8, 10)]
+    assert round(august) == round(100_000 / 31)
+
+    # And not the life-of-flight figure, which is what it used to be.
+    assert round(view.on_pace_daily) != round(september)
+
+
+def test_a_day_that_missed_its_target_is_marked(site):
+    """So an off day is findable without reading fifty columns."""
+    import datetime as dt
+
+    from models import DailyDelivery
+
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        # A day well under, and a day well over.
+        for day, impressions in ((20, 200.0), (21, 9_000.0)):
+            session.add(
+                DailyDelivery(
+                    date=dt.date(2026, 9, day), data_source="Mobile",
+                    campaign_id="C2", strategy_id=f"odd-{day}",
+                    client_name="Peters", external_order_id="51741",
+                    external_line_item_id="122628",
+                    product="Mobile Conquesting Display & Video Ads",
+                    strategy_name="MC - Geo-Fencing", impressions=impressions,
+                )
+            )
+
+    with db_module.session_scope() as session:
+        view = views.order_view(session, order_id)
+        line_item_id = view.rows[0].line_item_id
+        states = view.grid_health[line_item_id]
+
+    # 1,200 against a 3,333 target is under; the doubled day is over.
+    assert states[dt.date(2026, 9, 1)] == "under"
+    assert states[dt.date(2026, 9, 21)] == "over"
+
+    body = app_module.app.test_client().get(f"/orders/{order_id}").get_data(
+        as_text=True
+    )
+    assert "daypill under" in body

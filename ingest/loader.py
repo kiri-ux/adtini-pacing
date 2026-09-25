@@ -170,8 +170,18 @@ def _merge_staging(session) -> int:
     ).scalar() or 0
 
 
-def load_delivery_file(session, path, source_label: str = "upload") -> tuple[int, dict]:
+def load_delivery_file(
+    session,
+    path,
+    source_label: str = "upload",
+    only_order: str | None = None,
+) -> tuple[int, dict]:
     """Read a delivery CSV from disk in chunks and store it.
+
+    `only_order` keeps just the rows carrying that order id. A file uploaded
+    from an order page is uploaded for that order, and a drop that happens to
+    carry the rest of the book should not arrive through a page that says it
+    is about one - the buyer would have no way of knowing it had.
 
     Returns (rows written, a small summary) - never the frame, which is the
     thing that must not be held.
@@ -186,6 +196,8 @@ def load_delivery_file(session, path, source_label: str = "upload") -> tuple[int
     # lose their last digits. Numerics are coerced back in `normalize`.
     for chunk in pd.read_csv(path, dtype=str, low_memory=False, chunksize=CHUNK_ROWS):
         frame = normalize(chunk, aggregate=False)
+        if only_order is not None and not frame.empty:
+            frame = frame[frame["external_order_id"] == only_order]
         if frame.empty:
             continue
         rows_read += len(frame)

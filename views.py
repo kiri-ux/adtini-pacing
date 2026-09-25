@@ -26,7 +26,7 @@ from models import (
 import products
 import sheets
 from orderbook import PACEABLE_ORDER_TYPE, line_item_label
-from pacing.calendar import month_bounds
+from pacing.calendar import inclusive_days, month_bounds, month_window
 from pacing.engine import (
     DailyPoint,
     DeliveryTotals,
@@ -460,6 +460,12 @@ class OrderView:
     grid_dates: list[dt.date] = field(default_factory=list)
     grid: dict[int, dict[dt.date, float]] = field(default_factory=dict)
     on_pace_daily: float = 0.0
+    # What a day should have served, for the month that day falls in. A
+    # flight sells a figure per month, so one number across the whole flight
+    # is the wrong thing to hold a September day against.
+    on_pace_by_date: dict[dt.date, float] = field(default_factory=dict)
+    # Per product, per day: how that day did against that day's target.
+    grid_health: dict[int, dict[dt.date, str]] = field(default_factory=dict)
     covers_from: dt.date | None = None
     strategies: dict[int, list["StrategySeries"]] = field(default_factory=dict)
     metric: str = "impressions"
@@ -618,6 +624,39 @@ def order_view(
         if row.line_item_id is not None
     ]
 
+    # What each day should have served. The daily target is the month's sold
+    # figure over the days of the flight that fall in that month - which is
+    # what the tiles and the month pacing above both work in. Held against
+    # the life-of-flight daily figure instead, a month serving exactly to
+    # plan read as doubling its target.
+    on_pace_by_date: dict[dt.date, float] = {}
+    grid_health: dict[int, dict[dt.date, str]] = defaultdict(dict)
+    for day in grid_dates:
+        window = month_window(day, order.start_date, order.end_date) if (
+            order.start_date and order.end_date
+        ) else None
+        days = inclusive_days(*window) if window else 0
+        on_pace_by_date[day] = (total.monthly_target / days) if days else 0.0
+
+    for row in rows:
+        if row.line_item_id is None or not row.monthly_target:
+            continue
+        served = {p.date: getattr(p, attr) for p in row.daily}
+        for day in grid_dates:
+            window = month_window(day, row.start_date, row.end_date) if (
+                row.start_date and row.end_date
+            ) else None
+            days = inclusive_days(*window) if window else 0
+            if not days:
+                continue
+            target = row.monthly_target / days
+            value = served.get(day)
+            if value is None:
+                continue
+            grid_health[row.line_item_id][day] = health(
+                1.0 - (value / target) if target else None
+            )
+
     # Kept so the linking section does not aggregate the same delivery again.
     daily_by_line_item = {
         row.line_item_id: row.daily for row in rows if row.line_item_id is not None
@@ -648,6 +687,8 @@ def order_view(
         grid_dates=grid_dates,
         grid=grid,
         on_pace_daily=total.daily_target,
+        on_pace_by_date=on_pace_by_date,
+        grid_health=grid_health,
         covers_from=covers_from,
         strategies=strategies,
         metric=attr,

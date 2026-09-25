@@ -585,6 +585,66 @@ def line_item_delete(order_id: int, line_item_id: int):
 
 
 # --------------------------------------------------------------------------
+# Delivery for one order
+# --------------------------------------------------------------------------
+@app.route("/orders/<int:order_id>/delivery", methods=["POST"])
+@login_required
+def order_delivery_upload(order_id: int):
+    """Load a day of delivery for this order, without waiting for a sweep.
+
+    A buyer chasing a number today should not have to wait for tonight's
+    drop, or load the whole book to see one order.
+
+    Only this order's rows are kept. A drop that happens to carry the rest
+    of the book must not arrive through a page that says it is about one -
+    nothing on the page would say it had.
+    """
+    upload = request.files.get("file")
+    if not upload or not upload.filename:
+        flash("Pick a file first.")
+        return redirect(url_for("order_detail", order_id=order_id))
+
+    with session_scope() as db:
+        order = db.get(Order, order_id)
+        if order is None:
+            abort(404)
+        external_id = order.external_order_id
+
+    if not external_id:
+        flash("This order has no order number, so its rows cannot be told apart.")
+        return redirect(url_for("order_detail", order_id=order_id))
+
+    path = _spool(upload)
+    try:
+        with session_scope() as db:
+            written, summary = loader.load_delivery_file(
+                db, path, source_label=f"upload:{upload.filename}",
+                only_order=external_id,
+            )
+        if written:
+            covers = ""
+            if summary.get("min_date") and summary.get("max_date"):
+                covers = (
+                    f" covering {summary['min_date']:%-d %b}"
+                    f" to {summary['max_date']:%-d %b}"
+                )
+            flash(f"Loaded {written:,} days for this order{covers}.")
+        else:
+            flash(
+                f"Nothing in that file carries order {external_id}. "
+                "It may be a drop for other clients."
+            )
+    except Exception as exc:  # the file is whatever someone had to hand
+        app.logger.exception("order delivery upload failed")
+        flash(f"That file could not be read: {exc}")
+    finally:
+        if os.path.exists(path):
+            os.unlink(path)
+
+    return redirect(url_for("order_detail", order_id=order_id))
+
+
+# --------------------------------------------------------------------------
 # The day log
 # --------------------------------------------------------------------------
 @app.route("/orders/<int:order_id>/notes", methods=["POST"])

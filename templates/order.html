@@ -6,7 +6,6 @@
 {% block title %} — {{ v.client.name }}{% endblock %}
 {% block heading %}{{ v.client.name }}{% endblock %}
 {% block headactions %}
-  <span id="logslot"></span>
   <a class="btn-create" href="{{ url_for('export_order', order_id=o.id) }}">&#8595; Export</a>
 {% endblock %}
 
@@ -81,18 +80,7 @@
 
 
 
-{% if months %}
-<div class="months">
-  {% for m in months %}
-  <div class="mtile {{ m.health }}">
-    <small>{{ m.label }}{% if m.partial %} <i title="The feed starts mid-month, so this is short by whatever ran before it">part</i>{% endif %}</small>
-    <b>{% if m.is_money %}{{ m.served|money(0) }}{% else %}{{ m.served|num }}{% endif %}</b>
-    <u>{% if m.goal %}of {% if m.is_money %}{{ m.goal|money(0) }}{% else %}{{ m.goal|num }}{% endif %}
-      &middot; <span class="pace {{ m.health }}">{{ m.ratio|pct(0) }}</span>{% else %}no monthly goal{% endif %}</u>
-  </div>
-  {% endfor %}
-</div>
-{% endif %}
+
 
 <form method="post" action="{{ url_for('order_save', order_id=o.id) }}">
 <div class="tablecard ordercard">
@@ -259,6 +247,31 @@
     {% if linking.unmatched_count %}<i class="tabflag">{{ linking.unmatched_count }} unmatched</i>{% endif %}
   </summary>
   <div class="drawerbody">
+
+{% if months %}
+<div class="months">
+  {% for m in months %}
+  <div class="mtile {{ m.health }}">
+    <small>{{ m.label }}{% if m.partial %} <i title="The feed starts mid-month, so this is short by whatever ran before it">part</i>{% endif %}</small>
+    <b>{% if m.is_money %}{{ m.served|money(0) }}{% else %}{{ m.served|num }}{% endif %}</b>
+    <u>{% if m.goal %}of {% if m.is_money %}{{ m.goal|money(0) }}{% else %}{{ m.goal|num }}{% endif %}
+      &middot; <span class="pace {{ m.health }}">{{ m.ratio|pct(0) }}</span>{% else %}no monthly goal{% endif %}</u>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<form method="post" class="orderupload"
+  action="{{ url_for('order_delivery_upload', order_id=o.id) }}"
+  enctype="multipart/form-data">
+  <div>
+    <b>Load a day for this order</b>
+    <span class="hint">A <code>client-serve</code> CSV, .gz or .zip. Only rows
+      carrying order {{ o.external_order_id or '—' }} are kept.</span>
+  </div>
+  <input type="file" name="file" accept=".csv,.gz,.zip">
+  <button class="btn2 addprod" type="submit">Load</button>
+</form>
 
 <div class="tablecard linkcard">
   <div class="charthead">
@@ -470,7 +483,12 @@
         <tr class="gridproduct"><th class="pin">{{ label }}</th>
           {% for d in v.grid_dates %}
             {% set val = v.grid.get(product_row.line_item_id, {}).get(d) if product_row else None %}
-            <td class="num gcell {{ v.range_classes[d] }} {% if not val %}zero{% endif %}">{{ val|metric(product_row) if val else '—' }}</td>
+            {% set state = v.grid_health.get(product_row.line_item_id, {}).get(d) if product_row else None %}
+            <td class="num gcell {{ v.range_classes[d] }} {% if not val %}zero{% endif %}">
+              {%- if val and state and state != 'on-pace' -%}
+              <span class="daypill {{ state }}">{{ val|metric(product_row) }}</span>
+              {%- elif val -%}{{ val|metric(product_row) }}{%- else -%}&mdash;{%- endif -%}
+            </td>
           {% endfor %}
         </tr>
         {% for sname, by_date in strategies %}
@@ -483,7 +501,7 @@
         {% endfor %}
       {% endfor %}
         <tr class="ontrack"><th class="pin">On pace / day</th>
-          {% for d in v.grid_dates %}<td class="num gcell {{ v.range_classes[d] }}">{{ v.on_pace_daily|num }}</td>{% endfor %}</tr>
+          {% for d in v.grid_dates %}<td class="num gcell {{ v.range_classes[d] }}">{{ v.on_pace_by_date.get(d, v.on_pace_daily)|num }}</td>{% endfor %}</tr>
         {% if notes %}
         {% set by_day = {} %}
         {% for n in notes %}{% if by_day.update({n.date: (by_day.get(n.date, []) + [n])}) %}{% endif %}{% endfor %}
@@ -649,12 +667,13 @@
 </details>
 
 
-{# The day log. A button by the export, and a squat popover under it: it is
-   consulted rarely and written to rarely, and a full-height panel for three
-   fields covered half the page to do it. #}
-<div class="logwrap">
-  <button type="button" id="notebtn" class="btn2 notebtn" aria-expanded="false"
-    aria-controls="daylog">&#9998; Day log{% if notes %}
+{# The day log. A floating button, bottom right, and a squat popover above
+   it: reachable from anywhere on a long page without taking a place in the
+   header, and without a full-height panel covering half the page. #}
+<div class="logwrap floating">
+  <button type="button" id="notebtn" class="notebtn" aria-expanded="false"
+    aria-controls="daylog" title="Day log">
+    <span class="noteicon">&#9998;</span>{% if notes %}
     <span class="notecount">{{ notes|length }}</span>{% endif %}</button>
 
   <div id="daylog" class="daylog" hidden>

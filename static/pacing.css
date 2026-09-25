@@ -507,10 +507,20 @@ tr.gridnotes th.pin,tr.gridnotes td{border-top:2px solid var(--line)}
 
 /* ---- the day log --------------------------------------------------------- */
 .logwrap{position:relative;display:inline-block}
+.logwrap.floating{position:fixed;right:22px;bottom:22px;z-index:60}
 .notebtn{white-space:nowrap}
+.logwrap.floating .notebtn{width:52px;height:52px;border:0;border-radius:50%;
+  background:var(--navy);color:#fff;cursor:pointer;font-size:20px;line-height:1;
+  box-shadow:0 8px 24px rgba(12,24,40,.3);padding:0}
+.logwrap.floating .notebtn:hover{background:var(--rail)}
+.noteicon{display:block}
 .notecount{display:inline-block;margin-left:6px;min-width:18px;height:18px;
   border-radius:999px;background:var(--orange);color:#fff;font-size:10.5px;
   font-weight:700;line-height:18px;padding:0 5px;text-align:center}
+.logwrap.floating .notecount{position:absolute;top:-2px;right:-2px;margin:0;
+  min-width:20px;height:20px;line-height:20px;font-size:11px}
+/* The popover opens upward from a button pinned to the bottom. */
+.logwrap.floating .daylog{top:auto;bottom:calc(100% + 10px)}
 .daylog{position:absolute;right:0;top:calc(100% + 8px);z-index:60;width:380px;
   max-width:92vw;background:var(--card);border:1px solid var(--line);
   border-radius:14px;box-shadow:0 18px 44px rgba(12,24,40,.22);
@@ -574,3 +584,17 @@ button.rangepick{border:0;cursor:pointer;font-family:inherit}
   padding:5px 11px}
 .metricpick button:hover{color:var(--text)}
 .metricpick button.on{background:var(--navy);color:#fff}
+
+/* A manual load for one order's delivery, beside the delivery it loads. */
+.orderupload{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  background:var(--card);border:1px solid var(--line);border-radius:14px;
+  padding:14px 18px;margin-top:14px}
+.orderupload > div{flex:1;min-width:240px}
+.orderupload b{display:block;font-size:13px;color:var(--navy)}
+.orderupload .hint{display:block;font-size:12px;color:var(--muted);line-height:1.5}
+.orderupload input[type=file]{font-size:12.5px;max-width:260px}
+
+/* A day that missed its own target, in the grid. */
+.daypill{display:inline-block;border-radius:999px;padding:2px 7px;font-weight:700}
+.daypill.under{background:#FBE7E6;color:#B3261E}
+.daypill.over{background:#FDF3E7;color:#8A4B06}
