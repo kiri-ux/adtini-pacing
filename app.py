@@ -358,7 +358,11 @@ def _as_of():
 # --------------------------------------------------------------------------
 # Pages
 # --------------------------------------------------------------------------
-PAGE_SIZE = 150
+# Rows per page. Fifty is about a screen and a half of scrolling, and the
+# page a buyer actually works is the top of a sorted list rather than all
+# six hundred of it. Bigger pages are a click away.
+PAGE_SIZE = 50
+PAGE_SIZES = (25, 50, 100, 250)
 
 
 @app.route("/")
@@ -386,10 +390,16 @@ def overview():
             page = max(1, int(request.args.get("page", 1)))
         except ValueError:
             page = 1
+        try:
+            per_page = int(request.args.get("rows", PAGE_SIZE))
+        except ValueError:
+            per_page = PAGE_SIZE
+        if per_page not in PAGE_SIZES:
+            per_page = PAGE_SIZE
         total_rows = len(rows)
-        pages = max(1, -(-total_rows // PAGE_SIZE))
+        pages = max(1, -(-total_rows // per_page))
         page = min(page, pages)
-        window = rows[(page - 1) * PAGE_SIZE : page * PAGE_SIZE]
+        window = rows[(page - 1) * per_page : page * per_page]
 
         return render_template(
             "overview.html",
@@ -398,6 +408,8 @@ def overview():
             total_rows=total_rows,
             page=page,
             pages=pages,
+            per_page=per_page,
+            page_sizes=PAGE_SIZES,
             options=options,
             as_of=as_of,
             args=request.args,

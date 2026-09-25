@@ -123,15 +123,24 @@
  </div>
 </div>
 
-{% if pages > 1 %}
 <div class="pager">
-  <span>{{ (page - 1) * 150 + 1 }}–{{ [page * 150, total_rows]|min }} of {{ total_rows }}</span>
+  {# The window was written out as 150 whatever the page size actually was,
+     so it named rows the page was not showing. #}
+  <span>{{ (page - 1) * per_page + 1 }}&ndash;{{ [page * per_page, total_rows]|min }}
+    of {{ total_rows }}</span>
+  <span class="perpage">Rows
+    {% for size in page_sizes %}
+    <a class="{{ 'on' if size == per_page }}"
+       href="{{ url_for('overview', **dict(args, rows=size, page=1)) }}">{{ size }}</a>
+    {% endfor %}
+  </span>
+  {% if pages > 1 %}
   <span class="arrows">
     {% if page > 1 %}<a href="{{ url_for('overview', **dict(args, page=page-1)) }}">&#8592; Previous</a>{% endif %}
     {% if page < pages %}<a href="{{ url_for('overview', **dict(args, page=page+1)) }}">Next &#8594;</a>{% endif %}
   </span>
+  {% endif %}
 </div>
-{% endif %}
 
 <p class="note">Pacing is what has served against what should have served by
   now, so 100% is on pace and the bar's tick is where it should be. Within

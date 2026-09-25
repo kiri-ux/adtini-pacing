@@ -537,3 +537,10 @@ tr.gridnotes th.pin,tr.gridnotes td{border-top:2px solid var(--line)}
   font-size:16px;line-height:1}
 .dlmeta .x:hover{color:#B3261E}
 @media (max-width:720px){.daylog{width:min(92vw,380px)}}
+
+.pager .perpage{display:inline-flex;align-items:center;gap:4px;font-size:12px;
+  color:var(--muted)}
+.pager .perpage a{padding:3px 8px;border-radius:999px;text-decoration:none;
+  color:var(--muted);font-weight:600}
+.pager .perpage a:hover{color:var(--text);background:var(--fill)}
+.pager .perpage a.on{background:var(--navy);color:#fff}
