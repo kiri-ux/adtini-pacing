@@ -123,3 +123,69 @@ def test_running_the_repair_twice_changes_nothing(url):
     _alembic(url, REPAIR)
 
     assert _rows(url) == once
+
+
+# --- the order's own notes move into the day log ---------------------------
+BEFORE_LOG = "0014_note_line_item"
+
+
+@pytest.fixture()
+def notes_url(tmp_path):
+    handle = f"sqlite:///{tmp_path}/notes.db"
+    _alembic(handle, BEFORE_LOG)
+    engine = create_engine(handle)
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO clients (id, name) VALUES (1, 'Acme')"))
+        conn.execute(
+            text(
+                "INSERT INTO orders (id, client_id, name, pacing_type, active, "
+                "paused, terms_locked, start_date, notes, adjustment_note, "
+                "last_adjusted_on) VALUES "
+                "(1,1,'Both','impression',1,0,0,'2026-08-01',"
+                "  'Client wants heavier Q4','Lowered budget','2026-09-12'),"
+                "(2,1,'Note only','impression',1,0,0,'2026-08-01',"
+                "  'Watch the CTR',NULL,NULL),"
+                "(3,1,'Adjustment only','impression',1,0,0,'2026-08-01',"
+                "  NULL,'Paused for holiday','2026-09-05'),"
+                "(4,1,'Neither','impression',1,0,0,'2026-08-01',NULL,NULL,NULL),"
+                "(5,1,'Blank','impression',1,0,0,'2026-08-01','','','2026-09-01')"
+            )
+        )
+    return handle
+
+
+def _notes(url):
+    engine = create_engine(url)
+    with engine.connect() as conn:
+        return [
+            (r[0], str(r[1]), r[2], r[3])
+            for r in conn.execute(
+                text(
+                    "SELECT order_id, date, body, author FROM day_notes "
+                    "ORDER BY order_id, id"
+                )
+            )
+        ]
+
+
+def test_the_orders_notes_become_dated_log_entries(notes_url):
+    """Somebody typed them, so they are carried across rather than dropped."""
+    _alembic(notes_url, "head")
+    rows = _notes(notes_url)
+
+    assert rows == [
+        # The adjustment first, both on the day it was adjusted.
+        (1, "2026-09-12", "Lowered budget", "from the order"),
+        (1, "2026-09-12", "Client wants heavier Q4", "from the order"),
+        # No adjustment date, so the day the flight started.
+        (2, "2026-08-01", "Watch the CTR", "from the order"),
+        (3, "2026-09-05", "Paused for holiday", "from the order"),
+    ]
+
+
+def test_an_order_with_nothing_written_on_it_gets_no_note(notes_url):
+    """Including the ones holding an empty string rather than a null."""
+    _alembic(notes_url, "head")
+    carried = {row[0] for row in _notes(notes_url)}
+    assert 4 not in carried
+    assert 5 not in carried

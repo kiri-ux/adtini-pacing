@@ -100,16 +100,10 @@
         value="{{ o.end_date.isoformat() if o.end_date else '' }}"></div>
     <div class="f"><label for="buyer">Buyer</label>
       <input id="buyer" type="text" name="buyer" value="{{ o.buyer or '' }}"></div>
-    <div class="f"><label for="last_adjusted_on">Adjusted on</label>
-      <input id="last_adjusted_on" type="date" name="last_adjusted_on"
-        value="{{ o.last_adjusted_on.isoformat() if o.last_adjusted_on else '' }}"></div>
-    <div class="f"><label for="adjustment_note">Adjustment</label>
-      <input id="adjustment_note" type="text" name="adjustment_note"
-        value="{{ o.adjustment_note or '' }}" placeholder="lowered budget"></div>
-    <div class="f wide"><label for="notes">Monthly notes</label>
-      <input id="notes" type="text" name="notes" value="{{ o.notes or '' }}"></div>
-    <div class="f"><label class="pausebox"><input type="checkbox" name="paused"
-      {% if o.paused %}checked{% endif %}> Paused</label></div>
+    {# Status comes from the order data, per product. It was a checkbox
+       nothing read: the pacing never once looked at it. #}
+    <div class="f"><label>Status</label>
+      <span class="statusro">{{ o.status or '—' }}</span></div>
   </div>
 
 {# One table, whatever a product is sold on. "Serve" is impressions on an
@@ -667,9 +661,9 @@
 </details>
 
 
-{# The day log. A floating button, bottom right, and a squat popover above
-   it: reachable from anywhere on a long page without taking a place in the
-   header, and without a full-height panel covering half the page. #}
+{# The day log. A floating button near the top right, and a squat popover
+   under it: reachable from anywhere on a long page without taking a place
+   in the header, and without a full-height panel covering half the page. #}
 <div class="logwrap floating">
   <button type="button" id="notebtn" class="notebtn" aria-expanded="false"
     aria-controls="daylog" title="Day log">

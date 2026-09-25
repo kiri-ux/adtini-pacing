@@ -503,10 +503,9 @@ def order_save(order_id: int):
         order.start_date = as_date("start_date")
         order.end_date = as_date("end_date")
         order.buyer = (form.get("buyer") or "").strip() or None
-        order.notes = (form.get("notes") or "").strip() or None
-        order.paused = form.get("paused") == "on"
-        order.last_adjusted_on = as_date("last_adjusted_on")
-        order.adjustment_note = (form.get("adjustment_note") or "").strip() or None
+        # The monthly note and the adjustment moved to the day log, which
+        # dates and attributes them and keeps more than one. The columns stay
+        # for what they already hold; nothing writes them any more.
         # Saving by hand means these are the buyer's now: the next orders
         # import leaves them alone. Budgets get adjusted mid-flight and the
         # adjustment has to survive.
