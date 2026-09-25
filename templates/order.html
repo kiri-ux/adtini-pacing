@@ -6,6 +6,7 @@
 {% block title %} — {{ v.client.name }}{% endblock %}
 {% block heading %}{{ v.client.name }}{% endblock %}
 {% block headactions %}
+  <span id="logslot"></span>
   <a class="btn-create" href="{{ url_for('export_order', order_id=o.id) }}">&#8595; Export</a>
 {% endblock %}
 
@@ -496,11 +497,15 @@
       <thead><tr>
         <th>Strategy</th>
         <th class="num">Share</th>
-        <th class="num">{{ 'Impr.' if not b.total.is_money else 'Spend' }}</th>
-        <th class="num">Day {{ 'Impr.' if not b.total.is_money else 'Spend' }}</th>
+        <th class="num">{{ 'Spend' if b.total.is_money else 'Impr.' }}</th>
+        <th class="num">Day {{ 'Spend' if b.total.is_money else 'Impr.' }}</th>
+        {# A spend product's serve is already its cost; repeating it under a
+           CPM it does not have said $0.00 three times across. #}
+        {% if not b.total.is_money %}
         <th class="num">CPM</th>
         <th class="num">Cost</th>
         <th class="num">Day Budg.</th>
+        {% endif %}
         <th class="num">Clicks</th>
         <th class="num">CTR</th>
         <th class="num">Conv.</th>
@@ -518,9 +523,11 @@
             {{ obs.share|pct(1) }}</td>
           <td class="num ro">{{ obs.delivered|metric(b.total) }}</td>
           <td class="num ro">{{ obs.per_day|metric(b.total) }}</td>
+          {% if not b.total.is_money %}
           <td class="num ro">{{ b.rate|money }}</td>
           <td class="num ro">{{ obs.spend|money }}</td>
           <td class="num ro">{{ obs.spend_per_day|money }}</td>
+          {% endif %}
           <td class="num ro">{{ obs.clicks|num }}</td>
           <td class="num ro">{{ obs.ctr|pct }}</td>
           <td class="num ro">{{ obs.conversions|num }}</td>
@@ -532,9 +539,11 @@
           <td class="num">100.0%</td>
           <td class="num">{{ b.observed_total|metric(b.total) }}</td>
           <td class="num">{{ b.observed_per_day|metric(b.total) }}</td>
+          {% if not b.total.is_money %}
           <td class="num">{{ b.rate|money }}</td>
           <td class="num">{{ b.observed_spend|money }}</td>
           <td class="num">{{ b.observed_spend_per_day|money }}</td>
+          {% endif %}
           <td class="num">{{ b.observed_clicks|num }}</td>
           <td class="num">{{ b.observed_ctr|pct }}</td>
           <td class="num">{{ b.observed_conversions|num }}</td>
@@ -632,48 +641,56 @@
 </details>
 
 
-{# The day log. A floating button rather than another section, because it is
-   consulted rarely and written to rarely, but has to be reachable from
-   anywhere on a long page. #}
-<button type="button" id="notebtn" class="notebtn" aria-expanded="false"
-  aria-controls="daylog" title="Day log">
-  <span class="noteicon">&#9998;</span>
-  {% if notes %}<span class="notecount">{{ notes|length }}</span>{% endif %}
-</button>
+{# The day log. A button by the export, and a squat popover under it: it is
+   consulted rarely and written to rarely, and a full-height panel for three
+   fields covered half the page to do it. #}
+<div class="logwrap">
+  <button type="button" id="notebtn" class="btn2 notebtn" aria-expanded="false"
+    aria-controls="daylog">&#9998; Day log{% if notes %}
+    <span class="notecount">{{ notes|length }}</span>{% endif %}</button>
 
-<aside id="daylog" class="daylog" hidden>
-  <div class="dlhead">
-    <h3>Day log</h3>
-    <button type="button" class="dlclose" id="noteclose" title="Close">&times;</button>
-  </div>
-
-  <form method="post" action="{{ url_for('note_add', order_id=o.id) }}" class="dlform">
-    <label for="note-date">Day</label>
-    <input type="date" id="note-date" name="date" value="{{ v.as_of.isoformat() }}">
-    <label for="note-body">Note</label>
-    <textarea id="note-body" name="body" rows="3"
-      placeholder="Lowered budget, creative swapped, client paused for the holiday"></textarea>
-    <input type="text" name="author" placeholder="Your name" autocomplete="name">
-    <button class="btn save" type="submit">Save note</button>
-  </form>
-
-  <div class="dllist">
-    {% for n in notes %}
-    <div class="dlnote">
-      <div class="dlmeta"><b>{{ n.date.strftime('%-d %b %Y') }}</b>
-        {% if n.author %}<span class="muted">{{ n.author }}</span>{% endif %}
-        <form method="post" class="inlineform"
-          action="{{ url_for('note_delete', order_id=o.id, note_id=n.id) }}">
-          <button class="x" type="submit" title="Remove">&times;</button>
-        </form>
+  <div id="daylog" class="daylog" hidden>
+    <form method="post" action="{{ url_for('note_add', order_id=o.id) }}" class="dlform">
+      <div class="dlrow">
+        <label for="note-date">Day</label>
+        <input type="date" id="note-date" name="date" value="{{ v.as_of.isoformat() }}">
       </div>
-      <p>{{ n.body }}</p>
+      <div class="dlrow">
+        <label for="note-li">Product</label>
+        <select id="note-li" name="line_item_id">
+          <option value="">Whole order</option>
+          {% for r in v.rows %}
+          <option value="{{ r.line_item_id }}">{{ r.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <textarea id="note-body" name="body" rows="2"
+        placeholder="Lowered budget, creative swapped, client paused for the holiday"></textarea>
+      <div class="dlrow">
+        <input type="text" name="author" placeholder="Your name" autocomplete="name">
+        <button class="btn save" type="submit">Save</button>
+      </div>
+    </form>
+
+    <div class="dllist">
+      {% for n in notes %}
+      <div class="dlnote">
+        <div class="dlmeta"><b>{{ n.date.strftime('%-d %b') }}</b>
+          {% if n.line_item_id %}<span class="dltag">{{ lineitem_names.get(n.line_item_id, '') }}</span>{% endif %}
+          {% if n.author %}<span class="muted">{{ n.author }}</span>{% endif %}
+          <form method="post" class="inlineform"
+            action="{{ url_for('note_delete', order_id=o.id, note_id=n.id) }}">
+            <button class="x" type="submit" title="Remove">&times;</button>
+          </form>
+        </div>
+        <p>{{ n.body }}</p>
+      </div>
+      {% else %}
+      <p class="empty">Nothing logged yet.</p>
+      {% endfor %}
     </div>
-    {% else %}
-    <p class="empty">Nothing logged yet.</p>
-    {% endfor %}
   </div>
-</aside>
+</div>
 
 {% endblock %}
 

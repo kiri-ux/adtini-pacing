@@ -325,6 +325,11 @@ class DayNote(Base):
         ForeignKey("orders.id", ondelete="CASCADE"), index=True
     )
     date: Mapped[dt.date] = mapped_column(Date)
+    # Which product the note is about, when it is about one. Null means the
+    # note is the order's.
+    line_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("line_items.id", ondelete="CASCADE"), index=True
+    )
     body: Mapped[str] = mapped_column(Text)
     author: Mapped[str | None] = mapped_column(String(120))
     created_at: Mapped[dt.datetime] = mapped_column(

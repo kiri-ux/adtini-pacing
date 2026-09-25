@@ -141,6 +141,36 @@ def _delivery_join(session, line_items: list[LineItem]) -> _Join:
     )
 
 
+def _daily_from_strategies(
+    line_items: list[LineItem], strategies: dict[int, list["StrategySeries"]]
+) -> dict[int, list[DailyPoint]]:
+    """A line item's days, added up from the strategies that ran them.
+
+    The two used to be separate aggregates over the same rows, which on the
+    order page meant reading the whole of a client's delivery twice to say
+    the same thing.
+    """
+    out: dict[int, list[DailyPoint]] = {}
+    for item in line_items:
+        totals: dict[dt.date, list[float]] = {}
+        for series in strategies.get(item.id, []):
+            for date, values in series.metrics_by_date.items():
+                bucket = totals.get(date)
+                if bucket is None:
+                    bucket = totals[date] = [0.0, 0.0, 0.0, 0.0]
+                for index in range(4):
+                    bucket[index] += values[index]
+        if totals:
+            out[item.id] = [
+                DailyPoint(
+                    date=date,
+                    impressions=v[0], clicks=v[1], cost=v[2], conversions=v[3],
+                )
+                for date, v in sorted(totals.items())
+            ]
+    return out
+
+
 def _daily_by_line_item(
     session, line_items: list[LineItem]
 ) -> dict[int, list[DailyPoint]]:
@@ -239,6 +269,10 @@ class StrategySeries:
     clicks: float = 0.0
     cost: float = 0.0
     conversions: float = 0.0
+    # Every metric per day, so the order page's per-product daily totals can
+    # be added up from these rather than fetched again by a second query
+    # over the same rows.
+    metrics_by_date: dict[dt.date, list[float]] = field(default_factory=dict)
 
     @property
     def ctr(self) -> float | None:
@@ -320,6 +354,13 @@ def strategy_series(
         series.clicks += metrics["clicks"]
         series.cost += metrics["cost"]
         series.conversions += metrics["conversions"]
+        bucket = series.metrics_by_date.get(date)
+        if bucket is None:
+            bucket = series.metrics_by_date[date] = [0.0, 0.0, 0.0, 0.0]
+        bucket[0] += metrics["impressions"]
+        bucket[1] += metrics["clicks"]
+        bucket[2] += metrics["cost"]
+        bucket[3] += metrics["conversions"]
 
     for key, series in collected.items():
         series.strategy_count = len(seen_ids[key])
@@ -442,7 +483,24 @@ def order_view(
         li for li in sorted(order.line_items, key=lambda li: (li.sort_order, li.id))
         if products.is_paced(li.product)
     ]
-    daily = _daily_by_line_item(session, line_items)
+    # One pass over the delivery, not two. The strategies under a line item
+    # are the same rows as the line item's own days, so adding them up here
+    # costs nothing and saves a second aggregate over the same table.
+    attr = "impressions" if order.pacing_type == "impression" else "cost"
+    strategies: dict[int, list[StrategySeries]] = {}
+    for metric in ("impressions", "cost"):
+        wanted = [
+            li for li in line_items
+            if (
+                "impressions"
+                if (li.pacing_type or order.pacing_type or "impression") == "impression"
+                else "cost"
+            ) == metric
+        ]
+        if wanted:
+            strategies.update(strategy_series(session, wanted, metric=metric))
+
+    daily = _daily_from_strategies(line_items, strategies)
 
     rows = [compute_row(li, order, daily.get(li.id, []), as_of) for li in line_items]
     total = total_row(rows, order.pacing_type)
@@ -462,22 +520,6 @@ def order_view(
             grid_dates.append(day)
             day += dt.timedelta(days=1)
 
-    attr = "impressions" if order.pacing_type == "impression" else "cost"
-    # Per product, not per order: the strategies under a Pay-Per-Click line
-    # are measured in spend, and asking for their impressions - which it has
-    # none of - reported every one of them as having run nothing.
-    strategies: dict[int, list[StrategySeries]] = {}
-    for metric in ("impressions", "cost"):
-        wanted = [
-            li for li in line_items
-            if (
-                "impressions"
-                if (li.pacing_type or order.pacing_type or "impression") == "impression"
-                else "cost"
-            ) == metric
-        ]
-        if wanted:
-            strategies.update(strategy_series(session, wanted, metric=metric))
     grid = {
         row.line_item_id: {p.date: getattr(p, attr) for p in row.daily}
         for row in rows
@@ -1148,6 +1190,12 @@ def campaign_candidates(
         elif (source, campaign) in join.by_link:
             candidate.taken_by = join.by_link[(source, campaign)]
             candidate.taken_how = "link"
+        # A campaign that has never delivered cannot be what a line item is
+        # reading, and the feed carries rollup rows that are not campaigns at
+        # all. Anything already attached stays listed whatever it has served,
+        # so a link is never silently unpickable.
+        if not (candidate.impressions or candidate.cost) and candidate.taken_by is None:
+            continue
         out.append(candidate)
 
     out.sort(key=lambda c: (-c.month_impressions, -c.impressions, c.label))

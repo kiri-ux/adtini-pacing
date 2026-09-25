@@ -602,6 +602,7 @@ def adopt_unmatched_delivery(session) -> AdoptResult:
 class RecomputeResult:
     line_items: int = 0
     cpm_set: int = 0
+    pacing_fixed: int = 0
     totals_rebuilt: int = 0
     totals_cleared: int = 0
     locked_skipped: int = 0
@@ -610,6 +611,7 @@ class RecomputeResult:
         parts = [
             f"{self.line_items} line items checked",
             f"{self.cpm_set} CPMs set from the rate card",
+            f"{self.pacing_fixed} paced on the right thing",
             f"{self.totals_rebuilt} totals rebuilt",
         ]
         if self.totals_cleared:
@@ -662,6 +664,19 @@ def recompute_terms(session) -> RecomputeResult:
             if item.terms_locked:
                 result.locked_skipped += 1
                 continue
+
+            # How a product paces is worked out from the product, not taken
+            # from the file - and it was wrong for every Pay-Per-Click,
+            # LinkedIn and Performance Max line stored before the two
+            # exports' product names were matched properly. Left wrong, a
+            # spend line reads as impression paced and its cost comes out as
+            # impressions times a CPM it does not have, which is zero.
+            kind = pacing_type_for(item.product)
+            order_kind = item.order.pacing_type if item.order else None
+            wanted = kind if kind != order_kind else None
+            if wanted != item.pacing_type:
+                item.pacing_type = wanted
+                result.pacing_fixed += 1
 
             cpm, source = resolve_goal_cpm(
                 item.product, bool(item.restricted), None, item.total_impressions

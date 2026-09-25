@@ -8,29 +8,32 @@
 (function () {
   "use strict";
 
+  var wrap = document.querySelector(".logwrap");
   var panel = document.getElementById("daylog");
   var button = document.getElementById("notebtn");
-  if (panel && button) {
-    var close = document.getElementById("noteclose");
+  if (wrap && panel && button) {
+    // Rendered at the end of the page so it is not inside a form, then moved
+    // up beside Export - the header is a block, and a form cannot be nested
+    // in the one the sold terms already use.
+    var slot = document.getElementById("logslot");
+    if (slot) slot.appendChild(wrap);
 
     function show(open) {
       panel.hidden = !open;
       button.setAttribute("aria-expanded", open ? "true" : "false");
-      document.body.classList.toggle("logopen", open);
       if (open) {
         var body = document.getElementById("note-body");
         if (body) body.focus();
       }
     }
 
-    button.addEventListener("click", function () {
+    button.addEventListener("click", function (event) {
+      event.stopPropagation();
       show(panel.hidden);
     });
-    if (close) {
-      close.addEventListener("click", function () {
-        show(false);
-      });
-    }
+    document.addEventListener("click", function (event) {
+      if (!panel.hidden && !wrap.contains(event.target)) show(false);
+    });
     document.addEventListener("keydown", function (event) {
       if (event.key === "Escape" && !panel.hidden) show(false);
     });

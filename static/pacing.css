@@ -484,9 +484,11 @@ tr.gridstrategy td{color:var(--muted)}
    scrolled grid showed numbers with nothing saying which row they were. */
 table.daily.pinned{border-collapse:separate;border-spacing:0}
 table.daily.pinned th.pin{position:sticky;left:0;z-index:2;text-align:left;
-  background:var(--card);min-width:210px;max-width:210px;overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap;
+  background:var(--card);min-width:230px;max-width:230px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;padding:9px 18px 9px 16px;
   box-shadow:1px 0 0 var(--line)}
+table.daily.pinned td{padding-left:14px;padding-right:14px}
+table.daily.pinned thead th.num{padding-left:14px;padding-right:14px}
 table.daily.pinned thead th.pin{z-index:3;background:var(--navy);color:#fff}
 .gridscroll{overflow-x:auto}
 
@@ -494,47 +496,44 @@ table.daily.pinned thead th.pin{z-index:3;background:var(--navy);color:#fff}
 tr.gridproduct th.pin,tr.gridproduct td{font-weight:700;color:var(--text);
   border-top:2px solid var(--line)}
 tr.gridproduct th.pin{background:#EEF2F7}
-tr.gridstrategy th.pin{padding-left:26px;font-weight:500;color:var(--muted);
+tr.gridstrategy th.pin{padding-left:32px;font-weight:500;color:var(--muted);
   font-size:12px}
 tr.gridstrategy td{color:var(--muted);font-weight:400}
 tr.gridnotes th.pin,tr.gridnotes td{border-top:2px solid var(--line)}
 .notemark{color:var(--orange);font-size:13px;cursor:help}
 
 /* ---- the day log --------------------------------------------------------- */
-.notebtn{position:fixed;right:22px;bottom:22px;z-index:40;width:52px;height:52px;
-  border:0;border-radius:50%;background:var(--navy);color:#fff;cursor:pointer;
-  box-shadow:0 8px 24px rgba(12,24,40,.3);font-size:20px;line-height:1}
-.notebtn:hover{background:var(--rail)}
-.noteicon{display:block}
-.notecount{position:absolute;top:-4px;right:-4px;min-width:20px;height:20px;
-  border-radius:999px;background:var(--orange);color:#fff;font-size:11px;
-  font-weight:700;line-height:20px;padding:0 5px}
-.daylog{position:fixed;right:0;top:0;bottom:0;width:360px;max-width:92vw;z-index:41;
-  background:var(--card);border-left:1px solid var(--line);
-  box-shadow:-16px 0 40px rgba(12,24,40,.18);display:flex;flex-direction:column}
+.logwrap{position:relative;display:inline-block}
+.notebtn{white-space:nowrap}
+.notecount{display:inline-block;margin-left:6px;min-width:18px;height:18px;
+  border-radius:999px;background:var(--orange);color:#fff;font-size:10.5px;
+  font-weight:700;line-height:18px;padding:0 5px;text-align:center}
+.daylog{position:absolute;right:0;top:calc(100% + 8px);z-index:60;width:380px;
+  max-width:92vw;background:var(--card);border:1px solid var(--line);
+  border-radius:14px;box-shadow:0 18px 44px rgba(12,24,40,.22);
+  text-align:left;color:var(--text)}
 .daylog[hidden]{display:none}
-.dlhead{display:flex;align-items:center;padding:16px 18px;
-  border-bottom:1px solid var(--line)}
-.dlhead h3{margin:0;font-size:14px;flex:1}
-.dlclose{background:none;border:0;font-size:22px;line-height:1;cursor:pointer;
-  color:var(--muted)}
-.dlclose:hover{color:var(--text)}
-.dlform{padding:16px 18px;border-bottom:1px solid var(--line);display:grid;gap:8px}
-.dlform label{font-size:11px;font-weight:700;letter-spacing:.05em;
+.dlform{padding:14px;border-bottom:1px solid var(--line);display:grid;gap:8px}
+.dlrow{display:flex;align-items:center;gap:8px}
+.dlrow label{flex:0 0 58px;font-size:11px;font-weight:700;letter-spacing:.05em;
   text-transform:uppercase;color:var(--muted)}
-.dlform input,.dlform textarea{width:100%;background:var(--fill);
-  border:1px solid transparent;border-radius:10px;padding:9px 11px;
-  font-family:inherit;font-size:13px;color:var(--text)}
-.dlform input:focus,.dlform textarea:focus{outline:2px solid var(--blue-lt);
-  outline-offset:-1px;background:var(--card)}
-.dlform .btn{justify-self:end}
-.dllist{flex:1;overflow-y:auto;padding:8px 18px 24px}
-.dlnote{padding:12px 0;border-bottom:1px solid var(--line)}
-.dlnote p{margin:6px 0 0;font-size:13px;line-height:1.5}
-.dlmeta{display:flex;align-items:center;gap:10px;font-size:12px}
+.dlform input,.dlform textarea,.dlform select{flex:1;width:100%;min-width:0;
+  background:var(--fill);border:1px solid transparent;border-radius:9px;
+  padding:8px 10px;font-family:inherit;font-size:13px;color:var(--text)}
+.dlform input:focus,.dlform textarea:focus,.dlform select:focus{
+  outline:2px solid var(--blue-lt);outline-offset:-1px;background:var(--card)}
+.dlform .btn{flex:0 0 auto}
+.dllist{max-height:260px;overflow-y:auto;padding:4px 14px 12px}
+.dlnote{padding:10px 0;border-bottom:1px solid var(--line)}
+.dlnote:last-child{border-bottom:0}
+.dlnote p{margin:5px 0 0;font-size:13px;line-height:1.5}
+.dlmeta{display:flex;align-items:center;gap:8px;font-size:12px}
 .dlmeta .muted{color:var(--muted)}
+.dltag{font-size:10.5px;font-weight:700;background:var(--fill);color:var(--muted);
+  border-radius:6px;padding:2px 6px;max-width:150px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
 .dlmeta .inlineform{padding:0;margin-left:auto}
 .dlmeta .x{background:none;border:0;cursor:pointer;color:var(--muted);
   font-size:16px;line-height:1}
 .dlmeta .x:hover{color:#B3261E}
-@media (max-width:720px){.daylog{width:100%}}
+@media (max-width:720px){.daylog{width:min(92vw,380px)}}

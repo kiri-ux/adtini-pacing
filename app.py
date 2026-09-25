@@ -12,6 +12,7 @@ import logging
 import math
 import os
 import tempfile
+import time
 from pathlib import Path
 
 from flask import (
@@ -583,6 +584,7 @@ def note_add(order_id: int):
     raw_date = (request.form.get("date") or "").strip()
     body = (request.form.get("body") or "").strip()
     author = (request.form.get("author") or "").strip() or None
+    line_item_id = request.form.get("line_item_id", type=int)
 
     if not body:
         flash("Write something first.")
@@ -596,7 +598,19 @@ def note_add(order_id: int):
     with session_scope() as db:
         if db.get(Order, order_id) is None:
             abort(404)
-        db.add(DayNote(order_id=order_id, date=on, body=body, author=author))
+        if line_item_id is not None:
+            item = db.get(LineItem, line_item_id)
+            if item is None or item.order_id != order_id:
+                line_item_id = None
+        db.add(
+            DayNote(
+                order_id=order_id,
+                line_item_id=line_item_id,
+                date=on,
+                body=body,
+                author=author,
+            )
+        )
 
     flash(f"Note saved for {on:%-d %b}.")
     return redirect(url_for("order_detail", order_id=order_id) + "#daylog")
@@ -1107,6 +1121,27 @@ def on_error(error):
         return error
     app.logger.exception("unhandled error on %s", request.path)
     return render_template("error.html", detail=str(error)), 500
+
+
+@app.before_request
+def _mark_start():
+    request._started = time.perf_counter()
+
+
+@app.after_request
+def _server_timing(response):
+    """How long the server actually took, in the browser's own timing panel.
+
+    A page can feel slow for reasons the server never sees - a cold
+    instance, half a CPU, the network - and guessing between those wastes
+    more time than measuring them.
+    """
+    started = getattr(request, "_started", None)
+    if started is not None:
+        response.headers["Server-Timing"] = (
+            f"app;dur={(time.perf_counter() - started) * 1000:.0f}"
+        )
+    return response
 
 
 @app.route("/healthz")

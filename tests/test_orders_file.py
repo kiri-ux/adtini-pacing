@@ -892,3 +892,52 @@ def test_both_exports_spell_the_same_product_differently():
         assert pacing_type_for(name) == "event", name
     for name in ("Display Ads", "Connected TV Ads", "Meta Display & Video Ads"):
         assert pacing_type_for(name) == "impression", name
+
+
+def test_recompute_paces_a_spend_product_on_spend():
+    """Stored line items still pace on whatever the old product match said.
+
+    Every Pay-Per-Click, LinkedIn and Performance Max line stored before the
+    two exports' names were matched properly reads as impression paced. Left
+    that way its cost is computed as impressions times a CPM it does not
+    have - which is zero, three columns across.
+    """
+    import datetime as dt
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from models import Base, Client, LineItem, Order
+    from orderbook import recompute_terms
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        client = Client(name="Peters")
+        session.add(client)
+        session.flush()
+        order = Order(
+            client_id=client.id, name="Peters #51741", pacing_type="impression",
+            start_date=dt.date(2026, 8, 1), end_date=dt.date(2027, 1, 31),
+        )
+        session.add(order)
+        session.flush()
+        session.add_all([
+            LineItem(order_id=order.id, name="PPC", product="Pay-Per-Click Ads"),
+            LineItem(order_id=order.id, name="PMax", product="Performance Max Ads"),
+            LineItem(order_id=order.id, name="MC",
+                     product="Mobile Conquesting Display & Video Ads"),
+        ])
+        session.flush()
+
+        result = recompute_terms(session)
+        kinds = {
+            item.product: item.pacing_type
+            for item in session.query(LineItem).all()
+        }
+
+    assert kinds["Pay-Per-Click Ads"] == "click"
+    assert kinds["Performance Max Ads"] == "event"
+    # The order's own kind is not repeated on every line.
+    assert kinds["Mobile Conquesting Display & Video Ads"] is None
+    assert result.pacing_fixed == 2
