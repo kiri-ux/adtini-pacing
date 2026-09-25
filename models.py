@@ -91,6 +91,9 @@ class Order(Base):
     strategy_terms: Mapped[list["StrategyTerms"]] = relationship(
         back_populates="order", cascade="all, delete-orphan"
     )
+    notes_log: Mapped[list["DayNote"]] = relationship(
+        back_populates="order", cascade="all, delete-orphan"
+    )
 
 
 class LineItem(Base):
@@ -302,6 +305,33 @@ class StrategyTerms(Base):
     added_by_hand: Mapped[bool] = mapped_column(Boolean, default=False)
 
     order: Mapped["Order"] = relationship(back_populates="strategy_terms")
+
+
+class DayNote(Base):
+    """What a buyer did, or saw, on a given day of an order.
+
+    The hand-kept sheets carry a running commentary beside the numbers -
+    "lowered budget", "creative swapped", "client paused for the holiday" -
+    and without it a dip in the grid is unexplainable a month later. Kept
+    per day rather than per order so it lines up with the delivery it
+    explains.
+    """
+
+    __tablename__ = "day_notes"
+    __table_args__ = (Index("ix_day_notes_order_date", "order_id", "date"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(
+        ForeignKey("orders.id", ondelete="CASCADE"), index=True
+    )
+    date: Mapped[dt.date] = mapped_column(Date)
+    body: Mapped[str] = mapped_column(Text)
+    author: Mapped[str | None] = mapped_column(String(120))
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, server_default=func.now()
+    )
+
+    order: Mapped["Order"] = relationship(back_populates="notes_log")
 
 
 class DeliveryStaging(Base):

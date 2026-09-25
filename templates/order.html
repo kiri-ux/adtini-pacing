@@ -419,22 +419,28 @@
 
 {% if v.grid_dates %}
 <details class="qfold dailygrid" open>
-  <summary>Daily delivery — {{ v.grid_dates|length }} days</summary>
-  <div class="scroller">
-    <table class="daily">
-      <thead><tr><th>Campaign Elements</th>
+  <summary>Daily delivery &mdash; {{ v.grid_dates|length }} days</summary>
+  <div class="gridhead">
+    {% for value, name in grid_ranges %}
+    <a class="rangepick {{ 'on' if grid_range == value }}"
+       href="{{ url_for('order_detail', order_id=o.id, grid=value) }}#grid">{{ name }}</a>
+    {% endfor %}
+  </div>
+  <div class="scroller gridscroll" id="grid">
+    <table class="daily pinned">
+      <thead><tr><th class="pin">Campaign Elements</th>
         {% for d in v.grid_dates %}<th class="num">{{ d.strftime('%-d-%b') }}</th>{% endfor %}</tr></thead>
       <tbody>
       {% for label, strategies in v.strategy_grid %}
         {% set product_row = v.rows|selectattr('label', 'equalto', label)|first %}
-        <tr class="gridproduct"><td class="elname">{{ label }}</td>
+        <tr class="gridproduct"><th class="pin">{{ label }}</th>
           {% for d in v.grid_dates %}
             {% set val = v.grid.get(product_row.line_item_id, {}).get(d) if product_row else None %}
             <td class="num {% if not val %}zero{% endif %}">{{ val|metric(product_row) if val else '—' }}</td>
           {% endfor %}
         </tr>
         {% for sname, by_date in strategies %}
-        <tr class="gridstrategy"><td class="elname">{{ sname }}</td>
+        <tr class="gridstrategy"><th class="pin">{{ sname }}</th>
           {% for d in v.grid_dates %}
             {% set val = by_date.get(d) %}
             <td class="num {% if not val %}zero{% endif %}">{{ val|metric(product_row) if val else '—' }}</td>
@@ -442,8 +448,21 @@
         </tr>
         {% endfor %}
       {% endfor %}
-        <tr class="ontrack"><td>On pace / day</td>
+        <tr class="ontrack"><th class="pin">On pace / day</th>
           {% for d in v.grid_dates %}<td class="num">{{ v.on_pace_daily|num }}</td>{% endfor %}</tr>
+        {% if notes %}
+        {% set by_day = {} %}
+        {% for n in notes %}{% if by_day.update({n.date: (by_day.get(n.date, []) + [n])}) %}{% endif %}{% endfor %}
+        <tr class="gridnotes"><th class="pin">Notes</th>
+          {% for d in v.grid_dates %}
+          <td class="num">
+            {%- if by_day.get(d) -%}
+            <span class="notemark" title="{{ by_day[d]|map(attribute='body')|join(' · ') }}">&#9679;</span>
+            {%- else -%}&nbsp;{%- endif -%}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endif %}
       </tbody>
     </table>
   </div>
@@ -612,7 +631,52 @@
   </div>
 </details>
 
+
+{# The day log. A floating button rather than another section, because it is
+   consulted rarely and written to rarely, but has to be reachable from
+   anywhere on a long page. #}
+<button type="button" id="notebtn" class="notebtn" aria-expanded="false"
+  aria-controls="daylog" title="Day log">
+  <span class="noteicon">&#9998;</span>
+  {% if notes %}<span class="notecount">{{ notes|length }}</span>{% endif %}
+</button>
+
+<aside id="daylog" class="daylog" hidden>
+  <div class="dlhead">
+    <h3>Day log</h3>
+    <button type="button" class="dlclose" id="noteclose" title="Close">&times;</button>
+  </div>
+
+  <form method="post" action="{{ url_for('note_add', order_id=o.id) }}" class="dlform">
+    <label for="note-date">Day</label>
+    <input type="date" id="note-date" name="date" value="{{ v.as_of.isoformat() }}">
+    <label for="note-body">Note</label>
+    <textarea id="note-body" name="body" rows="3"
+      placeholder="Lowered budget, creative swapped, client paused for the holiday"></textarea>
+    <input type="text" name="author" placeholder="Your name" autocomplete="name">
+    <button class="btn save" type="submit">Save note</button>
+  </form>
+
+  <div class="dllist">
+    {% for n in notes %}
+    <div class="dlnote">
+      <div class="dlmeta"><b>{{ n.date.strftime('%-d %b %Y') }}</b>
+        {% if n.author %}<span class="muted">{{ n.author }}</span>{% endif %}
+        <form method="post" class="inlineform"
+          action="{{ url_for('note_delete', order_id=o.id, note_id=n.id) }}">
+          <button class="x" type="submit" title="Remove">&times;</button>
+        </form>
+      </div>
+      <p>{{ n.body }}</p>
+    </div>
+    {% else %}
+    <p class="empty">Nothing logged yet.</p>
+    {% endfor %}
+  </div>
+</aside>
+
 {% endblock %}
 
 {% block scripts %}<script src="/static/chart.js" defer></script>
-<script src="/static/linking.js" defer></script>{% endblock %}
+<script src="/static/linking.js" defer></script>
+<script src="/static/daylog.js" defer></script>{% endblock %}

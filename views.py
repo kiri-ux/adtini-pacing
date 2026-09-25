@@ -14,7 +14,15 @@ from dataclasses import dataclass, field
 from sqlalchemy import case, false, func, or_, select, tuple_
 from sqlalchemy.orm import selectinload
 
-from models import CampaignLink, Client, DailyDelivery, LineItem, Order, StrategyTerms
+from models import (
+    CampaignLink,
+    Client,
+    DailyDelivery,
+    DayNote,
+    LineItem,
+    Order,
+    StrategyTerms,
+)
 import products
 import sheets
 from orderbook import PACEABLE_ORDER_TYPE, line_item_label
@@ -357,6 +365,7 @@ class OrderView:
     daily_by_line_item: dict[int, list[DailyPoint]] = field(default_factory=dict)
     # (product label, [(strategy label, {date: value})]) for the daily grid.
     strategy_grid: list = field(default_factory=list)
+    grid_range: str = "month"
     # The rows split by how they pace, order's type first. Impressions and
     # dollars need different columns and cannot share a Total, so an order
     # carrying both gets a table each rather than one table that lies about
@@ -390,7 +399,32 @@ class OrderView:
         return bool(NOT_LAUNCHED_STATUSES & {status} and self.total.to_date)
 
 
-def order_view(session, order_id: int, as_of: dt.date | None = None) -> OrderView | None:
+# How much of the flight the daily grid shows. A year-long flight is
+# hundreds of columns and the interesting ones are always at the end.
+GRID_RANGES = (
+    ("month", "This month"),
+    ("30", "Last 30 days"),
+    ("flight", "Whole flight"),
+)
+
+
+def day_log(session, order_id: int) -> list["DayNote"]:
+    """The running commentary on an order, newest day first."""
+    return list(
+        session.execute(
+            select(DayNote)
+            .where(DayNote.order_id == order_id)
+            .order_by(DayNote.date.desc(), DayNote.id.desc())
+        ).scalars()
+    )
+
+
+def order_view(
+    session,
+    order_id: int,
+    as_of: dt.date | None = None,
+    grid_range: str = "month",
+) -> OrderView | None:
     order = session.execute(
         select(Order)
         .where(Order.id == order_id)
@@ -417,8 +451,14 @@ def order_view(session, order_id: int, as_of: dt.date | None = None) -> OrderVie
     # days actually served - which is the whole point of the hand-kept sheet.
     grid_dates: list[dt.date] = []
     if order.start_date and order.end_date:
-        day = max(order.start_date, covers_from) if covers_from else order.start_date
-        while day <= min(order.end_date, as_of):
+        first = max(order.start_date, covers_from) if covers_from else order.start_date
+        last = min(order.end_date, as_of)
+        if grid_range == "month":
+            first = max(first, month_bounds(as_of)[0])
+        elif grid_range == "30":
+            first = max(first, last - dt.timedelta(days=29))
+        day = first
+        while day <= last:
             grid_dates.append(day)
             day += dt.timedelta(days=1)
 
@@ -495,6 +535,7 @@ def order_view(session, order_id: int, as_of: dt.date | None = None) -> OrderVie
         metric=attr,
         daily_by_line_item=daily_by_line_item,
         strategy_grid=strategy_grid,
+        grid_range=grid_range,
     )
 
 

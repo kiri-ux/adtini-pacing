@@ -41,6 +41,7 @@ from models import (
     CampaignLink,
     Client,
     DailyDelivery,
+    DayNote,
     IngestedFile,
     LineItem,
     Order,
@@ -430,7 +431,12 @@ def _chosen_pacing_type(chosen: str, current: str | None) -> str | None:
 @login_required
 def order_detail(order_id: int):
     with session_scope() as db:
-        view = views.order_view(db, order_id, as_of=_as_of())
+        grid_range = request.args.get("grid") or "month"
+        if grid_range not in dict(views.GRID_RANGES):
+            grid_range = "month"
+        view = views.order_view(
+            db, order_id, as_of=_as_of(), grid_range=grid_range
+        )
         if view is None:
             abort(404)
         return render_template(
@@ -441,6 +447,9 @@ def order_detail(order_id: int):
             product_charts=views.product_charts(view),
             blocks=views.strategy_blocks(db, view),
             pacing_choices=PACING_CHOICES,
+            notes=views.day_log(db, order_id),
+            grid_range=grid_range,
+            grid_ranges=views.GRID_RANGES,
             linking=views.linking_view(
                 db, view.order, as_of=view.as_of,
                 daily=view.daily_by_line_item,
@@ -558,6 +567,49 @@ def line_item_delete(order_id: int, line_item_id: int):
         if item and item.order_id == order_id:
             db.delete(item)
     return redirect(url_for("order_detail", order_id=order_id))
+
+
+# --------------------------------------------------------------------------
+# The day log
+# --------------------------------------------------------------------------
+@app.route("/orders/<int:order_id>/notes", methods=["POST"])
+@login_required
+def note_add(order_id: int):
+    """Write down what happened on a day.
+
+    A dip in the grid is unexplainable a month later without it, and the
+    hand-kept sheets have always carried one.
+    """
+    raw_date = (request.form.get("date") or "").strip()
+    body = (request.form.get("body") or "").strip()
+    author = (request.form.get("author") or "").strip() or None
+
+    if not body:
+        flash("Write something first.")
+        return redirect(url_for("order_detail", order_id=order_id))
+
+    try:
+        on = dt.date.fromisoformat(raw_date) if raw_date else dt.date.today()
+    except ValueError:
+        on = dt.date.today()
+
+    with session_scope() as db:
+        if db.get(Order, order_id) is None:
+            abort(404)
+        db.add(DayNote(order_id=order_id, date=on, body=body, author=author))
+
+    flash(f"Note saved for {on:%-d %b}.")
+    return redirect(url_for("order_detail", order_id=order_id) + "#daylog")
+
+
+@app.route("/orders/<int:order_id>/notes/<int:note_id>/delete", methods=["POST"])
+@login_required
+def note_delete(order_id: int, note_id: int):
+    with session_scope() as db:
+        note = db.get(DayNote, note_id)
+        if note and note.order_id == order_id:
+            db.delete(note)
+    return redirect(url_for("order_detail", order_id=order_id) + "#daylog")
 
 
 # --------------------------------------------------------------------------
@@ -682,7 +734,12 @@ def strategy_seed(order_id: int):
         if item is None or item.order_id != order_id:
             abort(404)
 
-        view = views.order_view(db, order_id, as_of=_as_of())
+        grid_range = request.args.get("grid") or "month"
+        if grid_range not in dict(views.GRID_RANGES):
+            grid_range = "month"
+        view = views.order_view(
+            db, order_id, as_of=_as_of(), grid_range=grid_range
+        )
         if view is None:
             abort(404)
         block = next(
@@ -1013,7 +1070,12 @@ def export_overview():
 @login_required
 def export_order(order_id: int):
     with session_scope() as db:
-        view = views.order_view(db, order_id, as_of=_as_of())
+        grid_range = request.args.get("grid") or "month"
+        if grid_range not in dict(views.GRID_RANGES):
+            grid_range = "month"
+        view = views.order_view(
+            db, order_id, as_of=_as_of(), grid_range=grid_range
+        )
         if view is None:
             abort(404)
         book = exports.order_workbook(view)
