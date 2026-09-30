@@ -448,15 +448,21 @@ def import_orders(session, frame, cache: dict | None = None) -> ImportResult:
         else:
             result.orders_updated += 1
 
-        # Status and type always come from the file - they are the file's to
-        # say, and the pacing rules key off them.
-        order.order_type = row.get("order_type")
+        # Status and type come from the file, but only where the file says
+        # something. There is more than one orders export and they do not
+        # carry the same columns; assigning whatever the row held blanked
+        # the order type of every order the narrower export touched, and an
+        # order with no type is not an Insertion Order, so it dropped off
+        # the pacing page entirely. Same rule as the sold terms: a blank
+        # never replaces a value.
+        order.order_type = row.get("order_type") or order.order_type
         # An export that spells the order's status only once, as the bare
         # "Status" column, has that column read as the line's. Falling back
         # to it keeps those files working exactly as they did.
         order_status = row.get("status") or row.get("item_status")
-        order.status = order_status
-        order.active = not never_ran(order_status)
+        if order_status:
+            order.status = order_status
+            order.active = not never_ran(order_status)
         if row.get("buyer") and not order.buyer:
             order.buyer = row.get("buyer")
 
@@ -514,8 +520,11 @@ def import_orders(session, frame, cache: dict | None = None) -> ImportResult:
         if item.terms_locked:
             result.locked_skipped += 1
         else:
-            item.start_date = row.get("start_date")
-            item.end_date = row.get("end_date")
+            # Its own dates only where the file carries them. An export
+            # without the line-level columns would otherwise clear the
+            # dates a fuller one supplied.
+            item.start_date = row.get("start_date") or item.start_date
+            item.end_date = row.get("end_date") or item.end_date
             _apply_sold_terms(item, row, pacing_type)
 
     session.flush()

@@ -159,7 +159,9 @@
         <td><span class="tag type-{{ 'impression' if f.kind == 'delivery' else 'event' }}">{{ f.kind }}</span></td>
         <td><span class="pace {{ 'on-pace' if f.status == 'ok' else ('over' if f.status == 'loading' else 'under') }}">{{ f.status }}</span>
           {% if f.message %}<span class="rowmsg">{{ f.message[:140] }}</span>{% endif %}
-          {% if f.unmapped_columns %}<span class="rowmsg err">unrecognised: {{ f.unmapped_columns[:140] }}</span>{% endif %}</td>
+          {% if f.unmapped_columns %}<span class="rowmsg err">unrecognised: {{ f.unmapped_columns[:140] }}</span>{% endif %}
+          {% if f.stale_rows %}<span class="rowmsg err">{{ '{:,}'.format(f.stale_rows) }} rows on these days not in this file
+            &middot; {{ '{:,.0f}'.format(f.stale_impressions or 0) }} impressions</span>{% endif %}</td>
         <td class="num">{{ f.rows_written|num if f.rows_written else '—' }}</td>
         <td class="num">{% if f.min_date %}{{ f.min_date.strftime('%-d %b') }} – {{ f.max_date.strftime('%-d %b') }}{% else %}—{% endif %}</td>
         <td class="num">{{ f.ingested_at.strftime('%-d %b %H:%M') if f.ingested_at else '—' }}</td>

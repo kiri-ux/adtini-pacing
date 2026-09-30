@@ -410,4 +410,12 @@ class IngestedFile(Base):
     # on the Data page so a changed export is noticed rather than silently
     # half-read.
     unmapped_columns: Mapped[str | None] = mapped_column(Text)
+    # Rows already stored on a campaign-day this file covers, whose strategy
+    # the file did not mention. A strategy that stops mid-flight can drop out
+    # of later reports rather than reporting zeroes, and the merge replaces
+    # per grain rather than per day - so the old rows stay and the day reads
+    # high by whatever that strategy last served. Counted, never deleted:
+    # the count is what says whether the case is real.
+    stale_rows: Mapped[int | None] = mapped_column(Integer)
+    stale_impressions: Mapped[float | None] = mapped_column(Float)
     ingested_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())

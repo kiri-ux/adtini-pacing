@@ -22,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from sqlalchemy import delete, func, select as sa_select, true as sa_true
+from sqlalchemy import delete, func, literal as sa_literal, select as sa_select, true as sa_true
 
 from db import engine, session_scope
 from ingest import orders as orders_file
@@ -78,6 +78,8 @@ class IngestResult:
     rows_written: int = 0
     delivery_loaded: int = 0
     orders_loaded: int = 0
+    # Rows on a campaign-day a file covered that the file did not mention.
+    stale_rows: int = 0
     order_book: str | None = None
     errors: list[str] = field(default_factory=list)
 
@@ -91,6 +93,8 @@ class IngestResult:
             parts.append(f"{self.files_unknown} unrecognised")
         if self.files_too_big:
             parts.append(f"{self.files_too_big} over the size limit")
+        if self.stale_rows:
+            parts.append(f"{self.stale_rows:,} rows a newer file no longer mentions")
         if self.order_book:
             parts.append(self.order_book)
         if self.errors:
@@ -170,6 +174,43 @@ def _merge_staging(session) -> int:
     ).scalar() or 0
 
 
+def count_stale(session) -> tuple[int, float]:
+    """Rows already stored that this file no longer mentions.
+
+    The merge replaces per grain - (date, source, campaign, strategy) - not
+    per day. A strategy that stops mid-flight and drops out of later reports,
+    rather than reporting zeroes, leaves its rows in place and the day reads
+    high by whatever it last served.
+
+    Scoped to the campaign-days this file actually covers, so a report about
+    one order says nothing about any other. Counted, never deleted: deleting
+    on the strength of a report that may be partial is how real delivery gets
+    wiped, and the count is what says whether the case happens at all.
+
+    Call before the merge, while `daily_delivery` still holds only what was
+    there before this file.
+    """
+    staging = DeliveryStaging.__table__
+    stored = DailyDelivery.__table__
+
+    covers = (
+        sa_select(sa_literal(1))
+        .where(staging.c.date == stored.c.date)
+        .where(staging.c.data_source == stored.c.data_source)
+        .where(staging.c.campaign_id == stored.c.campaign_id)
+        .exists()
+    )
+    mentions = covers.where(staging.c.strategy_id == stored.c.strategy_id)
+
+    row = session.execute(
+        sa_select(
+            func.count(),
+            func.coalesce(func.sum(stored.c.impressions), 0.0),
+        ).where(covers).where(~mentions)
+    ).one()
+    return int(row[0] or 0), float(row[1] or 0.0)
+
+
 def load_delivery_file(
     session,
     path,
@@ -210,11 +251,20 @@ def load_delivery_file(
             session.execute(staging.insert().values(records[start : start + CHUNK]))
         del frame, records
 
+    stale_rows, stale_impressions = count_stale(session)
     written = _merge_staging(session)
     session.execute(delete(DeliveryStaging))
 
     log.info("%s: %s rows -> %s stored", source_label, rows_read, written)
-    return written, {"rows_read": rows_read, "min_date": min_date, "max_date": max_date}
+    if stale_rows:
+        log.warning(
+            "%s: %s rows on campaign-days this file covers are not in it "
+            "(%.0f impressions)", source_label, stale_rows, stale_impressions,
+        )
+    return written, {
+        "rows_read": rows_read, "min_date": min_date, "max_date": max_date,
+        "stale_rows": stale_rows, "stale_impressions": stale_impressions,
+    }
 
 
 def load_bytes(session, raw_csv: bytes, source_label: str = "upload"):
@@ -374,7 +424,10 @@ def run(
                         session, obj, kind=side, status="ok",
                         rows_read=summary["rows_read"], rows_written=written,
                         min_date=summary["min_date"], max_date=summary["max_date"],
+                        stale_rows=summary["stale_rows"],
+                        stale_impressions=summary["stale_impressions"],
                     )
+                    result.stale_rows += summary["stale_rows"]
                 else:
                     imported, summary, rows_read = load_orders_file(
                         session, path, obj.key
@@ -423,6 +476,8 @@ def _log_file(
     min_date: dt.date | None = None,
     max_date: dt.date | None = None,
     unmapped: str | None = None,
+    stale_rows: int | None = None,
+    stale_impressions: float | None = None,
 ) -> None:
     # Looked up in this session rather than carried in: the row read when the
     # sweep started belongs to a transaction that has since closed.
@@ -439,6 +494,8 @@ def _log_file(
     record.rows_written = rows_written
     record.min_date = min_date
     record.max_date = max_date
+    record.stale_rows = stale_rows
+    record.stale_impressions = stale_impressions
     record.ingested_at = dt.datetime.utcnow()
     session.add(record)
     session.flush()

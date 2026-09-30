@@ -1106,3 +1106,57 @@ def test_a_total_the_export_supplies_is_not_overwritten():
     row = PMAX_ROW.replace(",1750.00,,", ",1750.00,9000.00,,")
     with _loaded(normalize(csv(head + "\n" + row))) as session:
         assert session.query(LineItem).one().client_total_budget == 9000.00
+
+
+# --- one export must not blank what another supplied ------------------------
+WIDE_HEAD = (
+    "client,orders_id,product,id,status,orders_status,order_type,"
+    "orders_start_date,orders_end_date,start_date,end_date,"
+    "monthly_campaign_impressions,total_campaign_impressions"
+)
+WIDE_ROW = (
+    "Ram Jack,44807,Display Ads,101789,IO Complete,IO Live,Insertion Order,"
+    "2025-03-01 00:00:00,2026-09-30 00:00:00,"
+    "2025-03-01 00:00:00,2025-05-31 00:00:00,175000,3325000"
+)
+# The same order from an export that carries fewer columns.
+NARROW_HEAD = "client,orders_id,product,id,monthly_campaign_impressions"
+NARROW_ROW = "Ram Jack,44807,Display Ads,101789,175000"
+
+
+def test_a_narrower_export_does_not_blank_the_order_type():
+    """There is more than one orders export and they do not carry the same
+    columns. Assigning whatever the row held blanked the order type of every
+    order the narrower one touched - and an order with no type is not an
+    Insertion Order, so it dropped off the pacing page entirely."""
+    from models import LineItem, Order
+
+    with _loaded(normalize(csv(WIDE_HEAD + "\n" + WIDE_ROW))) as session:
+        from orderbook import import_orders
+
+        assert session.query(Order).one().order_type == "Insertion Order"
+        import_orders(session, normalize(csv(NARROW_HEAD + "\n" + NARROW_ROW)))
+
+        order = session.query(Order).one()
+        assert order.order_type == "Insertion Order"
+        assert order.status == "IO Live"
+        assert order.active is True
+        assert order.end_date == dt.date(2026, 9, 30)
+
+        item = session.query(LineItem).one()
+        assert item.status == "IO Complete"
+        assert item.end_date == dt.date(2025, 5, 31)
+
+
+def test_a_fuller_export_still_updates_what_it_carries():
+    """The guard is against a blank, not against a change."""
+    from models import Order
+    from orderbook import import_orders
+
+    with _loaded(normalize(csv(WIDE_HEAD + "\n" + WIDE_ROW))) as session:
+        changed = WIDE_ROW.replace("IO Live,Insertion Order", "Cancelled,Proposal")
+        import_orders(session, normalize(csv(WIDE_HEAD + "\n" + changed)))
+
+        order = session.query(Order).one()
+        assert order.order_type == "Proposal"
+        assert order.status == "Cancelled"
