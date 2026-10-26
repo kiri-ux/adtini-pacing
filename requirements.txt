@@ -8,3 +8,5 @@ pandas==2.2.3
 openpyxl==3.1.5
 python-dotenv==1.0.1
 pytest==8.3.4
+# Oct 2026 eMudhra intermediate CA compromise: requests/boto3 trust certifi's bundle, not the system store.
+certifi>=2026.10.23
