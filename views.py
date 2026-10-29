@@ -1883,10 +1883,17 @@ def group_by_targeting(
                 clicks=series.clicks,
                 cost=series.cost,
                 conversions=series.conversions,
+                metrics_by_date={
+                    date: list(values) for date, values in series.metrics_by_date.items()
+                },
             )
             continue
         for date, value in series.by_date.items():
             existing.by_date[date] = existing.by_date.get(date, 0.0) + value
+        for date, values in series.metrics_by_date.items():
+            bucket = existing.metrics_by_date.setdefault(date, [0.0, 0.0, 0.0, 0.0])
+            for index in range(4):
+                bucket[index] += values[index]
         existing.total += series.total
         existing.impressions += series.impressions
         existing.clicks += series.clicks

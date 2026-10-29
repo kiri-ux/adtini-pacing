@@ -29,6 +29,7 @@ from flask import (
 from sqlalchemy import func, select
 from werkzeug.exceptions import HTTPException
 
+import details
 import exports
 import products
 import sheets
@@ -47,6 +48,7 @@ from models import (
     LineItem,
     Order,
     StrategyTerms,
+    WeeklyCheck,
 )
 from orderbook import adopt_unmatched_delivery, recompute_terms
 
@@ -355,6 +357,22 @@ def _as_of():
         return dt.date.fromisoformat(raw)
     except ValueError:
         return None
+
+
+def _back(order_id: int, anchor: str = ""):
+    """Back to the page the form was posted from.
+
+    The split and the day log are edited from the order page and from a
+    product's details grid both; a form posted from the grid says which
+    product, and lands back on it.
+    """
+    line_item_id = request.form.get("back_li", type=int)
+    if line_item_id:
+        return redirect(
+            url_for("details_page", order_id=order_id, line_item_id=line_item_id)
+            + anchor
+        )
+    return redirect(url_for("order_detail", order_id=order_id) + anchor)
 
 
 # --------------------------------------------------------------------------
@@ -676,7 +694,7 @@ def note_add(order_id: int):
 
     if not body:
         flash("Write something first.")
-        return redirect(url_for("order_detail", order_id=order_id))
+        return _back(order_id)
 
     try:
         on = dt.date.fromisoformat(raw_date) if raw_date else dt.date.today()
@@ -701,7 +719,7 @@ def note_add(order_id: int):
         )
 
     flash(f"Note saved for {on:%-d %b}.")
-    return redirect(url_for("order_detail", order_id=order_id) + "#daylog")
+    return _back(order_id, "#daylog")
 
 
 @app.route("/orders/<int:order_id>/notes/<int:note_id>/delete", methods=["POST"])
@@ -711,7 +729,7 @@ def note_delete(order_id: int, note_id: int):
         note = db.get(DayNote, note_id)
         if note and note.order_id == order_id:
             db.delete(note)
-    return redirect(url_for("order_detail", order_id=order_id) + "#daylog")
+    return _back(order_id, "#daylog")
 
 
 # --------------------------------------------------------------------------
@@ -755,7 +773,7 @@ def strategies_save(order_id: int):
             term.rate = as_float(prefix + "rate")
 
     flash("Saved.")
-    return redirect(url_for("order_detail", order_id=order_id))
+    return _back(order_id)
 
 
 @app.route("/orders/<int:order_id>/strategies", methods=["POST"])
@@ -775,7 +793,7 @@ def strategy_add(order_id: int):
             abort(404)
         if not label:
             flash("Give the strategy a name.")
-            return redirect(url_for("order_detail", order_id=order_id))
+            return _back(order_id)
 
         # Prefixed with the product's own code, so it reads like the rest and
         # finds its product again on the next page load.
@@ -791,7 +809,7 @@ def strategy_add(order_id: int):
         ).scalar_one_or_none()
         if clash is not None:
             flash(f"{label} is already on this order.")
-            return redirect(url_for("order_detail", order_id=order_id))
+            return _back(order_id)
 
         count = db.execute(
             select(func.count())
@@ -811,7 +829,7 @@ def strategy_add(order_id: int):
         )
 
     flash(f"Added {label}.")
-    return redirect(url_for("order_detail", order_id=order_id))
+    return _back(order_id)
 
 
 @app.route("/orders/<int:order_id>/strategies/seed", methods=["POST"])
@@ -911,7 +929,103 @@ def strategy_delete(order_id: int, strategy_id: int):
         term = db.get(StrategyTerms, strategy_id)
         if term and term.order_id == order_id:
             db.delete(term)
-    return redirect(url_for("order_detail", order_id=order_id))
+    return _back(order_id)
+
+
+# --------------------------------------------------------------------------
+# The details grid, one product at a time
+# --------------------------------------------------------------------------
+@app.route("/orders/<int:order_id>/details/<int:line_item_id>")
+@login_required
+def details_page(order_id: int, line_item_id: int):
+    with session_scope() as db:
+        view = details.details_view(db, order_id, line_item_id, as_of=_as_of())
+        if view is None:
+            abort(404)
+        return render_template(
+            "details.html",
+            d=view,
+            r=view.row,
+            siblings=[
+                (row.line_item_id, row.label)
+                for row in view.view.rows
+                if row.line_item_id is not None
+            ],
+        )
+
+
+@app.route("/orders/<int:order_id>/details/<int:line_item_id>/build", methods=["POST"])
+@login_required
+def details_build(order_id: int, line_item_id: int):
+    """Draft the split the guide has a buyer type by hand."""
+    with session_scope() as db:
+        item = db.get(LineItem, line_item_id)
+        if item is None or item.order_id != order_id:
+            abort(404)
+        kind = item.pacing_type or item.order.pacing_type or "impression"
+        added, source = details.build_split(db, item, money=kind != "impression")
+
+    if source == "existing":
+        flash("Split already exists.")
+    elif not added:
+        flash("No strategies on the order and nothing running.")
+    elif source == "order":
+        flash(f"Built {added} rows from the order.")
+    else:
+        flash(f"Built {added} rows from delivery.")
+    return redirect(
+        url_for("details_page", order_id=order_id, line_item_id=line_item_id)
+    )
+
+
+@app.route("/orders/<int:order_id>/details/<int:line_item_id>/check", methods=["POST"])
+@login_required
+def details_check(order_id: int, line_item_id: int):
+    """Record the weekly check - the Updates sheet row."""
+    form = request.form
+    raw_date = (form.get("checked_on") or "").strip()
+    try:
+        checked_on = dt.date.fromisoformat(raw_date) if raw_date else dt.date.today()
+    except ValueError:
+        checked_on = dt.date.today()
+    tracking = {"yes": True, "no": False}.get(form.get("tracking_conversions") or "")
+
+    with session_scope() as db:
+        view = details.details_view(db, order_id, line_item_id)
+        if view is None:
+            abort(404)
+        details.record_check(
+            db,
+            view,
+            checked_on=checked_on,
+            author=(form.get("author") or "").strip() or None,
+            tracking_conversions=tracking,
+            search_terms_checked=bool(form.get("search_terms_checked")),
+            optimizations=(form.get("optimizations") or "").strip() or None,
+            notes=(form.get("notes") or "").strip() or None,
+        )
+
+    flash(f"Weekly check saved for {checked_on:%-d %b}.")
+    return redirect(
+        url_for("details_page", order_id=order_id, line_item_id=line_item_id)
+        + "#checks"
+    )
+
+
+@app.route(
+    "/orders/<int:order_id>/details/<int:line_item_id>/check/<int:check_id>/delete",
+    methods=["POST"],
+)
+@login_required
+def details_check_delete(order_id: int, line_item_id: int, check_id: int):
+    with session_scope() as db:
+        check = db.get(WeeklyCheck, check_id)
+        if check and check.order_id == order_id:
+            db.delete(check)
+    return redirect(
+        url_for("details_page", order_id=order_id, line_item_id=line_item_id)
+        + "#checks"
+    )
 
 
 # --------------------------------------------------------------------------

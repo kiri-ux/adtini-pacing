@@ -662,3 +662,57 @@ table.elements th.idhead,table.elements td.idcell{width:1%;white-space:nowrap;
   color:var(--text);font-weight:500;text-decoration:none}
 .hchip:hover{border-color:var(--blue);text-decoration:none}
 .hchip i{font-style:normal;color:var(--muted);font-size:12px}
+
+/* ---- details grid: one product, laid out as the Details tab ------------- */
+.dtabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
+.dtab{background:var(--card);border:1px solid var(--line);border-radius:999px;
+  padding:6px 12px;font-size:12.5px;color:var(--navy);text-decoration:none;font-weight:500}
+.dtab.on{background:var(--navy);border-color:var(--navy);color:#fff}
+.sheethead{display:grid;grid-template-columns:2fr repeat(5,minmax(0,1fr));gap:10px;
+  background:var(--card);border-radius:14px;padding:14px 18px;margin-bottom:14px;
+  box-shadow:0 1px 3px rgba(16,40,70,.08)}
+.sheethead small{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
+.sheethead b{font-size:14px;color:var(--navy);font-weight:600}
+.detailcard .charthead{justify-content:space-between}
+table.detailgrid th.pin{min-width:260px;max-width:260px}
+table.detailgrid th.pin input{width:100%;min-width:220px;background:var(--fill);
+  border:1px solid transparent;border-radius:8px;padding:6px 8px;font:inherit;
+  font-weight:500;color:var(--text)}
+table.detailgrid td input{width:90px;background:var(--fill);border:1px solid transparent;
+  border-radius:8px;padding:6px 8px;font:inherit;text-align:right;color:var(--text)}
+table.detailgrid input:focus{outline:2px solid var(--blue-lt);background:var(--card)}
+table.detailgrid td.sep,table.detailgrid th.sep{border-right:2px solid var(--line)}
+table.detailgrid .mstart{border-left:2px solid var(--line)}
+table.detailgrid td.future{background:#FAFBFC}
+table.detailgrid tr.unsoldrow th.pin{color:var(--muted);font-weight:500}
+table.detailgrid tr.totalrow th.pin,table.detailgrid tr.totalrow td{background:var(--fill);
+  font-weight:600;border-top:1px solid var(--line)}
+table.detailgrid tr.cumrow.first th.pin,table.detailgrid tr.cumrow.first td{
+  border-top:2px solid var(--line)}
+table.detailgrid tr.cumrow.target td,table.detailgrid tr.cumrow.target th.pin{color:var(--muted)}
+table.detailgrid .behind{color:#B3261E}
+table.detailgrid .ahead{color:#17603A}
+table.detailgrid tr.clickrow th.pin{padding-left:28px;font-weight:500;color:var(--muted)}
+table.detailgrid td.note{text-align:center}
+.checktiles{padding:14px 18px 0;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.checkform{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 18px;
+  padding:6px 18px 0;align-items:end}
+.checkform .f label{display:block;font-size:11.5px;color:var(--muted);margin-bottom:5px}
+.checkform input[type=date],.checkform input[type=text],.checkform select,.checkform textarea{
+  width:100%;background:var(--fill);border:1px solid transparent;border-radius:10px;
+  padding:10px 12px;font:inherit;font-size:13px;color:var(--text)}
+.checkform .f.wide{grid-column:span 3}
+.checkform .chk{display:inline-flex;align-items:center;gap:7px;font-size:12.5px}
+.checkform .cardfoot{grid-column:span 3;padding:0 0 14px}
+table.checktable td.wrap{white-space:normal;min-width:180px;max-width:320px}
+table.checktable button.x{background:none;border:0;cursor:pointer;color:var(--muted);font-size:16px}
+.noteadd input[type=date]{flex:0 0 170px}
+.noteadd input[type=text]{flex:1 1 auto}
+@media (max-width:760px){
+  .sheethead{grid-template-columns:1fr 1fr}
+  .sheethead .sh-name{grid-column:span 2}
+  .checkform{grid-template-columns:1fr}
+  .checkform .f.wide,.checkform .cardfoot{grid-column:auto}
+}
+a.detlink{color:var(--navy);font-weight:600;text-decoration:none}
+a.detlink:hover{text-decoration:underline}

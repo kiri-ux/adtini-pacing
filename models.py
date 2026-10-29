@@ -345,6 +345,54 @@ class DayNote(Base):
     order: Mapped["Order"] = relationship(back_populates="notes_log")
 
 
+class WeeklyCheck(Base):
+    """One buyer's weekly look at one product, as the Updates sheet records it.
+
+    The Updates sheet is a row per campaign that a buyer overwrites every
+    week - last checked, CTR, served against on pace, what was optimized.
+    Overwriting loses the trend the guide asks buyers to watch ("is the CTR
+    going up or down"), so each check is kept as its own row. The figures are
+    a snapshot of the pacing on the day it was saved, not typed in.
+    """
+
+    __tablename__ = "weekly_checks"
+    __table_args__ = (
+        Index("ix_weekly_checks_line_item", "line_item_id", "checked_on"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(
+        ForeignKey("orders.id", ondelete="CASCADE"), index=True
+    )
+    line_item_id: Mapped[int] = mapped_column(
+        ForeignKey("line_items.id", ondelete="CASCADE")
+    )
+    checked_on: Mapped[dt.date] = mapped_column(Date)
+    # The last day of delivery the figures below run through.
+    data_through: Mapped[dt.date | None] = mapped_column(Date)
+    author: Mapped[str | None] = mapped_column(String(120))
+
+    # Snapshot of the pacing when the check was saved.
+    ctr: Mapped[float | None] = mapped_column(Float)
+    to_date: Mapped[float | None] = mapped_column(Float)
+    on_pace: Mapped[float | None] = mapped_column(Float)
+    pacing_pct: Mapped[float | None] = mapped_column(Float)
+    month_to_date: Mapped[float | None] = mapped_column(Float)
+    month_on_pace: Mapped[float | None] = mapped_column(Float)
+    month_pacing_pct: Mapped[float | None] = mapped_column(Float)
+    conversions: Mapped[float | None] = mapped_column(Float)
+
+    # What the buyer answers.
+    tracking_conversions: Mapped[bool | None] = mapped_column(Boolean)
+    search_terms_checked: Mapped[bool] = mapped_column(Boolean, default=False)
+    optimizations: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, server_default=func.now()
+    )
+
+
 class DeliveryStaging(Base):
     """Landing table for a delivery file, before it is aggregated.
 

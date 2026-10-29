@@ -149,6 +149,28 @@ There is deliberately no daily-target line on that chart. The target is the
 whole order's, and drawing it against a single strategy invites reading that
 strategy as behind when the order is fine.
 
+### The details grid
+
+`/orders/<id>/details/<line item>` is the Details & Updates tab for one
+product, built rather than duplicated and retyped: run dates, months, days, a
+column per day of the flight, a row per strategy with its split, CPM and
+budget, then the monthly and to-date running totals against even pacing (the
+monthly ones start again on the 1st), the day's notes, and a click tracker on
+spend lines.
+
+**Build split** drafts the strategy rows from the strategies the order lists,
+following the setup guide: retargeting takes a flat 10K impressions a month
+and the rest is shared evenly; CTV + Video puts two thirds on the video half
+and a third on CTV, with retargeting on video only. Where the order lists no
+strategies it falls back to apportioning what is running. It never touches a
+product that already has rows.
+
+**Weekly check** is the Updates sheet row. Saving one snapshots CTR, served
+against on pace, and month to date; the buyer adds whether conversions are
+tracked, search terms checked (PPC), optimizations and notes. Checks are kept
+rather than overwritten, so the CTR trend shows, and an optimization lands in
+the grid's notes row on its day.
+
 ---
 
 ## Setting it up on Render
@@ -307,6 +329,7 @@ ratecard.py         setup CPM, goal CTR/VR and partner cost per product
 data/rate_card.csv  the card itself, versioned
 orderbook.py        imports orders; classification and labelling rules
 views.py            read models for the two pages, and the chart series
+details.py          the per-product details grid, split builder, weekly check
 exports.py          XLSX in the same column order as the sheets
 static/chart.js     the per-strategy daily chart
 scripts/ingest.py   the cron entrypoint
