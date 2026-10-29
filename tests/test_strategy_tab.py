@@ -128,8 +128,18 @@ def test_all_three_tabs_render(site):
 
 def test_the_strategy_tab_paces_each_targeting_separately(site):
     """The whole point: a product under-pacing does not say which targeting."""
+    import db as db_module
+    from models import LineItem
+
     app_module, order_id = site
-    page = client_page(app_module, order_id, "strategy")
+    with db_module.session_scope() as session:
+        meta_id = (
+            session.query(LineItem).filter(LineItem.external_id == "88001").one().id
+        )
+    # Each product's own page carries its split.
+    page = app_module.app.test_client().get(
+        f"/orders/{order_id}/details/{meta_id}"
+    ).get_data(as_text=True)
 
     assert "FB - Retargeting" in page
     assert "FB - Categories" in page
@@ -490,10 +500,8 @@ def test_everything_is_on_one_page(site):
 
     for marker in (
         "Campaign Elements",          # what was sold
-        "Line item pacing",
+        "Products",
         "Campaign links",               # which DSP campaign feeds which line
-        "Daily delivery by product",
-        "Strategy breakout",
     ):
         assert marker in body, marker
     assert 'class="tabs"' not in body, "the tab bar is gone"

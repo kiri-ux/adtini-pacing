@@ -15,7 +15,7 @@
     var button = event.target.closest("button[data-scope]");
     if (!button) return;
     var scope = button.dataset.scope;
-    table.classList.remove("show-open", "show-closed");
+    table.classList.remove("show-open", "show-closed", "show-all");
     table.classList.add("show-" + scope);
     tabs.querySelectorAll("button[data-scope]").forEach(function (other) {
       other.classList.toggle("on", other === button);

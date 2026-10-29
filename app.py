@@ -20,6 +20,7 @@ from flask import (
     Response,
     abort,
     flash,
+    make_response,
     redirect,
     render_template,
     request,
@@ -31,6 +32,7 @@ from werkzeug.exceptions import HTTPException
 
 import details
 import exports
+import pagecache
 import products
 import sheets
 import views
@@ -359,6 +361,49 @@ def _as_of():
         return None
 
 
+def cached_page(view):
+    """Serve a GET page from memory until the data under it changes.
+
+    See `pagecache`. Off under tests, which change the database directly
+    between requests and share one process across many databases.
+    """
+    @functools.wraps(view)
+    def wrapped(*args, **kwargs):
+        if app.config.get("TESTING") or flask_session.get("_flashes"):
+            return view(*args, **kwargs)
+        with session_scope() as db:
+            stamp = pagecache.data_stamp(db)
+        page_key = pagecache.key(request.full_path, stamp)
+        body = pagecache.get(page_key)
+        if body is not None:
+            return Response(body, mimetype="text/html")
+        response = make_response(view(*args, **kwargs))
+        if response.status_code == 200 and response.mimetype == "text/html":
+            pagecache.put(page_key, response.get_data())
+        return response
+
+    return wrapped
+
+
+@app.after_request
+def _drop_cache_on_write(response):
+    if request.method == "POST" and response.status_code < 500:
+        pagecache.edited()
+    return response
+
+
+_warmer_started = False
+
+
+@app.before_request
+def _start_warmer():
+    global _warmer_started
+    if _warmer_started or app.config.get("TESTING"):
+        return
+    _warmer_started = True
+    pagecache.start_warmer(app)
+
+
 def _back(order_id: int, anchor: str = ""):
     """Back to the page the form was posted from.
 
@@ -387,6 +432,7 @@ PAGE_SIZES = (25, 50, 100, 250)
 
 @app.route("/")
 @login_required
+@cached_page
 def overview():
     needs = request.args.get("needs")
     with session_scope() as db:
@@ -475,6 +521,7 @@ def _chosen_pacing_type(chosen: str, current: str | None) -> str | None:
 
 @app.route("/orders/<int:order_id>")
 @login_required
+@cached_page
 def order_detail(order_id: int):
     with session_scope() as db:
         grid_range = request.args.get("grid") or "month"
@@ -489,15 +536,8 @@ def order_detail(order_id: int):
             "order.html",
             v=view,
             t=view.total,
-            chart=views.chart_series(view),
-            product_charts=views.product_charts(view),
-            months=views.month_serve(view),
-            performance=views.performance_chart(view),
-            blocks=views.strategy_blocks(db, view),
             pacing_choices=PACING_CHOICES,
             notes=views.day_log(db, order_id),
-            grid_range=grid_range,
-            grid_ranges=views.GRID_RANGES,
             linking=views.linking_view(
                 db, view.order, as_of=view.as_of,
                 daily=view.daily_by_line_item,
@@ -937,6 +977,7 @@ def strategy_delete(order_id: int, strategy_id: int):
 # --------------------------------------------------------------------------
 @app.route("/orders/<int:order_id>/details/<int:line_item_id>")
 @login_required
+@cached_page
 def details_page(order_id: int, line_item_id: int):
     with session_scope() as db:
         view = details.details_view(db, order_id, line_item_id, as_of=_as_of())
@@ -947,9 +988,21 @@ def details_page(order_id: int, line_item_id: int):
             d=view,
             r=view.row,
             siblings=[
-                (row.line_item_id, row.label)
-                for row in view.view.rows
-                if row.line_item_id is not None
+                (
+                    li.id,
+                    " - ".join(
+                        part for part in (
+                            li.external_id if li.external_id
+                            and not li.external_id.startswith("name:") else None,
+                            li.product or li.name,
+                            li.status,
+                        ) if part
+                    ),
+                )
+                for li in sorted(
+                    view.order.line_items, key=lambda li: (li.sort_order, li.id)
+                )
+                if products.is_paced(li.product)
             ],
         )
 
