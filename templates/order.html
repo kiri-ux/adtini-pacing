@@ -227,7 +227,8 @@
         <tr>
           <td><span class="pace {{ 'on-pace' if o.status == 'IO Live' else 'unknown' }}">{{ o.status or '—' }}</span></td>
           <td class="num orderid">{{ r.line_item.external_id if r.line_item and r.line_item.external_id and not r.line_item.external_id.startswith('name:') else '—' }}</td>
-          <td class="clip" title="{{ r.label }}">{{ r.label }}</td>
+          <td class="clip" title="{{ r.label }}">{% if r.line_item_id %}<a class="detlink"
+            href="{{ url_for('details_page', order_id=o.id, line_item_id=r.line_item_id) }}">{{ r.label }}</a>{% else %}{{ r.label }}{% endif %}</td>
           <td class="num pair">{{ r.month_to_date|metric(r) }} <i>/ {{ r.monthly_target|metric(r) }}</i></td>
           <td>{{ meter(r.month_to_date, r.month_on_pace, r.monthly_target,
                        r.month_delivery_ratio, r.month_pacing_pct|paceclass, r.is_money) }}</td>
