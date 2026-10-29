@@ -716,3 +716,28 @@ table.checktable button.x{background:none;border:0;cursor:pointer;color:var(--mu
 }
 a.detlink{color:var(--navy);font-weight:600;text-decoration:none}
 a.detlink:hover{text-decoration:underline}
+
+/* ---- adtini-style order and product headers ------------------------------ */
+.titlebar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 14px;padding-right:72px}
+.titlebar .crumbs{margin:0}
+.statusbadge{display:inline-flex;align-items:center;gap:6px;background:#CFE6FB;
+  color:var(--navy);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:600}
+.statusbadge::before{content:"";width:8px;height:8px;border-radius:50%;background:#5AA9E6}
+.titlebar .asof{color:var(--muted);font-size:12px}
+.infocard{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:16px 18px;
+  background:var(--card);border-radius:14px;padding:16px 18px;margin-bottom:16px;
+  box-shadow:0 1px 3px rgba(16,40,70,.08)}
+.infocard small{display:block;color:var(--muted);font-size:11.5px;margin-bottom:4px}
+.infocard b{font-size:14px;font-weight:600;color:var(--text);overflow-wrap:anywhere}
+.cardhead{display:flex;align-items:center;gap:12px;padding:0 18px 0 18px}
+.cardhead h3{margin:16px 0 14px;font-size:15px;font-weight:600}
+.cardhead .scopetabs{padding:0;margin-left:auto}
+table.elements.show-all tbody tr{display:table-row}
+@media (max-width:900px){.infocard{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.prodpick{display:flex;align-items:center;gap:10px;margin:0 0 14px}
+.prodpick label{font-size:12px;color:var(--muted)}
+.prodpick select{background:var(--card);border:1px solid var(--line);border-radius:10px;
+  padding:8px 12px;font:inherit;font-size:13px;color:var(--text);max-width:100%}
+#splitform{display:none}
+.prodpick select{width:auto;min-width:320px}
+.detailcard .charthead{padding-top:12px;padding-bottom:12px}

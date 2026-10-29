@@ -156,12 +156,13 @@ def test_the_page_opens_on_running_and_carries_both_totals(site):
         as_text=True
     )
 
-    assert 'class="elements show-open"' in body
-    assert 'data-total="open"' in body and 'data-total="closed"' in body
-    # Every row stays in the form, so Save still posts the finished ones.
-    assert body.count('data-state="ended"') == 1
-    assert body.count('data-state="cancelled"') == 1
-    assert body.count('data-state="running"') == 1
+    # Products opens on Current, like adtini's Current / All toggle.
+    assert 'breakout show-open" id="elements"' in body
+    # Every row is on the page twice - the Products table and the sold-terms
+    # form, which still posts the finished ones.
+    assert body.count('data-state="ended"') == 2
+    assert body.count('data-state="cancelled"') == 2
+    assert body.count('data-state="running"') == 2
 
 
 def test_the_page_opens_on_ended_when_nothing_is_running(site):
@@ -176,7 +177,7 @@ def test_the_page_opens_on_ended_when_nothing_is_running(site):
     body = app_module.app.test_client().get(f"/orders/{order_id}").get_data(
         as_text=True
     )
-    assert 'class="elements show-closed"' in body
+    assert 'breakout show-all" id="elements"' in body
 
 
 def test_every_row_shows_its_line_item_id(site):

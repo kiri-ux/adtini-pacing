@@ -4,77 +4,81 @@
 {% set o = v.order %}
 {% set t = v.total %}
 {% block title %} — {{ v.client.name }}{% endblock %}
-{% block heading %}{{ v.client.name }}{% endblock %}
+{% block heading %}Order Details - {{ o.external_order_id or o.id }} - {{ v.client.name }}{% endblock %}
 {% block headactions %}
   <a class="btn-create" href="{{ url_for('export_order', order_id=o.id) }}">&#8595; Export</a>
 {% endblock %}
 
 {% block body %}
-<p class="crumbs"><a href="/">Pacing</a> / <span class="crumbc">{{ o.name }}</span>
-  &middot; paced through {{ v.as_of.strftime('%-d %b %Y') }}
-  {% if o.status %}&middot; {{ o.status }}{% endif %}
-  {% if o.order_type %}&middot; {{ o.order_type }}{% endif %}</p>
-
-{% if v.status_contradicts_delivery %}
-<p class="warnbar">Status is <b>{{ o.status }}</b>, but {{ t.to_date|metric(t) }}
-  has delivered. Either the status is stale in the orders export or this
-  delivery belongs to another order.</p>
-{% endif %}
-
-
-
-<div class="qtiles">
-  {% if t.needs_setup and not t.total_target %}
-  {# Nothing sold has been entered yet, so there is no pace to be on. Show
-     what did run and say plainly what is missing. #}
-  <div class="qtile"><small>Sold terms</small><b class="pace unknown">Not set</b>
-    <u>enter them below to pace this order</u></div>
-  <div class="qtile"><small>Delivered</small>
-    <b>{{ t.impressions|num }}</b><u>impressions, all time in feed</u></div>
-  <div class="qtile"><small>Spend</small>
-    <b>{{ t.cost|money }}</b><u>{{ t.clicks|num }} clicks</u></div>
-  <div class="qtile"><small>Delivered CTR</small><b>{{ t.ctr|pct }}</b></div>
-  <div class="qtile"><small>Effective CPM</small>
-    <b>{{ t.effective_unit_cost|money }}</b></div>
-  {% else %}
-  <div class="qtile"><small>Month pacing</small>
-    <b class="pace {{ v.health }}">{{ t.month_pacing_pct|pct }}</b>
-    <u>{{ t.month_to_date|metric(t) }} of {{ t.month_on_pace|metric(t) }} on pace</u></div>
-  <div class="qtile"><small>Overall pacing</small>
-    <b class="pace {{ t.pacing_pct|paceclass }}">{{ t.pacing_pct|pct }}</b>
-    <u>{{ t.to_date|metric(t) }} of {{ t.total_target|metric(t) }} sold</u></div>
-  <div class="qtile"><small>Left to deliver</small>
-    <b>{{ t.remaining|metric(t) }}</b>
-    <u>{% if t.flight_days %}{{ t.flight_days }} day flight{% else %}no flight dates{% endif %}</u></div>
-  {% if t.goal_metric == 'vr' %}
-  <div class="qtile"><small>Delivered CTR</small>
-    <b>{{ t.ctr|pct }}</b><u>{{ t.clicks|num }} clicks &middot; goal is {{ t.goal_label }}</u></div>
-  {% else %}
-  <div class="qtile"><small>Delivered CTR</small>
-    <b class="{% if t.goal_value %}pace {{ 'on-pace' if (t.ctr or 0) >= t.goal_value else 'under' }}{% endif %}">{{ t.ctr|pct }}</b>
-    <u>{% if t.goal_label %}goal {{ t.goal_label }}{% else %}{{ t.clicks|num }} clicks{% endif %}</u></div>
-  {% endif %}
-  {% if o.pacing_type == 'event' %}
-  <div class="qtile"><small>Client cost</small>
-    <b>{{ t.to_date|money }}</b>
-    <u>of {{ t.total_target|money }} billed &middot;
-      platform spend &times;{{ '%.2f'|format(t.client_cost_ratio) }}
-      {%- if not t.google_total_spend %} (retail default){% endif %}</u></div>
-  {% endif %}
-  <div class="qtile"><small>Setup {{ 'CPM' if o.pacing_type=='impression' else ('CPC' if o.pacing_type=='click' else 'CPE') }}</small>
-    <b>{{ t.unit_cost|money }}</b>
-    <u>{% if t.goal_cpm_source %}from {{ t.goal_cpm_source }}{% else %}not set{% endif %}
-      &middot; running at {{ t.effective_unit_cost|money }}</u></div>
-  {% if t.margin is not none %}
-  <div class="qtile"><small>Margin</small>
-    <b class="pace {{ 'on-pace' if t.margin >= 0.5 else 'under' }}">{{ t.margin|pct(1) }}</b>
-    <u>partner {{ t.partner_hard_cost|money }} &middot; target 50%</u></div>
-  {% endif %}
-  {% endif %}
+<div class="titlebar">
+  <p class="crumbs"><a href="/">Pacing</a> &rsaquo; <span class="crumbc">Order {{ o.external_order_id or o.id }}</span></p>
+  {% if o.status %}<span class="statusbadge">{{ o.status }}</span>{% endif %}
+  <span class="asof">Data through {{ v.as_of.strftime('%-m/%-d/%Y') }}</span>
 </div>
 
+{% if v.status_contradicts_delivery %}
+<p class="warnbar">Status is {{ o.status }}, but {{ t.to_date|metric(t) }} has delivered.</p>
+{% endif %}
 
+<div class="infocard">
+  <div><small>Buyer</small><b>{{ o.buyer or '—' }}</b></div>
+  <div><small>{{ 'Spend' if t.is_money else 'Impressions' }}</small><b>{{ t.total_target|metric(t) if t.total_target else '—' }}</b></div>
+  <div><small>Budget</small><b>{{ t.total_budget|money if t.total_budget else '—' }}</b></div>
+  <div><small>Start Date</small><b>{{ o.start_date.strftime('%-m/%-d/%Y') if o.start_date else '—' }}</b></div>
+  <div><small>End Date</small><b>{{ o.end_date.strftime('%-m/%-d/%Y') if o.end_date else '—' }}</b></div>
+  <div><small>Order Name</small><b>{{ o.name }}</b></div>
+  <div><small>Monthly Pacing</small><b><span class="pace {{ t.month_pacing_pct|paceclass }}">{{ t.month_delivery_ratio|pct }}</span></b></div>
+  <div><small>Total Pacing</small><b><span class="pace {{ t.pacing_pct|paceclass }}">{{ t.delivery_ratio|pct }}</span></b></div>
+  <div><small>Served</small><b>{{ t.to_date|metric(t) }}</b></div>
+  <div><small>Left</small><b>{{ t.remaining|metric(t) if t.total_target else '—' }}</b></div>
+  <div><small>CTR</small><b>{{ t.ctr|pct }}</b></div>
+  <div><small>Market</small><b>{{ v.client.market or '—' }}</b></div>
+</div>
 
+<div class="tablecard">
+  <div class="cardhead">
+    <h3>Products</h3>
+    <div class="scopetabs" id="scopetabs" role="tablist">
+      <button type="button" class="scopetab{% if v.default_scope == 'open' %} on{% endif %}" data-scope="open">Current</button>
+      <button type="button" class="scopetab{% if v.default_scope != 'open' %} on{% endif %}" data-scope="all">All</button>
+    </div>
+  </div>
+  <div class="scroller">
+    <table class="overview elements breakout show-{{ 'open' if v.default_scope == 'open' else 'all' }}" id="elements">
+      <thead><tr>
+        <th>Product ID</th><th>Item Status</th><th>Product</th>
+        <th class="num">Monthly Serve / Goal</th><th class="meterhead">Monthly Pacing</th>
+        <th class="num">Total Serve / Goal</th><th class="meterhead">Total Pacing</th>
+        <th class="num">CTR</th><th>Start Date</th><th>End Date</th>
+      </tr></thead>
+      <tbody>
+      {% for r in v.rows %}
+        {% set ext = r.line_item.external_id if r.line_item and r.line_item.external_id and not r.line_item.external_id.startswith('name:') else none %}
+        <tr data-state="{{ r.state }}">
+          <td class="orderid">{% if r.line_item_id %}<a class="detlink" href="{{ url_for('details_page', order_id=o.id, line_item_id=r.line_item_id) }}">{{ ext or 'Open' }}</a>{% else %}{{ ext or '—' }}{% endif %}</td>
+          <td>{{ r.status or r.state|capitalize }}{% if r.needs_setup %} <span class="setupflag">no goal set</span>{% endif %}</td>
+          {% set pname = (r.line_item.product if r.line_item and r.line_item.product else r.label) %}
+          <td class="clip" title="{{ r.label }}">{% if r.line_item_id %}<a class="detlink" href="{{ url_for('details_page', order_id=o.id, line_item_id=r.line_item_id) }}">{{ pname }}</a>{% else %}{{ pname }}{% endif %}</td>
+          <td class="num pair">{{ r.month_to_date|metric(r) }} <i>/ {{ r.monthly_target|metric(r) }}</i></td>
+          <td>{{ meter(r.month_to_date, r.month_on_pace, r.monthly_target,
+                       r.month_delivery_ratio, r.month_pacing_pct|paceclass, r.is_money) }}</td>
+          <td class="num pair">{{ r.to_date|metric(r) }} <i>/ {{ r.total_target|metric(r) }}</i></td>
+          <td>{{ meter(r.to_date, r.on_pace, r.total_target,
+                       r.delivery_ratio, r.pacing_pct|paceclass, r.is_money) }}</td>
+          <td class="num">{{ r.ctr|pct }}</td>
+          <td class="nowrap">{{ r.start_date.strftime('%-m/%-d/%y') if r.start_date else '—' }}</td>
+          <td class="nowrap">{{ r.end_date.strftime('%-m/%-d/%y') if r.end_date else '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<details class="drawer">
+  <summary><b>Edit sold terms</b>
+    {% if o.terms_locked %}<span class="dsub">edited by hand</span>{% endif %}</summary>
+  <div class="drawerbody">
 
 
 
@@ -109,14 +113,8 @@
 {# Running and finished are two different questions. Every row stays in the
    form so Save still posts the lot; the tabs only change what is shown and
    which Total is read. #}
-<div class="scopetabs" id="scopetabs" role="tablist">
-  <button type="button" class="scopetab{% if v.default_scope == 'open' %} on{% endif %}"
-    data-scope="open">Running <span class="scopen">{{ v.open_rows|length }}</span></button>
-  <button type="button" class="scopetab{% if v.default_scope == 'closed' %} on{% endif %}"
-    data-scope="closed">Ended <span class="scopen">{{ v.closed_rows|length }}</span></button>
-</div>
  <div class="scroller">
-  <table class="elements show-{{ v.default_scope }}" id="elements">
+  <table class="elements">
     <thead>
       <tr><th>Campaign Elements:</th><th class="idhead">Item ID</th>
         <th class="pacehead">Paces on</th>
@@ -163,9 +161,9 @@
     {% endfor %}
       {# Each tab totals what it shows. A total that keeps counting rows the
          reader cannot see is worse than no total. #}
-      {% for scope, tt in (('open', v.open_total or t), ('closed', v.closed_total or t)) %}
-      <tr class="totalrow" data-total="{{ scope }}">
-        <td>{{ 'Running total:' if scope == 'open' else 'Ended total:' }}</td><td></td><td></td>
+      {% set tt = t %}
+      <tr class="totalrow">
+        <td>Total:</td><td></td><td></td>
         <td class="num">{{ tt.monthly_target|metric(tt) }}</td>
         <td class="num">{{ tt.total_target|metric(tt) }}</td>
         <td class="num">{{ tt.daily_target|metric(tt) }}</td>
@@ -178,12 +176,6 @@
         <td class="num"><span class="pace {{ tt.pacing_pct|paceclass }}">{{ tt.pacing_pct|pct }}</span></td>
         <td></td>
       </tr>
-      {% if tt.mixed_types %}
-      <tr class="mixednote" data-total="{{ scope }}"><td colspan="14">Total covers the
-        {{ pacing_choices|selectattr('0', 'equalto', o.pacing_type)|map(attribute=1)|first|default('impression')|lower }}
-        lines. Products sold another way are listed above but not added in.</td></tr>
-      {% endif %}
-      {% endfor %}
     </tbody>
   </table>
  </div>
@@ -206,188 +198,25 @@
   <button class="btn2 addprod" type="submit">&#43; Add row</button>
 </form>
 
-
-<div class="tablecard breakoutcard">
-  <div class="charthead">
-    <h3>Line item pacing</h3>
-    <span class="hint">Each product on the order against what it should have
-      served by now. 100% is on pace; the tick on the bar is the target.</span>
+<form method="post" class="orderupload"
+  action="{{ url_for('order_delivery_upload', order_id=o.id) }}"
+  enctype="multipart/form-data">
+  <div><b>Load a day for this order</b>
+    <span class="hint">client-serve CSV, .gz or .zip</span></div>
+  <input type="file" name="file" accept=".csv,.gz,.zip">
+  <button class="btn2 addprod" type="submit">Load</button>
+</form>
   </div>
-  <div class="scroller">
-    <table class="overview breakout">
-      <thead><tr>
-        <th>Status</th><th>Line Item ID</th><th>Product</th>
-        <th class="num">Monthly Serve / Goal</th><th class="meterhead">Monthly Pacing</th>
-        <th class="num">Total Serve / Goal</th><th class="meterhead">Total Pacing</th>
-        <th class="num">Avg Daily / Needed</th><th class="num">Clicks</th>
-        <th class="num">CTR</th><th class="num">Conv</th><th class="num">Days Left</th>
-      </tr></thead>
-      <tbody>
-      {% for r in v.rows %}
-        <tr>
-          <td><span class="pace {{ 'on-pace' if o.status == 'IO Live' else 'unknown' }}">{{ o.status or '—' }}</span></td>
-          <td class="num orderid">{{ r.line_item.external_id if r.line_item and r.line_item.external_id and not r.line_item.external_id.startswith('name:') else '—' }}</td>
-          <td class="clip" title="{{ r.label }}">{% if r.line_item_id %}<a class="detlink"
-            href="{{ url_for('details_page', order_id=o.id, line_item_id=r.line_item_id) }}">{{ r.label }}</a>{% else %}{{ r.label }}{% endif %}</td>
-          <td class="num pair">{{ r.month_to_date|metric(r) }} <i>/ {{ r.monthly_target|metric(r) }}</i></td>
-          <td>{{ meter(r.month_to_date, r.month_on_pace, r.monthly_target,
-                       r.month_delivery_ratio, r.month_pacing_pct|paceclass, r.is_money) }}</td>
-          <td class="num pair">{{ r.to_date|metric(r) }} <i>/ {{ r.total_target|metric(r) }}</i></td>
-          <td>{{ meter(r.to_date, r.on_pace, r.total_target,
-                       r.delivery_ratio, r.pacing_pct|paceclass, r.is_money) }}</td>
-          <td class="num pair">{{ r.avg_daily|metric(r) }} <i>/ {{ r.daily_needed|metric(r) }}</i></td>
-          <td class="num">{{ r.clicks|num }}</td>
-          <td class="num">{{ r.ctr|pct }}</td>
-          <td class="num">{{ r.conversions|num }}</td>
-          <td class="num">{{ r.days_left if r.flight_days else '—' }}</td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  </div>
+</details>
 
-
-<details class="drawer" open>
-  <summary><b>Product delivery</b>
-    <span class="dsub">which campaign each product is reading, and what ran per day</span>
+<details class="drawer linkcard"{% if linking.unmatched_count %} open{% endif %}>
+  <summary><b>Campaign links</b>
     {% if linking.unmatched_count %}<i class="tabflag">{{ linking.unmatched_count }} unmatched</i>{% endif %}
   </summary>
   <div class="drawerbody">
 
-{% if months %}
-<div class="months">
-  {% for m in months %}
-  <div class="mtile {{ m.health }}">
-    <small>{{ m.label }}{% if m.partial %} <i title="The feed starts mid-month, so this is short by whatever ran before it">part</i>{% endif %}</small>
-    <b>{% if m.is_money %}{{ m.served|money(0) }}{% else %}{{ m.served|num }}{% endif %}</b>
-    <u>{% if m.goal %}of {% if m.is_money %}{{ m.goal|money(0) }}{% else %}{{ m.goal|num }}{% endif %}
-      &middot; <span class="pace {{ m.health }}">{{ m.ratio|pct(0) }}</span>{% else %}no monthly goal{% endif %}</u>
-    {% if m.has_spend %}
-    <u class="mspend">{{ m.spent|money(0) }}{% if m.spend_goal %} of {{ m.spend_goal|money(0) }}
-      &middot; <span class="pace {{ m.spend_health }}">{{ m.spend_ratio|pct(0) }}</span>{% endif %}</u>
-    {% endif %}
-  </div>
-  {% endfor %}
-</div>
-{% endif %}
-
-<form method="post" class="orderupload"
-  action="{{ url_for('order_delivery_upload', order_id=o.id) }}"
-  enctype="multipart/form-data">
-  <div>
-    <b>Load a day for this order</b>
-    <span class="hint">A <code>client-serve</code> CSV, .gz or .zip. Only rows
-      carrying order {{ o.external_order_id or '—' }} are kept.</span>
-  </div>
-  <input type="file" name="file" accept=".csv,.gz,.zip">
-  <button class="btn2 addprod" type="submit">Load</button>
-</form>
-
-
-
-{% if performance.dates %}
-<div class="tablecard chartcard">
-  <div class="charthead">
-    <h3>Performance over time</h3>
-    <span class="hint">Clicks and conversions on the left, CTR on the right.</span>
-  </div>
-  <div id="chartlegend-perf" class="clegends"></div>
-  <div id="strategychart-perf" class="chartbox"></div>
-  <script type="application/json" id="chartdata-perf">{{ performance|tojson }}</script>
-</div>
-{% endif %}
-
-{% for c in product_charts %}
-<div class="tablecard chartcard">
-  <div class="charthead">
-    <h3>Daily delivery by product{% if product_charts|length > 1 %} &middot; {{ c.label }}{% endif %}</h3>
-    <span class="hint">{{ c.unit }}. Hover for every product on a day.</span>
-  </div>
-  <div id="chartlegend-{{ loop.index }}" class="clegends"></div>
-  <div id="strategychart-{{ loop.index }}" class="chartbox"></div>
-  {# The chart reads its data from here rather than from inline script, so
-     product names - which arrive from the feed - are never concatenated into
-     executable JavaScript. #}
-  <script type="application/json" id="chartdata-{{ loop.index }}">{{ c|tojson }}</script>
-</div>
-{% endfor %}
-
-{% if v.grid_dates %}
-<details class="qfold dailygrid" open>
-  <summary>Daily delivery &mdash; <span id="griddays">{{ v.month_days }}</span> days</summary>
-  <div class="gridhead">
-    {# Buttons, not links. The table carries the whole flight and each column
-       knows which ranges it belongs to, so switching hides columns instead of
-       fetching the page again. #}
-    {% for value, name in grid_ranges %}
-    <button type="button" class="rangepick {{ 'on' if grid_range == value }}"
-      data-range="{{ value }}">{{ name }}</button>
-    {% endfor %}
-  </div>
-  <div class="scroller gridscroll range-{{ grid_range }}" id="grid">
-    <table class="daily pinned">
-      <thead><tr><th class="pin">Campaign Elements</th>
-        {% for d in v.grid_dates %}<th class="num gcell {{ v.range_classes[d] }}">{{ d.strftime('%-d-%b') }}</th>{% endfor %}</tr></thead>
-      <tbody>
-      {% for label, strategies in v.strategy_grid %}
-        {% set product_row = v.rows|selectattr('label', 'equalto', label)|first %}
-        <tr class="gridproduct"><th class="pin">{{ label }}</th>
-          {% for d in v.grid_dates %}
-            {% set val = v.grid.get(product_row.line_item_id, {}).get(d) if product_row else None %}
-            {% set state = v.grid_health.get(product_row.line_item_id, {}).get(d) if product_row else None %}
-            <td class="num gcell {{ v.range_classes[d] }} {% if not val %}zero{% endif %}">
-              {%- if val and state and state != 'on-pace' -%}
-              <span class="daypill {{ state }}">{{ val|metric(product_row) }}</span>
-              {%- elif val -%}{{ val|metric(product_row) }}{%- else -%}&mdash;{%- endif -%}
-            </td>
-          {% endfor %}
-        </tr>
-        {% for sname, by_date in strategies %}
-        <tr class="gridstrategy"><th class="pin">{{ sname }}</th>
-          {% for d in v.grid_dates %}
-            {% set val = by_date.get(d) %}
-            <td class="num gcell {{ v.range_classes[d] }} {% if not val %}zero{% endif %}">{{ val|metric(product_row) if val else '—' }}</td>
-          {% endfor %}
-        </tr>
-        {% endfor %}
-      {% endfor %}
-        <tr class="ontrack"><th class="pin">On pace / day</th>
-          {% for d in v.grid_dates %}<td class="num gcell {{ v.range_classes[d] }}">{{ v.on_pace_by_date.get(d, v.on_pace_daily)|num }}</td>{% endfor %}</tr>
-        {% if notes %}
-        {% set by_day = {} %}
-        {% for n in notes %}{% if by_day.update({n.date: (by_day.get(n.date, []) + [n])}) %}{% endif %}{% endfor %}
-        <tr class="gridnotes"><th class="pin">Notes</th>
-          {% for d in v.grid_dates %}
-          <td class="num gcell {{ v.range_classes[d] }}">
-            {%- if by_day.get(d) -%}
-            <span class="notemark" title="{{ by_day[d]|map(attribute='body')|join(' · ') }}">&#9679;</span>
-            {%- else -%}&nbsp;{%- endif -%}
-          </td>
-          {% endfor %}
-        </tr>
-        {% endif %}
-      </tbody>
-    </table>
-  </div>
-</details>
-{% endif %}
-
-
-<details class="tablecard linkcard">
-  <summary class="charthead">
-    <h3>Campaign links</h3>
-    <span class="hint">Which DSP campaign each line item is reading. Most
-      match on their line item id and need nothing. A row reading
-      <b>Not matched</b> is serving somewhere the tool cannot see, and its
-      pacing above is wrong until a campaign is attached to it.</span>
-    {% if linking.unmatched_count %}<i class="tabflag">{{ linking.unmatched_count }} unmatched</i>{% endif %}
-  </summary>
-
   {% if linking.unmatched_count %}
-  <p class="linkwarn">{{ linking.unmatched_count }} line
-    item{{ '' if linking.unmatched_count == 1 else 's' }} with no delivery
-    reaching {{ 'it' if linking.unmatched_count == 1 else 'them' }}.</p>
+  <p class="linkwarn">{{ linking.unmatched_count }} with no delivery</p>
   {% endif %}
 
   <div class="scroller">
@@ -453,6 +282,7 @@
       </tbody>
     </table>
   </div>
+  </div>
 </details>
 
 <dialog id="linkdlg" class="linkdlg">
@@ -460,13 +290,6 @@
     <input type="hidden" name="line_item_id" id="dlg-li">
     <div class="dlghead">
       <h3>Link campaigns</h3>
-      <p class="hint">Pick every DSP campaign this line item was bought on -
-        a Meta line split across an impressions campaign and a leads one needs
-        both. Unticking one removes it. A campaign belongs to one line item,
-        so choosing one already linked elsewhere moves it here.</p>
-      <p class="hint">Listed are the campaigns filed under this client, under
-        this order's number, or named for it. A campaign filed under a
-        differently spelled client and named for no order will not be here.</p>
       <p class="dlgfor">Line item: <b id="dlg-label"></b></p>
     </div>
 
@@ -505,9 +328,7 @@
         </tbody>
       </table>
       {% else %}
-      <p class="empty">No campaigns in the feed for this client yet. The feed
-        covers a rolling window, so a campaign that stopped before it starts
-        will not be here.</p>
+      <p class="empty">No campaigns in the feed for this client.</p>
       {% endif %}
     </div>
 
@@ -523,160 +344,6 @@
     </div>
   </form>
 </dialog>
-  </div>
-</details>
-
-<details class="drawer" open>
-  <summary><b>Strategy breakout</b>
-    <span class="dsub">how each targeting is performing and what it costs</span>
-  </summary>
-  <div class="drawerbody">
-
-{% for b in blocks %}
-<div class="tablecard stratblock">
-  <div class="charthead">
-    <h3><span class="pchip" style="background:{{ b.hex }};color:{{ b.text_hex }}">{{ b.code }}</span>
-      {{ b.label }}</h3>
-    {% if b.total and b.total.total_target %}
-    <span class="goalnote">Goal {{ b.total.total_target|metric(b.total) }}
-      &middot; {{ b.total.to_date|metric(b.total) }} delivered
-      <span class="pace {{ b.total.pacing_pct|paceclass }}">{{ b.total.pacing_pct|pct }}</span></span>
-    {% endif %}
-  </div>
-
-  {% if b.sold_names %}
-  <div class="soldnames">
-    <small>Sold</small>
-    {% for name in b.sold_names %}
-    <span class="schip {{ 'off' if name in b.not_running }}">{{ name }}</span>
-    {% endfor %}
-    {% if b.not_running %}<span class="soldnote">{{ b.not_running|length }} not running</span>{% endif %}
-  </div>
-  {% endif %}
-
-  {% if b.observed %}
-  <div class="scroller">
-    <table class="elements stratbreak">
-      <thead><tr>
-        <th>Strategy</th>
-        <th class="num">Share</th>
-        <th class="num">{{ 'Spend' if b.total.is_money else 'Impr.' }}</th>
-        <th class="num">Day {{ 'Spend' if b.total.is_money else 'Impr.' }}</th>
-        {# A spend product's serve is already its cost; repeating it under a
-           CPM it does not have said $0.00 three times across. #}
-        {% if not b.total.is_money %}
-        <th class="num">CPM</th>
-        <th class="num">Cost</th>
-        <th class="num">Day Budg.</th>
-        {% endif %}
-        <th class="num">Clicks</th>
-        <th class="num">CTR</th>
-        <th class="num">Conv.</th>
-        <th class="num">Days</th>
-      </tr></thead>
-      <tbody>
-      {% for obs in b.observed %}
-        <tr>
-          <td class="elname">{{ obs.label }}
-            {%- if obs.raw_labels and obs.raw_labels != [obs.label] %}
-            <span class="rawname" title="{{ obs.raw_labels|join(' · ') }}">{{ obs.raw_labels[0] }}</span>
-            {%- endif %}</td>
-          <td class="num ro">
-            <span class="sharebar"><i style="width:{{ (obs.share * 100)|round(1) }}%"></i></span>
-            {{ obs.share|pct(1) }}</td>
-          <td class="num ro">{{ obs.delivered|metric(b.total) }}</td>
-          <td class="num ro">{{ obs.per_day|metric(b.total) }}</td>
-          {% if not b.total.is_money %}
-          <td class="num ro">{{ (obs.cpm or b.rate)|money }}</td>
-          <td class="num ro">{{ obs.spend|money }}</td>
-          <td class="num ro">{{ obs.spend_per_day|money }}</td>
-          {% endif %}
-          <td class="num ro">{{ obs.clicks|num }}</td>
-          <td class="num ro">{{ obs.ctr|pct }}</td>
-          <td class="num ro">{{ obs.conversions|num }}</td>
-          <td class="num ro muted">{{ obs.days }}</td>
-        </tr>
-      {% endfor %}
-        <tr class="totalrow">
-          <td>Total:</td>
-          <td class="num">100.0%</td>
-          <td class="num">{{ b.observed_total|metric(b.total) }}</td>
-          <td class="num">{{ b.observed_per_day|metric(b.total) }}</td>
-          {% if not b.total.is_money %}
-          <td class="num">{{ b.rate|money }}</td>
-          <td class="num">{{ b.observed_spend|money }}</td>
-          <td class="num">{{ b.observed_spend_per_day|money }}</td>
-          {% endif %}
-          <td class="num">{{ b.observed_clicks|num }}</td>
-          <td class="num">{{ b.observed_ctr|pct }}</td>
-          <td class="num">{{ b.observed_conversions|num }}</td>
-          <td class="num muted">{{ b.observed_days }}</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <p class="empty">Nothing has run under this product yet.</p>
-  {% endif %}
-
-  {# The sold split is optional. Most orders never get one, and the breakout
-     above needs nobody to enter anything. #}
-  {% if b.terms %}
-  <details class="soldsplit">
-    <summary>Sold split &mdash; {{ b.terms|length }} rows</summary>
-    <form method="post" action="{{ url_for('strategies_save', order_id=o.id) }}">
-    <div class="scroller">
-      <table class="elements">
-        <thead><tr><th>Strategy</th><th class="num">Impr.</th>
-          <th class="num">Tot. Impr.</th><th class="num">CPM</th>
-          <th class="num">Delivered</th><th class="num">On Pace</th>
-          <th class="num">Pacing</th><th></th></tr></thead>
-        <tbody>
-        {% for r in b.rows %}
-          <tr>
-            <td class="elname"><input type="text" name="st-{{ r.strategy_id }}-label"
-              value="{{ r.label }}"></td>
-            <td class="num"><input type="text" name="st-{{ r.strategy_id }}-monthly"
-              value="{{ r.monthly_target|entry }}"></td>
-            <td class="num"><input type="text" name="st-{{ r.strategy_id }}-total"
-              value="{{ r.total_target|entry }}"></td>
-            <td class="num"><input type="text" name="st-{{ r.strategy_id }}-rate"
-              value="{{ r.unit_cost|entry }}"></td>
-            <td class="num ro">{{ r.to_date|metric(r) }}</td>
-            <td class="num ro">{{ r.on_pace|metric(r) }}</td>
-            <td class="num"><span class="pace {{ r.pacing_pct|paceclass }}">{{ r.pacing_pct|pct }}</span></td>
-            <td class="rowdel">
-              <button class="x" type="submit" title="Remove this strategy" formnovalidate
-                formaction="{{ url_for('strategy_delete', order_id=o.id, strategy_id=r.strategy_id) }}">&times;</button>
-            </td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <div class="cardfoot">
-      <button class="btn save" type="submit">Save</button>
-    </div>
-    </form>
-  </details>
-  {% endif %}
-
-  <form method="post" action="{{ url_for('strategy_add', order_id=o.id) }}" class="addrow">
-    <input type="hidden" name="line_item_id" value="{{ b.line_item.id }}">
-    <input type="text" name="label" placeholder="Add a sold strategy row on {{ b.label }}">
-    <button class="btn2 addprod" type="submit">&#43; Add strategy</button>
-  </form>
-</div>
-{% endfor %}
-
-{% if not blocks %}
-<p class="empty">No products on this order to break out.</p>
-{% endif %}
-
-
-
-  </div>
-</details>
 
 
 {# The day log. A floating button near the top right, and a squat popover
@@ -733,7 +400,7 @@
 
 {% endblock %}
 
-{% block scripts %}<script src="/static/tips.js" defer></script><script src="/static/chart.js" defer></script>
+{% block scripts %}<script src="/static/tips.js" defer></script>
 <script src="/static/linking.js" defer></script>
 <script src="/static/daylog.js" defer></script>
 <script src="/static/scope.js" defer></script>{% endblock %}

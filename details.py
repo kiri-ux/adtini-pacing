@@ -40,6 +40,11 @@ RETARGETING_MONTHLY_IMPRESSIONS = 10_000.0
 # of the impressions on the video half and a third on CTV.
 MERGED_SPLIT = {"video": 2 / 3, "ctv": 1 / 3}
 
+# adtini's Daily Pacing table: a day's serve reads red when it drops more
+# than 40% under the daily goal or spikes more than 50% over it.
+DAY_UNDER = 0.6
+DAY_OVER = 1.5
+
 # The guide's floor for display: a campaign should never sit below it.
 DISPLAY_CTR_FLOOR = 0.0007
 
@@ -94,6 +99,8 @@ class DetailsView:
     day_target: dict[dt.date, float]
     notes_by_date: dict[dt.date, list[DayNote]]
     checks: list[WeeklyCheck]
+    # "under" / "over" on days outside adtini's daily pacing thresholds.
+    day_state: dict[dt.date, str]
     flags: list[str]
 
     @property
@@ -109,6 +116,15 @@ class DetailsView:
         order = self.view.order
         number = f" #{order.external_order_id}" if order.external_order_id else ""
         return f"{self.view.client.name} - {self.item.product or self.item.name}{number}"
+
+    @property
+    def ext_id(self) -> str | None:
+        ext = self.item.external_id
+        return ext if ext and not ext.startswith("name:") else None
+
+    @property
+    def sold_names(self) -> list[str]:
+        return views.sold_strategy_names(self.item)
 
     @property
     def months(self) -> int:
@@ -146,7 +162,9 @@ class DetailsView:
 def details_view(
     session, order_id: int, line_item_id: int, as_of: dt.date | None = None
 ) -> DetailsView | None:
-    view = views.order_view(session, order_id, as_of=as_of)
+    view = views.order_view(
+        session, order_id, as_of=as_of, line_item_id=line_item_id
+    )
     if view is None:
         return None
     row = next((r for r in view.rows if r.line_item_id == line_item_id), None)
@@ -276,6 +294,16 @@ def details_view(
             td_actual[day] = running
             month_actual[day] = month_running
 
+    day_state: dict[dt.date, str] = {}
+    for day, served in total_by_date.items():
+        goal = day_target.get(day)
+        if not goal:
+            continue
+        if served < goal * DAY_UNDER:
+            day_state[day] = "under"
+        elif served > goal * DAY_OVER:
+            day_state[day] = "over"
+
     notes_by_date: dict[dt.date, list[DayNote]] = {}
     for note in views.day_log(session, order_id):
         if note.line_item_id in (None, item.id):
@@ -329,6 +357,7 @@ def details_view(
         notes_by_date=notes_by_date,
         checks=checks,
         flags=flags,
+        day_state=day_state,
     )
 
 

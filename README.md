@@ -149,6 +149,14 @@ There is deliberately no daily-target line on that chart. The target is the
 whole order's, and drawing it against a single strategy invites reading that
 strategy as behind when the order is fine.
 
+### Page speed
+
+Pages are rendered once and served from memory (`pagecache.py`) until the
+data under them changes: a new file in `ingested_files` (the cron, the Data
+page, an upload) or anything posted to the app. The pacing table is
+re-rendered in the background whenever a new file lands, so nobody waits for
+the whole book to be worked out after the nightly load.
+
 ### The details grid
 
 `/orders/<id>/details/<line item>` is the Details & Updates tab for one
@@ -330,6 +338,7 @@ data/rate_card.csv  the card itself, versioned
 orderbook.py        imports orders; classification and labelling rules
 views.py            read models for the two pages, and the chart series
 details.py          the per-product details grid, split builder, weekly check
+pagecache.py        rendered pages kept until new data or a save
 exports.py          XLSX in the same column order as the sheets
 static/chart.js     the per-strategy daily chart
 scripts/ingest.py   the cron entrypoint

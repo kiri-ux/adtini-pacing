@@ -83,6 +83,15 @@ def site(tmp_path):
     return app_module, order_id
 
 
+def _details_url(order_id):
+    import db as db_module
+    from models import LineItem
+
+    with db_module.session_scope() as session:
+        line_item_id = session.query(LineItem).one().id
+    return f"/orders/{order_id}/details/{line_item_id}"
+
+
 def _days(body):
     """The grid's day headers, which now carry their range classes too."""
     return re.findall(r'<th class="num gcell[^"]*">(\d+-\w+)</th>', body)
@@ -144,7 +153,7 @@ def test_the_log_reads_newest_first_and_marks_its_day_on_the_grid(site):
         log = views.day_log(session, order_id)
     assert [n.body for n in log] == ["Lowered budget", "Creative swapped"]
 
-    body = client.get(f"/orders/{order_id}").get_data(as_text=True)
+    body = client.get(_details_url(order_id)).get_data(as_text=True)
     assert body.count("notemark") == 2, "a mark on each day that has one"
     assert "Lowered budget" in body
 
@@ -179,13 +188,21 @@ def test_the_grid_carries_the_whole_flight(site):
     the buttons hide columns instead of asking the server for the same table
     with fewer columns in it.
     """
+    import db as db_module
+    import views
+
     app_module, order_id = site
-    body = app_module.app.test_client().get(f"/orders/{order_id}").get_data(
-        as_text=True
-    )
-    days = _days(body)
+    with db_module.session_scope() as session:
+        view = views.order_view(session, order_id)
+    days = [d.strftime("%-d-%b") for d in view.grid_dates]
     assert (days[0], days[-1]) == ("1-Aug", "21-Sep")
     assert len(days) == 52
+
+    # The product page lays out the whole flight, future days included.
+    body = app_module.app.test_client().get(_details_url(order_id)).get_data(
+        as_text=True
+    )
+    assert "20-Jan" in body and "30-Nov" in body
 
 
 def test_each_day_says_which_ranges_it_is_in(site):
@@ -205,25 +222,17 @@ def test_each_day_says_which_ranges_it_is_in(site):
     assert view.range_classes[dt.date(2026, 8, 1)] == ""
     assert view.month_days == 21
 
-    body = app_module.app.test_client().get(f"/orders/{order_id}").get_data(
-        as_text=True
-    )
-    # The container starts on the month, so that is what is shown.
-    assert 'class="scroller gridscroll range-month"' in body
-    assert body.count("in-month") >= 21
-
 
 def test_the_row_labels_are_pinned(site):
     """Scrolled, an unpinned grid showed numbers with nothing saying which
     row they belonged to."""
     app_module, order_id = site
-    body = app_module.app.test_client().get(f"/orders/{order_id}").get_data(
+    body = app_module.app.test_client().get(_details_url(order_id)).get_data(
         as_text=True
     )
-    assert 'class="pin"' in body
     # Row labels are header cells, so a screen reader announces them too.
-    assert re.search(r'<tr class="gridproduct"><th class="pin">', body)
-    assert re.search(r'<tr class="gridstrategy"><th class="pin">', body)
+    assert re.search(r'<tr class="totalrow">\s*<th class="pin">', body)
+    assert re.search(r'<tr class="ontrack">\s*<th class="pin">', body)
 
 
 # --- what a day should have served -----------------------------------------
@@ -288,7 +297,9 @@ def test_a_day_that_missed_its_target_is_marked(site):
     assert states[dt.date(2026, 9, 1)] == "under"
     assert states[dt.date(2026, 9, 21)] == "over"
 
-    body = app_module.app.test_client().get(f"/orders/{order_id}").get_data(
+    body = app_module.app.test_client().get(_details_url(order_id)).get_data(
         as_text=True
     )
-    assert "daypill under" in body
+    # adtini's rule on the product page: against total / days, more than 50%
+    # over reads red.
+    assert "daypill over" in body

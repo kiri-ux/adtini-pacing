@@ -4,36 +4,45 @@
 {% set money = d.is_money %}
 {% set unit = 'Spend' if money else 'Impr.' %}
 {% block title %} — {{ d.title }}{% endblock %}
-{% block heading %}{{ d.view.client.name }}{% endblock %}
+{% block heading %}Product Details - {{ d.ext_id or d.item.id }} - {{ d.view.client.name }} - {{ d.item.product or d.item.name }}{% endblock %}
 
 {% macro val(x) -%}
   {%- if x is none -%}&mdash;{%- elif money -%}{{ x|money }}{%- else -%}{{ x|num }}{%- endif -%}
 {%- endmacro %}
 
 {% block body %}
-<p class="crumbs"><a href="/">Pacing</a> /
-  <a href="{{ url_for('order_detail', order_id=o.id) }}">{{ o.name }}</a> /
-  <span class="crumbc">{{ d.item.product or d.item.name }}</span>
-  &middot; data through {{ d.as_of.strftime('%-d %b %Y') }}</p>
+<div class="titlebar">
+  <p class="crumbs"><a href="/">Pacing</a> &rsaquo;
+    <a href="{{ url_for('order_detail', order_id=o.id) }}">Order {{ o.external_order_id or o.id }}</a> &rsaquo;
+    <span class="crumbc">{{ d.item.product or d.item.name }}</span></p>
+  {% if r.status or o.status %}<span class="statusbadge">{{ r.status or o.status }}</span>{% endif %}
+  <span class="asof">Data through {{ d.as_of.strftime('%-m/%-d/%Y') }}</span>
+</div>
 
 {% if siblings|length > 1 %}
-<div class="dtabs">
-  {% for li_id, label in siblings %}
-  <a class="dtab{% if li_id == d.item.id %} on{% endif %}"
-     href="{{ url_for('details_page', order_id=o.id, line_item_id=li_id) }}">{{ label }}</a>
-  {% endfor %}
-</div>
+<form class="prodpick" method="get" onsubmit="return false">
+  <label for="prodpick">Product</label>
+  <select id="prodpick" onchange="location.href=this.value">
+    {% for li_id, label in siblings %}
+    <option value="{{ url_for('details_page', order_id=o.id, line_item_id=li_id) }}" {% if li_id == d.item.id %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+</form>
 {% endif %}
 
-<div class="sheethead">
-  <div class="sh-name"><small>Campaign</small><b>{{ d.title }}</b></div>
-  <div><small>Run dates</small>
-    <b>{% if r.start_date %}{{ r.start_date.strftime('%-m/%-d/%Y') }} - {{ r.end_date.strftime('%-m/%-d/%Y') if r.end_date else '?' }}{% else %}not set{% endif %}</b></div>
-  <div><small>Months</small><b>{{ d.months or '—' }}</b></div>
-  <div><small>Days</small><b>{{ r.flight_days or d.dates|length or '—' }}</b></div>
-  <div><small>Paces on</small><b>{{ 'Ad spend' if money else 'Impressions' }}</b></div>
-  <div><small>Pacing</small>
-    <b><span class="pace {{ r.pacing_pct|paceclass }}">{{ r.pacing_pct|pct }}</span></b></div>
+<div class="infocard">
+  <div><small>Order ID</small><b>{{ o.external_order_id or '—' }}</b></div>
+  <div><small>Client</small><b>{{ d.view.client.name }}</b></div>
+  <div><small>Buyer</small><b>{{ o.buyer or '—' }}</b></div>
+  <div><small>Product Monthly {{ 'Spend' if money else 'Impressions' }}</small><b>{{ val(r.monthly_target or none) }}</b></div>
+  <div><small>Product Total {{ 'Spend' if money else 'Impressions' }}</small><b>{{ val(r.total_target or none) }}</b></div>
+  <div><small>{{ 'CPC' if money else 'CPM' }}</small><b>{{ r.unit_cost|money if r.unit_cost else '—' }}</b></div>
+  <div><small>Start Date</small><b>{{ r.start_date.strftime('%-m/%-d/%Y') if r.start_date else '—' }}</b></div>
+  <div><small>End Date</small><b>{{ r.end_date.strftime('%-m/%-d/%Y') if r.end_date else '—' }}</b></div>
+  <div><small>Months / Days</small><b>{{ d.months or '—' }} / {{ r.flight_days or d.dates|length or '—' }}</b></div>
+  <div><small>Monthly Pacing</small><b><span class="pace {{ r.month_pacing_pct|paceclass }}">{{ r.month_delivery_ratio|pct }}</span></b></div>
+  <div><small>Total Pacing</small><b><span class="pace {{ r.pacing_pct|paceclass }}">{{ r.delivery_ratio|pct }}</span></b></div>
+  <div><small>Strategies Sold</small><b>{{ d.sold_names|join(', ') if d.sold_names else '—' }}</b></div>
 </div>
 
 {% for f in d.flags %}<p class="warnbar">{{ f }}</p>{% endfor %}
@@ -44,7 +53,7 @@
 
 <div class="tablecard detailcard">
   <div class="charthead">
-    <h3>Details</h3>
+    <h3>Daily Pacing</h3>
     {% if not d.has_split %}
     <form method="post" class="inlineform"
       action="{{ url_for('details_build', order_id=o.id, line_item_id=d.item.id) }}">
@@ -121,8 +130,9 @@
           <td class="num sep"><span class="pace {{ r.pacing_pct|paceclass }}">{{ r.pacing_pct|pct }}</span></td>
           {% for day in d.dates %}
             {% set x = d.total_by_date.get(day) %}
+            {% set st = d.day_state.get(day) %}
             <td class="num{% if day.day == 1 %} mstart{% endif %}{% if d.is_future(day) %} future{% endif %}">
-              {%- if d.is_future(day) -%}{%- elif x -%}{{ val(x) }}{%- else -%}&mdash;{%- endif -%}</td>
+              {%- if d.is_future(day) -%}{%- elif x and st -%}<span class="daypill {{ st }}">{{ val(x) }}</span>{%- elif x -%}{{ val(x) }}{%- else -%}&mdash;{%- endif -%}</td>
           {% endfor %}
         </tr>
         <tr class="ontrack">

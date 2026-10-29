@@ -617,6 +617,7 @@ def order_view(
     order_id: int,
     as_of: dt.date | None = None,
     grid_range: str = "month",
+    line_item_id: int | None = None,
 ) -> OrderView | None:
     order = session.execute(
         select(Order)
@@ -634,6 +635,7 @@ def order_view(
     line_items = [
         li for li in sorted(order.line_items, key=lambda li: (li.sort_order, li.id))
         if products.is_paced(li.product)
+        and (line_item_id is None or li.id == line_item_id)
     ]
     # One pass over the delivery, not two. The strategies under a line item
     # are the same rows as the line item's own days, so adding them up here

@@ -194,3 +194,40 @@ def test_weekly_check_snapshots_pacing_and_logs_the_optimization(site):
     html = client.get(f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
     assert "excluded gaming app categories" in html
     assert "Tracking conversions - none reported" in html
+
+
+def test_pages_are_served_from_memory_until_something_changes(site):
+    """Rendered once; a save or a new file drops it."""
+    import db as db_module
+    import pagecache
+    from models import IngestedFile, Order
+
+    app_module, (order_id, li_id) = site
+    app_module.app.config["TESTING"] = False
+    app_module._warmer_started = True
+    pagecache.clear()
+    try:
+        client = app_module.app.test_client()
+        url = f"/orders/{order_id}"
+        first = client.get(url).get_data(as_text=True)
+        assert "Forrest Design Group #51200" in first
+
+        # Changed underneath, with nothing posted: still the stored page.
+        with db_module.session_scope() as session:
+            session.get(Order, order_id).name = "Renamed #51200"
+        assert client.get(url).get_data(as_text=True) == first
+
+        # A new file lands: the stamp moves and the page is rebuilt.
+        with db_module.session_scope() as session:
+            session.add(IngestedFile(s3_key="orders/new.csv", kind="orders"))
+        pagecache._stamp = None
+        assert "Renamed #51200" in client.get(url).get_data(as_text=True)
+
+        # Anything posted drops every stored page.
+        with db_module.session_scope() as session:
+            session.get(Order, order_id).name = "Again #51200"
+        client.post(f"/orders/{order_id}/notes", data={"body": "x"})
+        assert "Again #51200" in client.get(url).get_data(as_text=True)
+    finally:
+        app_module.app.config["TESTING"] = True
+        pagecache.clear()
