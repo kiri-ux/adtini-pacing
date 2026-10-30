@@ -18,17 +18,7 @@
   {% if r.status or o.status %}<span class="statusbadge">{{ r.status or o.status }}</span>{% endif %}
   <span class="asof">Data through {{ d.as_of.strftime('%-m/%-d/%Y') }}</span>
 </div>
-
-{% if siblings|length > 1 %}
-<form class="prodpick" method="get" onsubmit="return false">
-  <label for="prodpick">Product</label>
-  <select id="prodpick" onchange="location.href=this.value">
-    {% for li_id, label in siblings %}
-    <option value="{{ url_for('details_page', order_id=o.id, line_item_id=li_id) }}" {% if li_id == d.item.id %}selected{% endif %}>{{ label }}</option>
-    {% endfor %}
-  </select>
-</form>
-{% endif %}
+{% include "_pagetabs.html" %}
 
 <div class="infocard">
   <div><small>Order ID</small><b>{{ o.external_order_id or '—' }}</b></div>
@@ -52,8 +42,18 @@
 </form>
 
 <div class="tablecard detailcard">
-  <div class="charthead">
+  <div class="cardhead">
     <h3>Daily Pacing</h3>
+  {% if siblings|length > 1 %}
+    <form class="prodpick" method="get" onsubmit="return false">
+      <label for="prodpick">Product</label>
+      <select id="prodpick" onchange="location.href=this.value">
+        {% for li_id, label in siblings %}
+        <option value="{{ url_for('details_page', order_id=o.id, line_item_id=li_id) }}" {% if li_id == d.item.id %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  {% endif %}
     {% if not d.has_split %}
     <form method="post" class="inlineform"
       action="{{ url_for('details_build', order_id=o.id, line_item_id=d.item.id) }}">

@@ -378,9 +378,10 @@ def cached_page(view):
         body = pagecache.get(page_key)
         if body is not None:
             return Response(body, mimetype="text/html")
-        # One page built at a time. Two pacing tables at once (a visitor and
-        # the warmer) were enough for the database to drop the connection.
-        with pagecache.render_lock:
+        # A page is built once at a time. Two pacing tables at once (a
+        # visitor and the warmer) were enough for the database to drop the
+        # connection.
+        with pagecache.render_lock(request.path):
             body = pagecache.get(page_key)
             if body is not None:
                 return Response(body, mimetype="text/html")
@@ -545,6 +546,12 @@ def order_detail(order_id: int):
         )
         if view is None:
             abort(404)
+        if _warmer_started:
+            paced = [li for li in view.order.line_items if products.is_paced(li.product)]
+            pagecache.prefetch(
+                url_for("details_page", order_id=order_id, line_item_id=li.id)
+                for li in paced[:30]
+            )
         return render_template(
             "order.html",
             v=view,

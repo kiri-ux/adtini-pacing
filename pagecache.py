@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import queue
 import threading
 import time
 from collections import OrderedDict
@@ -38,8 +39,15 @@ MAX_PAGES = 120
 STAMP_TTL = 30.0
 
 _lock = threading.Lock()
-# Held while a page is built, so heavy pages are worked out one at a time.
-render_lock = threading.Lock()
+# One lock per path, held while that page is built. The pacing table under
+# every filter is one path, so it is never worked out twice at once; a
+# product page has its own and never waits behind it.
+_render_locks: dict[str, threading.Lock] = {}
+
+
+def render_lock(path: str) -> threading.Lock:
+    with _lock:
+        return _render_locks.setdefault(path, threading.Lock())
 _pages: OrderedDict[tuple, bytes] = OrderedDict()
 _edits = 0
 _stamp: tuple | None = None
@@ -95,6 +103,19 @@ def clear() -> None:
         _pages.clear()
 
 
+_wanted: queue.Queue[str] = queue.Queue()
+
+
+def prefetch(paths) -> None:
+    """Build these pages in the background, ahead of the click.
+
+    The order page asks for each of its product pages, so opening one from
+    the Products table is served from memory.
+    """
+    for path in paths:
+        _wanted.put(path)
+
+
 def start_warmer(app, paths: tuple[str, ...] = ("/",), every: float = 60.0) -> None:
     """Re-render the pacing table whenever new data lands.
 
@@ -125,4 +146,16 @@ def start_warmer(app, paths: tuple[str, ...] = ("/",), every: float = 60.0) -> N
                 log.exception("page warmer")
             time.sleep(every)
 
+    def fetch() -> None:
+        client = app.test_client()
+        with client.session_transaction() as sess:
+            sess["ok"] = True
+        while True:
+            path = _wanted.get()
+            try:
+                client.get(path)
+            except Exception:
+                log.exception("prefetch %s", path)
+
     threading.Thread(target=loop, name="page-warmer", daemon=True).start()
+    threading.Thread(target=fetch, name="page-prefetch", daemon=True).start()

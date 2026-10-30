@@ -741,3 +741,14 @@ table.elements.show-all tbody tr{display:table-row}
 #splitform{display:none}
 .prodpick select{width:auto;min-width:320px}
 .detailcard .charthead{padding-top:12px;padding-bottom:12px}
+
+/* ---- adtini's page tabs; this app is the Pacing one ---------------------- */
+.pagetabs{display:flex;gap:2px;margin:0 0 16px;border-bottom:1px solid var(--line)}
+.pagetabs button{font:inherit;font-size:13px;font-weight:600;background:none;border:0;
+  border-bottom:3px solid transparent;margin-bottom:-1px;padding:10px 18px;color:var(--navy);cursor:default}
+.pagetabs button:disabled{color:var(--muted);opacity:.6}
+.pagetabs button.on{border-bottom-color:var(--gold)}
+.cardhead .prodpick{margin:0 0 0 auto}
+.cardhead .prodpick + .inlineform{margin-left:0}
+.cardhead .inlineform{margin-left:auto}
+.cardhead .prodpick ~ .inlineform{margin-left:0}

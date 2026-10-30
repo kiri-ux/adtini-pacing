@@ -15,6 +15,7 @@
   {% if o.status %}<span class="statusbadge">{{ o.status }}</span>{% endif %}
   <span class="asof">Data through {{ v.as_of.strftime('%-m/%-d/%Y') }}</span>
 </div>
+{% include "_pagetabs.html" %}
 
 {% if v.status_contradicts_delivery %}
 <p class="warnbar">Status is {{ o.status }}, but {{ t.to_date|metric(t) }} has delivered.</p>
