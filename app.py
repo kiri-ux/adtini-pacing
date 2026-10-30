@@ -378,6 +378,14 @@ def cached_page(view):
         body = pagecache.get(page_key)
         if body is not None:
             return Response(body, mimetype="text/html")
+        # New data landed since this page was built (the nightly load drops
+        # files one at a time for most of an hour). Show the last copy now
+        # and build the new one behind it.
+        if _warmer_started and not request.headers.get(pagecache.REFRESH_HEADER):
+            body = pagecache.stale(request.full_path)
+            if body is not None:
+                pagecache.prefetch([request.full_path])
+                return Response(body, mimetype="text/html")
         # A page is built once at a time. Two pacing tables at once (a
         # visitor and the warmer) were enough for the database to drop the
         # connection.
@@ -548,9 +556,11 @@ def order_detail(order_id: int):
             abort(404)
         if _warmer_started:
             paced = [li for li in view.order.line_items if products.is_paced(li.product)]
+            # The Budgeting expand first: it is what gets opened next.
             pagecache.prefetch(
-                url_for("details_page", order_id=order_id, line_item_id=li.id)
-                for li in paced[:10]
+                [url_for("order_budgeting", order_id=order_id)]
+                + [url_for("details_page", order_id=order_id, line_item_id=li.id)
+                   for li in paced[:5]]
             )
         return render_template(
             "order.html",

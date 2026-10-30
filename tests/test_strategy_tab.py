@@ -141,8 +141,9 @@ def test_the_strategy_tab_paces_each_targeting_separately(site):
         f"/orders/{order_id}/details/{meta_id}"
     ).get_data(as_text=True)
 
-    assert "FB - Retargeting" in page
-    assert "FB - Categories" in page
+    # Shown by what they target, without the product code the pill carries.
+    assert ">Retargeting</option>" in page
+    assert ">Category Targeting</option>" in page
     # 20 days at 400 and 20 days at 3,800, matched onto the sold split.
     assert "8,000" in page
     assert "76,000" in page

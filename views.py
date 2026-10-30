@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
 
@@ -1461,6 +1462,36 @@ class LinkingView:
 
 NAMED_LOOKBACK_DAYS = 120
 
+# Every campaign name seen over the lookback, read once per load of data.
+# No index answers LIKE '%53675%', so asking the delivery table per order
+# page read months of rows every time; held here, it is a scan of a few
+# thousand names in memory.
+_names_lock = threading.Lock()
+_names: tuple[tuple, list[tuple[str, str, str]]] | None = None
+
+
+def _campaign_names(session, since: dt.date) -> list[tuple[str, str, str]]:
+    global _names
+    newest = session.execute(select(func.max(DailyDelivery.id))).scalar()
+    key = (str(session.get_bind().url), since, newest)
+    with _names_lock:
+        if _names is not None and _names[0] == key:
+            return _names[1]
+        rows = [
+            (source, campaign, name.lower())
+            for source, campaign, name in session.execute(
+                select(
+                    DailyDelivery.data_source,
+                    DailyDelivery.campaign_id,
+                    DailyDelivery.campaign_name,
+                )
+                .where(DailyDelivery.date >= since, DailyDelivery.campaign_name.is_not(None))
+                .distinct()
+            )
+        ]
+        _names = (key, rows)
+        return rows
+
 
 def campaign_candidates(
     session, order: Order, join: "_Join", as_of: dt.date
@@ -1492,20 +1523,17 @@ def campaign_candidates(
         clause = DailyDelivery.external_order_id == order.external_order_id
         conditions.append(clause)
         reasons.append(("order id", clause))
-        # The team writes the order number into the campaign name. No index
-        # can answer a LIKE '%...%', so it is asked of the last few months
-        # only, for the campaigns it names; those are then read whole by
-        # their own index. Across every day ever loaded, this one clause
-        # was most of a minute per order page.
+        # The team writes the order number into the campaign name. Found
+        # among the last few months' names held in memory; the campaigns it
+        # names are then read whole by their own index. Asked of the
+        # delivery table, this one clause was most of a minute per page.
         since = as_of - dt.timedelta(days=NAMED_LOOKBACK_DAYS)
-        named_keys = session.execute(
-            select(DailyDelivery.data_source, DailyDelivery.campaign_id)
-            .where(
-                DailyDelivery.date >= since,
-                DailyDelivery.campaign_name.like(f"%{order.external_order_id}%"),
-            )
-            .distinct()
-        ).all()
+        needle = order.external_order_id.lower()
+        named_keys = sorted({
+            (source, campaign)
+            for source, campaign, name in _campaign_names(session, since)
+            if needle in name
+        })
         if named_keys:
             named = tuple_(DailyDelivery.data_source, DailyDelivery.campaign_id).in_(
                 [tuple(k) for k in named_keys]
