@@ -908,3 +908,8 @@ dialog.daydlg .noteadd{margin:0}
 dialog.daydlg .checktiles{grid-template-columns:repeat(3,minmax(0,1fr))}
 dialog.daydlg .dlform{display:flex;flex-direction:column;gap:10px}
 dialog.daydlg .dlform textarea{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px}
+table.daily.pinned.detailgrid thead tr.addhead th.dayadd{text-align:center}
+table.detailgrid .dayplus{display:inline-flex;align-items:center;justify-content:center;margin:0 auto}
+/* The hovered day's whole column. */
+table.daily.pinned.detailgrid tbody td.colhot{background:#EAF2FD}
+table.daily.pinned.detailgrid thead tr:not(.addhead) th.colhot{background:#1C4A7A}
