@@ -28,6 +28,7 @@ from flask import (
     url_for,
 )
 from sqlalchemy import func, select
+from sqlalchemy.exc import OperationalError
 from werkzeug.exceptions import HTTPException
 
 import details
@@ -37,7 +38,7 @@ import products
 import sheets
 import views
 from config import get_settings
-from db import session_scope
+from db import engine, session_scope
 from ingest import loader
 from models import (
     PACING_TYPES,
@@ -377,7 +378,19 @@ def cached_page(view):
         body = pagecache.get(page_key)
         if body is not None:
             return Response(body, mimetype="text/html")
-        response = make_response(view(*args, **kwargs))
+        # One page built at a time. Two pacing tables at once (a visitor and
+        # the warmer) were enough for the database to drop the connection.
+        with pagecache.render_lock:
+            body = pagecache.get(page_key)
+            if body is not None:
+                return Response(body, mimetype="text/html")
+            try:
+                response = make_response(view(*args, **kwargs))
+            except OperationalError:
+                # A dropped connection: start the pool again and try once more.
+                app.logger.warning("database connection dropped, retrying %s", request.path)
+                engine.dispose()
+                response = make_response(view(*args, **kwargs))
         if response.status_code == 200 and response.mimetype == "text/html":
             pagecache.put(page_key, response.get_data())
         return response

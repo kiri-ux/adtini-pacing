@@ -231,3 +231,33 @@ def test_pages_are_served_from_memory_until_something_changes(site):
     finally:
         app_module.app.config["TESTING"] = True
         pagecache.clear()
+
+
+def test_a_dropped_connection_is_retried_once(site):
+    """The database cutting the connection mid-page rebuilds it, not an error."""
+    from sqlalchemy.exc import OperationalError
+
+    import pagecache
+
+    app_module, (order_id, li_id) = site
+    app_module.app.config["TESTING"] = False
+    app_module._warmer_started = True
+    pagecache.clear()
+    real = app_module.details.details_view
+    calls = []
+
+    def flaky(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise OperationalError("SELECT", {}, Exception("SSL SYSCALL error: EOF detected"))
+        return real(*args, **kwargs)
+
+    app_module.details.details_view = flaky
+    try:
+        page = app_module.app.test_client().get(f"/orders/{order_id}/details/{li_id}")
+        assert page.status_code == 200
+        assert len(calls) == 2
+    finally:
+        app_module.details.details_view = real
+        app_module.app.config["TESTING"] = True
+        pagecache.clear()

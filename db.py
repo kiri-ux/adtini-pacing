@@ -11,10 +11,25 @@ from config import get_settings
 
 _settings = get_settings()
 
+# Postgres: keepalives so a long query's idle socket is not cut by the
+# network, and connections renewed every five minutes rather than reused
+# after Render has quietly closed them.
 engine = create_engine(
     _settings.database_url,
     pool_pre_ping=True,
-    connect_args={"check_same_thread": False} if _settings.is_sqlite else {},
+    **(
+        {"connect_args": {"check_same_thread": False}}
+        if _settings.is_sqlite
+        else {
+            "pool_recycle": 300,
+            "connect_args": {
+                "keepalives": 1,
+                "keepalives_idle": 30,
+                "keepalives_interval": 10,
+                "keepalives_count": 5,
+            },
+        }
+    ),
 )
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
