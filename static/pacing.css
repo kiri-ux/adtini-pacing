@@ -892,3 +892,19 @@ table.detailgrid .pctsum.off{color:#B3261E}
 table.detailgrid .pctfix{margin-left:6px;width:22px;height:22px;border-radius:50%;border:1px solid var(--line);
   background:var(--card);color:var(--adt-blue);font-size:13px;line-height:1;cursor:pointer;vertical-align:middle}
 table.detailgrid .pctfix:hover{background:var(--fill)}
+/* The + row over the days: blank until a day's column is hovered. */
+table.daily.pinned.detailgrid thead tr.addhead th{background:var(--card);padding:0;height:26px;border:0}
+table.daily.pinned.detailgrid thead tr.addhead th.pin,table.daily.pinned.detailgrid thead tr.addhead th.pin0{background:var(--card)}
+table.detailgrid .dayplus{opacity:0;width:22px;height:22px;border-radius:50%;border:0;background:var(--adt-blue);
+  color:#fff;font-size:15px;font-weight:700;line-height:1;cursor:pointer;transition:opacity .1s}
+table.detailgrid th.dayadd.hot .dayplus,table.detailgrid th.dayadd:hover .dayplus,table.detailgrid .dayplus:focus{opacity:1}
+dialog.daydlg{border:0;border-radius:14px;padding:18px 22px;width:min(760px,calc(100vw - 32px));
+  box-shadow:0 20px 60px rgba(3,41,77,.3)}
+dialog.daydlg::backdrop{background:rgba(3,41,77,.35)}
+dialog.daydlg .dlghead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+dialog.daydlg h3{margin:0;font-size:16px}
+dialog.daydlg h4{margin:14px 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+dialog.daydlg .noteadd{margin:0}
+dialog.daydlg .checktiles{grid-template-columns:repeat(3,minmax(0,1fr))}
+dialog.daydlg .dlform{display:flex;flex-direction:column;gap:10px}
+dialog.daydlg .dlform textarea{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px}

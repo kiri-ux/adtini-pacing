@@ -404,6 +404,28 @@
   </div>
 </div>
 
+<dialog class="daydlg" id="daydlg">
+  <div class="dlghead"><h3>Note - <span data-daylabel></span></h3>
+    <button type="button" class="x" data-close title="Close">&times;</button></div>
+  <form method="post" action="{{ url_for('note_add', order_id=o.id) }}" class="dlform">
+    <input type="hidden" name="date" value="{{ v.as_of.isoformat() }}" data-dayfield>
+    <div class="dlrow">
+      <label for="dd-li">Product</label>
+      <select id="dd-li" name="line_item_id">
+        <option value="">Whole order</option>
+        {% for r in v.rows %}
+        <option value="{{ r.line_item_id }}">{{ r.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <textarea name="body" rows="3" required
+      placeholder="Lowered budget, creative swapped, client paused for the holiday"></textarea>
+    <div class="dlrow">
+      <input type="text" name="author" placeholder="Your name" autocomplete="name">
+      <button class="btn save" type="submit">Save</button>
+    </div>
+  </form>
+</dialog>
 </div>
 </div>
 {% endblock %}
@@ -413,4 +435,5 @@
 <script src="/static/daylog.js" defer></script>
 <script src="/static/scope.js" defer></script>
 <script src="/static/budgeting.js" defer></script>
-<script src="/static/split.js" defer></script>{% endblock %}
+<script src="/static/split.js" defer></script>
+<script src="/static/dayadd.js" defer></script>{% endblock %}
