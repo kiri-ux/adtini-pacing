@@ -125,6 +125,9 @@ class DetailsView:
     # "under" / "over" on days outside adtini's daily pacing thresholds.
     day_state: dict[dt.date, str]
     flags: list[str]
+    # What the product needs to serve tomorrow to land its goal; the Day
+    # Budg. column on the Total row.
+    day_budget: float | None = None
 
     @property
     def order(self):
@@ -303,6 +306,44 @@ def details_view(
             if in_flight(d) and values[slot]
         }
 
+    def catch_up(monthly, total, by_date, day: dt.date) -> float | None:
+        """What a day has to serve so the goal still lands.
+
+        The goal left over the days left, recalculated each day: a line that
+        started late, or ran short yesterday, needs more than the even share
+        to make it up. Against the month's goal where there is one, else the
+        flight's. Days after today are all asked the same - what tomorrow
+        needs - because nothing has served on them yet.
+        """
+        if not (start and end):
+            return None
+        anchor = min(day, as_of + dt.timedelta(days=1))
+        if monthly:
+            window = month_window(day, start, end)
+            if not window:
+                return None
+            first, last = window
+            goal = monthly
+        elif total:
+            first, last, goal = start, end, total
+        else:
+            return None
+        anchor = max(anchor, first)
+        left = inclusive_days(anchor, last)
+        if left <= 0:
+            return None
+        served = sum(v for d, v in by_date.items() if first <= d < anchor)
+        return max(goal - served, 0.0) / left
+
+    tomorrow = as_of + dt.timedelta(days=1)
+
+    def day_budget(goal: float | None, rate: float | None) -> float | None:
+        if goal is None:
+            return None
+        if money:
+            return goal
+        return goal * rate / 1000.0 if rate else None
+
     elements: list[GridRow] = []
     claimed: set[str] = set()
     terms = {t.id: t for t in (block.terms if block else [])}
@@ -322,7 +363,11 @@ def details_view(
                 total=srow.total_target or None,
                 daily=srow.daily_target if sold else None,
                 rate=srow.unit_cost or None,
-                daily_budget=srow.daily_budget if sold else None,
+                daily_budget=day_budget(
+                    catch_up(srow.monthly_target, srow.total_target,
+                             per_day(series, index), tomorrow),
+                    srow.unit_cost,
+                ) if sold else None,
                 total_budget=srow.total_budget if sold else None,
                 to_date=srow.to_date,
                 remaining=srow.remaining if sold else None,
@@ -390,8 +435,9 @@ def details_view(
             month_daily = row.monthly_target / days if days else 0.0
         else:
             month_daily = 0.0
-        # The tab's own row: the sold total over the flight, one figure.
-        day_target[day] = row.daily_target
+        # What each day needed, given what had served before it.
+        need = catch_up(row.monthly_target, row.total_target, total_by_date, day)
+        day_target[day] = need if need is not None else row.daily_target
         running_target += row.daily_target
         month_running_target += month_daily
         td_target[day] = running_target
@@ -404,7 +450,8 @@ def details_view(
 
     day_state: dict[dt.date, str] = {}
     for day, served in total_by_date.items():
-        goal = day_target.get(day)
+        # adtini's own rule: against the even share, total over days.
+        goal = row.daily_target
         if not goal:
             continue
         if served < goal * DAY_UNDER:
@@ -462,6 +509,10 @@ def details_view(
         month_actual=month_actual,
         month_target=month_target,
         day_target=day_target,
+        day_budget=day_budget(
+            catch_up(row.monthly_target, row.total_target, total_by_date, tomorrow),
+            row.unit_cost,
+        ),
         notes_by_date=notes_by_date,
         checks=checks,
         flags=flags,

@@ -129,7 +129,7 @@
           <td class="num">{{ val(d, r.monthly_target or none) }}</td>
           <td class="num">{{ val(d, r.total_target or none) }}</td>
           <td class="num">{{ r.unit_cost|money if r.unit_cost else '—' }}</td>
-          <td class="num" title="Total budget {{ r.total_budget|money if r.total_budget else '—' }}">{{ r.daily_budget|money if r.daily_budget else '—' }}</td>
+          <td class="num" title="Total budget {{ r.total_budget|money if r.total_budget else '—' }}">{{ d.day_budget|money if d.day_budget else '—' }}</td>
           <td class="num">{{ val(d, r.to_date) }}</td>
           <td class="num">{{ val(d, r.remaining if r.total_target else none) }}</td>
           <td class="num sep"><span class="pace {{ r.pacing_pct|paceclass }}" title="{{ val(d, r.to_date) }} of {{ val(d, r.on_pace if r.total_target else none) }}">{{ r.delivery_ratio|pct }}</span></td>
