@@ -64,9 +64,9 @@
       {% if prev %}<a class="arrow" href="?month={{ prev }}#budget">&lsaquo;</a>{% endif %}
       <b>{{ d.shown_month.strftime('%B %Y') }}</b>
       {% if nxt %}<a class="arrow" href="?month={{ nxt }}#budget">&rsaquo;</a>{% endif %}
-      <a class="arrow" href="?days=all#budget">Whole flight</a>
+      <a class="arrow" href="?days=all#budget">Total</a>
       {% else %}
-      <b>Whole flight</b> <a class="arrow" href="?#budget">Current month</a>
+      <b>Total</b> <a class="arrow" href="?#budget">Current month</a>
       {% endif %}
     </p>
     {% endif %}

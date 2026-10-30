@@ -139,7 +139,7 @@
         <td class="elname"><input type="text" name="li-{{ li }}-name" value="{{ r.label }}">
           {% if r.state != 'running' %}<span class="statepill {{ r.state }}">{{ r.status or r.state }}</span>{% endif %}
           {% if r.needs_setup %}<span class="setupflag"
-            title="No sold total or no flight dates, so there is nothing to pace against">no goal set</span>{% endif %}</td>
+            title="No sold total or no dates, so there is nothing to pace against">no goal set</span>{% endif %}</td>
         <td class="idcell">{{ r.line_item.external_id if r.line_item and r.line_item.external_id else '—' }}</td>
         <td class="pacecell"><select class="rowpace" name="li-{{ li }}-pacing_type"
             title="How this product paces. Products on one order are not all sold the same way.">

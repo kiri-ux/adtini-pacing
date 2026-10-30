@@ -105,7 +105,7 @@
         <td class="num pair">{{ t.to_date|metric(t) }} <i>/ {{ t.total_target|metric(t) }}</i></td>
         <td>{{ meter(t.to_date, t.on_pace, t.total_target,
                      t.delivery_ratio, r.total_health, t.is_money) }}
-          {% if r.partial_history %}<span class="partial" title="This flight started before the delivery feed's earliest day, so the life-of-flight figures are short by whatever ran earlier.">partial</span>{% endif %}</td>
+          {% if r.partial_history %}<span class="partial" title="This order started before the delivery feed's earliest day, so the total figures are short by whatever ran earlier.">partial</span>{% endif %}</td>
         <td class="num pair">{{ t.avg_daily|metric(t) }} <i>/ {{ t.daily_needed|metric(t) }}</i></td>
         <td class="num">{{ t.days_left if t.flight_days else '—' }}</td>
       </tr>
@@ -158,7 +158,7 @@
   now, so 100% is on pace and the bar's tick is where it should be. Within
   &plusmn;10% counts as on pace. Only Insertion Orders are listed; a cancelled
   order appears only if it delivered before it was cancelled. <b>partial</b>
-  marks a flight that began before the delivery feed's earliest day.</p>
+  marks an order that began before the delivery feed's earliest day.</p>
 {% endblock %}
 
 {% block scripts %}<script src="/static/tips.js" defer></script>{% endblock %}
