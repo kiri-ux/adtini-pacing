@@ -887,3 +887,8 @@ table.detailgrid th.pin .stratcell select{appearance:none;-webkit-appearance:non
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2303294D' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat:no-repeat;background-position:right 10px center;cursor:pointer}
 table.detailgrid td input.pctin{width:56px}
+table.detailgrid td.pcttotal{white-space:nowrap}
+table.detailgrid .pctsum.off{color:#B3261E}
+table.detailgrid .pctfix{margin-left:6px;width:22px;height:22px;border-radius:50%;border:1px solid var(--line);
+  background:var(--card);color:var(--adt-blue);font-size:13px;line-height:1;cursor:pointer;vertical-align:middle}
+table.detailgrid .pctfix:hover{background:var(--fill)}

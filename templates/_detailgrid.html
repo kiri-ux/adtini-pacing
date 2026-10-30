@@ -96,7 +96,7 @@
           {% if e.sold %}
           {% set base = r.monthly_target or r.total_target %}
           {% set mine = e.monthly if r.monthly_target else e.total %}
-          <td class="num"><input class="pctin" type="text" inputmode="decimal"
+          <td class="num"><input class="pctin" type="text" inputmode="decimal" data-li="{{ d.item.id }}"
             data-mon="{{ r.monthly_target or '' }}" data-tot="{{ r.total_target or '' }}" data-money="{{ 1 if money else 0 }}"
             value="{{ '%.1f'|format(mine / base * 100) if (mine and base) else '' }}"></td>
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-monthly" value="{{ e.monthly|entry }}"></td>
@@ -125,7 +125,11 @@
           <th class="pin">Total</th>
           {% set sold_sum = d.elements|selectattr('sold')|map(attribute='monthly' if r.monthly_target else 'total')|map('default', 0, true)|sum %}
           {% set base = r.monthly_target or r.total_target %}
-          <td class="num pcttotal">{{ '%.0f%%'|format(sold_sum / base * 100) if (base and sold_sum) else '—' }}</td>
+          <td class="num pcttotal">
+            <span class="pctsum" data-li="{{ d.item.id }}">{{ '%.0f%%'|format(sold_sum / base * 100) if (base and sold_sum) else '—' }}</span>
+            {%- if d.elements|selectattr('sold')|list -%}
+            <button type="button" class="pctfix" data-li="{{ d.item.id }}" title="Recalculate to 100%">&#8635;</button>
+            {%- endif -%}</td>
           <td class="num">{{ val(d, r.monthly_target or none) }}</td>
           <td class="num">{{ val(d, r.total_target or none) }}</td>
           <td class="num">{{ r.unit_cost|money if r.unit_cost else '—' }}</td>
