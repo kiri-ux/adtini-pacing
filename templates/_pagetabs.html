@@ -1,0 +1,8 @@
+{# adtini's Order Details and Product Details tabs. This app is the Pacing
+   tab; the others live in adtini, so they are shown but cannot be opened. #}
+<nav class="pagetabs" role="tablist">
+  {% for name in ['Details', 'Tasks', 'Comments', 'History'] %}
+  <button type="button" role="tab" disabled aria-disabled="true">{{ name }}</button>
+  {% endfor %}
+  <button type="button" role="tab" class="on" aria-selected="true">Pacing</button>
+</nav>
