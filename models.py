@@ -228,6 +228,8 @@ class DailyDelivery(Base):
         ),
         Index("ix_delivery_client_date", "client_name", "date"),
         Index("ix_delivery_order_date", "external_order_id", "date"),
+        # Every page finds its delivery by line item id.
+        Index("ix_delivery_line_item_date", "external_line_item_id", "date"),
         # A hand-made link identifies delivery by this pair, and the unique
         # constraint above leads with the date so it cannot answer for it.
         Index("ix_delivery_campaign", "data_source", "campaign_id"),

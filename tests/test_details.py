@@ -261,3 +261,15 @@ def test_a_dropped_connection_is_retried_once(site):
         app_module.details.details_view = real
         app_module.app.config["TESTING"] = True
         pagecache.clear()
+
+
+def test_budgeting_expand_loads_each_products_grid(site):
+    app_module, (order_id, li_id) = site
+    client = app_module.app.test_client()
+    page = client.get(f"/orders/{order_id}").get_data(as_text=True)
+    assert f"/orders/{order_id}/budgeting" in page
+    assert "13-Oct" not in page  # the grids come with the expand, not the page
+
+    grids = client.get(f"/orders/{order_id}/budgeting").get_data(as_text=True)
+    assert "13-Oct" in grids and "11-Nov" in grids
+    assert "Build split" in grids

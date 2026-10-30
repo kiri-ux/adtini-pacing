@@ -24,7 +24,7 @@
         <th class="num">{{ unit }} Left</th>
         <th class="num">On Pace</th>
         <th class="num sep">Pacing</th>
-        {% for day in d.dates %}<th class="num{% if day.day == 1 %} mstart{% endif %}{% if d.is_future(day) %} future{% endif %}">{{ day.strftime('%-d-%b') }}</th>{% endfor %}
+        {% for day in d.shown_dates %}<th class="num{% if day.day == 1 %} mstart{% endif %}{% if d.is_future(day) %} future{% endif %}">{{ day.strftime('%-d-%b') }}</th>{% endfor %}
       </tr></thead>
       <tbody>
       {% for e in d.elements %}
@@ -53,7 +53,7 @@
           <td class="num">{{ val(e.remaining) }}</td>
           <td class="num">{{ val(e.on_pace) }}</td>
           <td class="num sep"><span class="pace {{ e.pacing_pct|paceclass }}">{{ e.pacing_pct|pct }}</span></td>
-          {% for day in d.dates %}
+          {% for day in d.shown_dates %}
             {% set x = e.by_date.get(day) %}
             <td class="num{% if day.day == 1 %} mstart{% endif %}{% if d.is_future(day) %} future{% elif not x %} zero{% endif %}">
               {%- if d.is_future(day) -%}{%- elif x -%}{{ val(x) }}{%- else -%}&mdash;{%- endif -%}</td>
@@ -62,7 +62,7 @@
       {% else %}
         <tr><th class="pin muted">No strategies yet</th>
           <td class="num" colspan="10"></td>
-          {% for day in d.dates %}<td></td>{% endfor %}</tr>
+          {% for day in d.shown_dates %}<td></td>{% endfor %}</tr>
       {% endfor %}
 
         <tr class="totalrow">
@@ -77,7 +77,7 @@
           <td class="num">{{ val(r.remaining if r.total_target else none) }}</td>
           <td class="num">{{ val(r.on_pace if r.total_target else none) }}</td>
           <td class="num sep"><span class="pace {{ r.pacing_pct|paceclass }}">{{ r.pacing_pct|pct }}</span></td>
-          {% for day in d.dates %}
+          {% for day in d.shown_dates %}
             {% set x = d.total_by_date.get(day) %}
             {% set st = d.day_state.get(day) %}
             <td class="num{% if day.day == 1 %} mstart{% endif %}{% if d.is_future(day) %} future{% endif %}">
@@ -86,14 +86,14 @@
         </tr>
         <tr class="ontrack">
           <th class="pin">On pace / day</th><td colspan="10" class="sep"></td>
-          {% for day in d.dates %}<td class="num{% if day.day == 1 %} mstart{% endif %}">{{ val(d.day_target.get(day)) }}</td>{% endfor %}
+          {% for day in d.shown_dates %}<td class="num{% if day.day == 1 %} mstart{% endif %}">{{ val(d.day_target.get(day)) }}</td>{% endfor %}
         </tr>
 
         <tr class="cumrow first">
           <th class="pin">Monthly {{ unit }}</th>
           <td colspan="9"></td>
           <td class="num sep">{{ val(r.month_to_date) }}</td>
-          {% for day in d.dates %}
+          {% for day in d.shown_dates %}
             {% set x = d.month_actual.get(day) %}
             {% set t = d.month_target.get(day) %}
             <td class="num{% if day.day == 1 %} mstart{% endif %}{% if d.is_future(day) %} future{% endif %}">
@@ -104,13 +104,13 @@
           <th class="pin">Monthly on pace</th>
           <td colspan="9"></td>
           <td class="num sep">{{ val(r.month_on_pace) }}</td>
-          {% for day in d.dates %}<td class="num{% if day.day == 1 %} mstart{% endif %}">{{ val(d.month_target.get(day)) }}</td>{% endfor %}
+          {% for day in d.shown_dates %}<td class="num{% if day.day == 1 %} mstart{% endif %}">{{ val(d.month_target.get(day)) }}</td>{% endfor %}
         </tr>
         <tr class="cumrow first">
           <th class="pin">To date {{ unit }}</th>
           <td colspan="9"></td>
           <td class="num sep">{{ val(r.to_date) }}</td>
-          {% for day in d.dates %}
+          {% for day in d.shown_dates %}
             {% set x = d.td_actual.get(day) %}
             <td class="num{% if day.day == 1 %} mstart{% endif %}{% if d.is_future(day) %} future{% endif %}">
               {%- if x is not none -%}{{ val(x) }}{%- endif -%}</td>
@@ -120,13 +120,13 @@
           <th class="pin">To date on pace</th>
           <td colspan="9"></td>
           <td class="num sep">{{ val(r.on_pace if r.total_target else none) }}</td>
-          {% for day in d.dates %}<td class="num{% if day.day == 1 %} mstart{% endif %}">{{ val(d.td_target.get(day)) }}</td>{% endfor %}
+          {% for day in d.shown_dates %}<td class="num{% if day.day == 1 %} mstart{% endif %}">{{ val(d.td_target.get(day)) }}</td>{% endfor %}
         </tr>
         <tr class="cumrow variance">
           <th class="pin">Ahead / behind</th>
           <td colspan="9"></td>
           <td class="num sep">{{ val(r.to_date - r.on_pace if r.total_target else none) }}</td>
-          {% for day in d.dates %}
+          {% for day in d.shown_dates %}
             {% set x = d.td_actual.get(day) %}
             <td class="num{% if day.day == 1 %} mstart{% endif %}">
               {%- if x is not none -%}
@@ -138,7 +138,7 @@
 
         {% if money %}
         <tr class="cumrow first clickhead"><th class="pin">Clicks</th><td colspan="10" class="sep"></td>
-          {% for day in d.dates %}<td class="{% if day.day == 1 %}mstart{% endif %}"></td>{% endfor %}</tr>
+          {% for day in d.shown_dates %}<td class="{% if day.day == 1 %}mstart{% endif %}"></td>{% endfor %}</tr>
         {% for e in d.elements %}
         <tr class="clickrow">
           <th class="pin">{{ e.label }}</th>
@@ -147,7 +147,7 @@
           <td colspan="2"></td>
           <td class="num">{{ e.clicks|num }}</td>
           <td colspan="2"></td><td class="sep"></td>
-          {% for day in d.dates %}
+          {% for day in d.shown_dates %}
             {% set x = e.clicks_by_date.get(day) %}
             <td class="num{% if day.day == 1 %} mstart{% endif %}{% if d.is_future(day) %} future{% elif not x %} zero{% endif %}">
               {%- if d.is_future(day) -%}{%- elif x -%}{{ x|num }}{%- else -%}&mdash;{%- endif -%}</td>
@@ -158,7 +158,7 @@
 
         <tr class="cumrow first noterow">
           <th class="pin">Notes</th><td colspan="10" class="sep"></td>
-          {% for day in d.dates %}
+          {% for day in d.shown_dates %}
             {% set ns = d.notes_by_date.get(day) %}
             <td class="note{% if day.day == 1 %} mstart{% endif %}">
               {%- if ns -%}

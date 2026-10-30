@@ -550,21 +550,10 @@ def order_detail(order_id: int):
             paced = [li for li in view.order.line_items if products.is_paced(li.product)]
             pagecache.prefetch(
                 url_for("details_page", order_id=order_id, line_item_id=li.id)
-                for li in paced[:30]
+                for li in paced[:10]
             )
-        # The Budgeting expand: the details sheet for each product still
-        # running, the same grid the product page shows.
-        grids = [
-            g for g in (
-                details.details_view(db, order_id, r.line_item_id, as_of=view.as_of)
-                for r in (view.open_rows or view.rows)
-                if r.line_item_id and r.line_item
-                and products.is_paced(r.line_item.product)
-            ) if g is not None
-        ][:20]
         return render_template(
             "order.html",
-            grids=grids,
             v=view,
             t=view.total,
             pacing_choices=PACING_CHOICES,
@@ -576,6 +565,30 @@ def order_detail(order_id: int):
             lineitem_names={li.id: li.name for li in view.order.line_items},
             pacing_types=PACING_TYPES,
         )
+
+
+@app.route("/orders/<int:order_id>/budgeting")
+@login_required
+@cached_page
+def order_budgeting(order_id: int):
+    """The Budgeting expand: the details sheet for each product still running.
+
+    Fetched when the expand opens, so the order page itself never waits on
+    a grid per product.
+    """
+    with session_scope() as db:
+        view = views.order_view(db, order_id, as_of=_as_of())
+        if view is None:
+            abort(404)
+        grids = [
+            g for g in (
+                details.details_view(db, order_id, r.line_item_id, as_of=view.as_of)
+                for r in (view.open_rows or view.rows)
+                if r.line_item_id and r.line_item
+                and products.is_paced(r.line_item.product)
+            ) if g is not None
+        ][:20]
+        return render_template("_budgeting.html", o=view.order, grids=grids)
 
 
 @app.route("/orders/<int:order_id>/save", methods=["POST"])
@@ -1014,6 +1027,7 @@ def details_page(order_id: int, line_item_id: int):
         view = details.details_view(db, order_id, line_item_id, as_of=_as_of())
         if view is None:
             abort(404)
+        view.show_all = request.args.get("days") == "all"
         return render_template(
             "details.html",
             d=view,

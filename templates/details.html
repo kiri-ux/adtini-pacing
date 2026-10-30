@@ -54,9 +54,15 @@
   <input type="hidden" name="back_li" value="{{ d.item.id }}">
 </form>
 
-<details class="drawer budget" open>
+<details class="drawer budget" id="budget" open>
   <summary><b>Budgeting</b></summary>
   <div class="drawerbody">
+    {% if d.is_windowed %}
+    <p class="gridrange">{{ d.shown_dates[0].strftime('%b %-d') }} - {{ d.shown_dates[-1].strftime('%b %-d, %Y') }}
+      <a href="?days=all#budget">Whole flight</a></p>
+    {% elif d.show_all and d.dates|length > d.WHOLE_FLIGHT_DAYS %}
+    <p class="gridrange">Whole flight <a href="?#budget">Last two months</a></p>
+    {% endif %}
     {% if not d.has_split %}
     <form method="post" class="inlineform buildsplit"
       action="{{ url_for('details_build', order_id=o.id, line_item_id=d.item.id) }}">

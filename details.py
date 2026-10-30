@@ -158,6 +158,25 @@ class DetailsView:
     def is_future(self, day: dt.date) -> bool:
         return day > self.as_of
 
+    # A flight longer than this shows last month and this month only. A
+    # column per day of a five-year flight was thousands of cells a row, and
+    # building them was most of the page's time.
+    WHOLE_FLIGHT_DAYS = 93
+    show_all: bool = False
+
+    @property
+    def is_windowed(self) -> bool:
+        return not self.show_all and len(self.dates) > self.WHOLE_FLIGHT_DAYS
+
+    @property
+    def shown_dates(self) -> list[dt.date]:
+        if not self.is_windowed:
+            return self.dates
+        start = (self.as_of.replace(day=1) - dt.timedelta(days=1)).replace(day=1)
+        end = (self.as_of.replace(day=28) + dt.timedelta(days=4)).replace(day=1)
+        shown = [d for d in self.dates if start <= d < end]
+        return shown or self.dates[-62:]
+
 
 def details_view(
     session, order_id: int, line_item_id: int, as_of: dt.date | None = None

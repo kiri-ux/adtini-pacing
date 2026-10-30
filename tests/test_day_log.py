@@ -198,10 +198,13 @@ def test_the_grid_carries_the_whole_flight(site):
     assert (days[0], days[-1]) == ("1-Aug", "21-Sep")
     assert len(days) == 52
 
-    # The product page lays out the whole flight, future days included.
-    body = app_module.app.test_client().get(_details_url(order_id)).get_data(
-        as_text=True
-    )
+    # A flight this long opens on last month and this month; the whole
+    # flight, future days included, is one link away.
+    client = app_module.app.test_client()
+    body = client.get(_details_url(order_id)).get_data(as_text=True)
+    assert "1-Aug" in body and "21-Sep" in body
+    assert "20-Jan" not in body and "Whole flight" in body
+    body = client.get(_details_url(order_id) + "?days=all").get_data(as_text=True)
     assert "20-Jan" in body and "30-Nov" in body
 
 
