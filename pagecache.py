@@ -49,6 +49,13 @@ def render_lock(path: str) -> threading.Lock:
     with _lock:
         return _render_locks.setdefault(path, threading.Lock())
 _pages: OrderedDict[tuple, bytes] = OrderedDict()
+# The last good copy of each page, whatever data it was built from. Served
+# while a fresh one is built behind it, so a new drop or a deploy never
+# makes anyone wait on the build. Dropped on any edit: after a save the
+# page has to show the save.
+_latest: OrderedDict[str, bytes] = OrderedDict()
+# Sent by the background builder: build this page, never answer it stale.
+REFRESH_HEADER = "X-Pacing-Refresh"
 _edits = 0
 _stamp: tuple | None = None
 _stamp_read = 0.0
@@ -73,6 +80,7 @@ def edited() -> None:
     with _lock:
         _edits += 1
         _pages.clear()
+        _latest.clear()
 
 
 def key(path: str, stamp: tuple) -> tuple:
@@ -96,11 +104,22 @@ def put(page_key: tuple, body: bytes) -> None:
         _pages.move_to_end(page_key)
         while len(_pages) > MAX_PAGES:
             _pages.popitem(last=False)
+        _latest[page_key[0]] = body
+        _latest.move_to_end(page_key[0])
+        while len(_latest) > MAX_PAGES:
+            _latest.popitem(last=False)
+
+
+def stale(path: str) -> bytes | None:
+    """The last copy of this page built from older data, if there is one."""
+    with _lock:
+        return _latest.get(path)
 
 
 def clear() -> None:
     with _lock:
         _pages.clear()
+        _latest.clear()
 
 
 _wanted: queue.Queue[str] = queue.Queue()
@@ -153,7 +172,7 @@ def start_warmer(app, paths: tuple[str, ...] = ("/",), every: float = 60.0) -> N
         while True:
             path = _wanted.get()
             try:
-                client.get(path)
+                client.get(path, headers={REFRESH_HEADER: "1"})
             except Exception:
                 log.exception("prefetch %s", path)
 

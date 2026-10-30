@@ -225,6 +225,11 @@ def test_pages_are_served_from_memory_until_something_changes(site):
         with db_module.session_scope() as session:
             session.add(IngestedFile(s3_key="orders/new.csv", kind="orders"))
         pagecache._stamp = None
+        # The last copy is served at once, and a fresh one queued behind it.
+        assert client.get(url).get_data(as_text=True) == first
+        assert pagecache._wanted.get_nowait().startswith(url)
+        refreshed = client.get(url, headers={pagecache.REFRESH_HEADER: "1"})
+        assert "Renamed #51200" in refreshed.get_data(as_text=True)
         assert "Renamed #51200" in client.get(url).get_data(as_text=True)
 
         # Anything posted drops every stored page.
