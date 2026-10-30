@@ -131,7 +131,12 @@ def test_build_split_follows_the_setup_guide(site):
     import db as db_module
     from models import StrategyTerms
 
+    from models import DailyDelivery
+
     app_module, (order_id, li_id) = site
+    # Nothing delivered yet, so the guide decides the split.
+    with db_module.session_scope() as session:
+        session.query(DailyDelivery).delete()
     client = app_module.app.test_client()
     client.post(f"/orders/{order_id}/details/{li_id}/build")
     client.post(f"/orders/{order_id}/details/{li_id}/build")
@@ -149,6 +154,20 @@ def test_build_split_follows_the_setup_guide(site):
     html = client.get(f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
     assert "Build split" not in html
     assert "D - Behavioral" in html
+
+
+def test_build_split_follows_actual_serve_once_running(site):
+    """Running already: each targeting gets the share it is serving."""
+    import db as db_module
+    from models import StrategyTerms
+
+    app_module, (order_id, li_id) = site
+    app_module.app.test_client().post(f"/orders/{order_id}/details/{li_id}/build")
+    with db_module.session_scope() as session:
+        terms = session.query(StrategyTerms).filter_by(line_item_id=li_id).all()
+        assert [(t.match_key, t.monthly_target) for t in terms] == [
+            ("behavioral", pytest.approx(450_000))
+        ]
 
 
 def test_ctv_and_video_splits_two_thirds_to_video():

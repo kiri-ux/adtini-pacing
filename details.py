@@ -576,11 +576,18 @@ def build_split(session, item: LineItem, money: bool) -> tuple[int, str]:
     if existing:
         return 0, "existing"
 
+    # Already running: each targeting gets the share of the goal it is
+    # actually serving. Only a product with nothing delivered yet falls back
+    # to the order's strategies and the setup guide's split.
+    metric = "cost" if money else "impressions"
+    running = views.strategy_series(session, [item], metric=metric).get(item.id, [])
+    added = views._draft_item(session, item, running)
+    if added:
+        return added, "delivery"
+
     plan = plan_split(item, money)
     if not plan:
-        metric = "cost" if money else "impressions"
-        running = views.strategy_series(session, [item], metric=metric).get(item.id, [])
-        return views._draft_item(session, item, running), "delivery"
+        return 0, "delivery"
 
     count = session.execute(
         select(func.count())

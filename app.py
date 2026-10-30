@@ -1106,7 +1106,7 @@ def details_build(order_id: int, line_item_id: int):
     elif source == "order":
         flash(f"Built {added} rows from the order.")
     else:
-        flash(f"Built {added} rows from delivery.")
+        flash(f"Built {added} rows from actual serve.")
     return redirect(
         url_for("details_page", order_id=order_id, line_item_id=line_item_id)
     )

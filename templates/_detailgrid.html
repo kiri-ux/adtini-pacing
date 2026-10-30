@@ -18,6 +18,7 @@
     <table class="daily pinned detailgrid">
       <thead><tr>
         <th class="pin0">Product</th><th class="pin">Campaign Elements</th>
+        <th class="num">%</th>
         {% if mixed %}
         <th class="num">Mon. Goal</th><th class="num">Tot. Goal</th><th class="num">CPM/CPC</th>
         {% else %}
@@ -34,7 +35,7 @@
       <tbody>
       {% for d in gs %}{{ section(d, dates, pacecell, linked) }}{% endfor %}
         <tr class="cumrow first noterow">
-          <th class="pin0"></th><th class="pin">Notes</th><td colspan="7" class="sep"></td>
+          <th class="pin0"></th><th class="pin">Notes</th><td colspan="8" class="sep"></td>
           {% for day in dates %}
             {% set ns = [] %}
             {% for d in gs %}{% for n in d.notes_by_date.get(day, []) %}{% if n not in ns %}{% set _ = ns.append(n) %}{% endif %}{% endfor %}{% endfor %}
@@ -93,11 +94,16 @@
               </span></span>
             </div></th>
           {% if e.sold %}
+          {% set base = r.monthly_target or r.total_target %}
+          {% set mine = e.monthly if r.monthly_target else e.total %}
+          <td class="num"><input class="pctin" type="text" inputmode="decimal"
+            data-mon="{{ r.monthly_target or '' }}" data-tot="{{ r.total_target or '' }}" data-money="{{ 1 if money else 0 }}"
+            value="{{ '%.1f'|format(mine / base * 100) if (mine and base) else '' }}"></td>
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-monthly" value="{{ e.monthly|entry }}"></td>
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-total" value="{{ e.total|entry }}"></td>
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-rate" value="{{ e.rate|entry }}"></td>
           {% else %}
-          <td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">&mdash;</td>
+          <td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">&mdash;</td>
           {% endif %}
           <td class="num" title="Total budget {{ e.total_budget|money if e.total_budget is not none else '—' }}">{{ e.daily_budget|money if e.daily_budget is not none else '—' }}</td>
           <td class="num">{{ val(d, e.to_date) }}</td>
@@ -111,12 +117,15 @@
         </tr>
       {% else %}
         <tr class="prodstart">{{ prodcell() }}<th class="pin muted">No strategies yet</th>
-          <td class="num sep" colspan="7"></td>
+          <td class="num sep" colspan="8"></td>
           {% for day in dates %}<td></td>{% endfor %}</tr>
       {% endfor %}
 
         <tr class="totalrow">
           <th class="pin">Total</th>
+          {% set sold_sum = d.elements|selectattr('sold')|map(attribute='monthly' if r.monthly_target else 'total')|map('default', 0, true)|sum %}
+          {% set base = r.monthly_target or r.total_target %}
+          <td class="num pcttotal">{{ '%.0f%%'|format(sold_sum / base * 100) if (base and sold_sum) else '—' }}</td>
           <td class="num">{{ val(d, r.monthly_target or none) }}</td>
           <td class="num">{{ val(d, r.total_target or none) }}</td>
           <td class="num">{{ r.unit_cost|money if r.unit_cost else '—' }}</td>
@@ -132,25 +141,25 @@
           {% endfor %}
         </tr>
         <tr class="ontrack">
-          <th class="pin">Daily goal</th><td colspan="7" class="sep"></td>
+          <th class="pin">Daily goal</th><td colspan="8" class="sep"></td>
           {% for day in dates %}<td class="num{% if day.day == 1 %} mstart{% endif %}">{{ val(d, d.day_target.get(day)) }}</td>{% endfor %}
         </tr>
         <tr class="cumrow first">
-          <th class="pin">Month pacing</th><td colspan="7" class="sep"></td>
+          <th class="pin">Month pacing</th><td colspan="8" class="sep"></td>
           {% for day in dates %}{{ pacecell(d, d.month_actual.get(day), d.month_target.get(day), day) }}{% endfor %}
         </tr>
         <tr class="cumrow">
-          <th class="pin">Total pacing</th><td colspan="7" class="sep"></td>
+          <th class="pin">Total pacing</th><td colspan="8" class="sep"></td>
           {% for day in dates %}{{ pacecell(d, d.td_actual.get(day), d.td_target.get(day), day) }}{% endfor %}
         </tr>
 
         {% if money %}
-        <tr class="cumrow first clickhead"><th class="pin">Clicks</th><td colspan="7" class="sep"></td>
+        <tr class="cumrow first clickhead"><th class="pin">Clicks</th><td colspan="8" class="sep"></td>
           {% for day in dates %}<td class="{% if day.day == 1 %}mstart{% endif %}"></td>{% endfor %}</tr>
         {% for e in d.elements %}
         <tr class="clickrow">
           <th class="pin">{{ d.short_label(e.label) }}</th>
-          <td colspan="2"></td>
+          <td colspan="3"></td>
           <td class="num">{{ (e.to_date / e.clicks)|money if e.clicks else '—' }}</td>
           <td></td>
           <td class="num">{{ e.clicks|num }}</td>
