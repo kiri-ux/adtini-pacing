@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% from "_meter.html" import meter %}
-{% from "_detailgrid.html" import grid with context %}
 {% set nav = 'overview' %}
 {% set o = v.order %}
 {% set t = v.total %}
@@ -78,32 +77,14 @@
   </div>
 </div>
 
-<details class="drawer">
+<details class="drawer" id="budgetdrawer">
   <summary><b>Budgeting</b>
     {% if o.terms_locked %}<span class="dsub">edited by hand</span>{% endif %}</summary>
   <div class="drawerbody">
 
 <form method="post" action="{{ url_for('strategies_save', order_id=o.id) }}" id="splitform"></form>
-{% for g in grids %}
-<div class="tablecard detailcard prodgrid">
-  <div class="cardhead">
-    <h3><a class="detlink" href="{{ url_for('details_page', order_id=o.id, line_item_id=g.item.id) }}">{{ g.ext_id or g.item.id }}</a>
-      - {{ g.item.product or g.item.name }}{% if g.row.status %} - {{ g.row.status }}{% endif %}</h3>
-    {% if not g.has_split %}
-    <form method="post" class="inlineform"
-      action="{{ url_for('details_build', order_id=o.id, line_item_id=g.item.id) }}">
-      <button class="btn save" type="submit">Build split</button>
-    </form>
-    {% endif %}
-  </div>
-  {{ grid(g) }}
-</div>
-{% endfor %}
-{% if grids %}
-<div class="cardfoot gridsave">
-  <button class="btn save" type="submit" form="splitform">Save split</button>
-</div>
-{% endif %}
+<div class="budgetgrids" id="budgetgrids"
+  data-src="{{ url_for('order_budgeting', order_id=o.id) }}"><p class="empty">Loading</p></div>
 
 <details class="subdrawer">
 <summary><b>Product goals</b></summary>
@@ -430,4 +411,5 @@
 {% block scripts %}<script src="/static/tips.js" defer></script>
 <script src="/static/linking.js" defer></script>
 <script src="/static/daylog.js" defer></script>
-<script src="/static/scope.js" defer></script>{% endblock %}
+<script src="/static/scope.js" defer></script>
+<script src="/static/budgeting.js" defer></script>{% endblock %}
