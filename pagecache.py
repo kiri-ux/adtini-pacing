@@ -38,6 +38,8 @@ MAX_PAGES = 120
 STAMP_TTL = 30.0
 
 _lock = threading.Lock()
+# Held while a page is built, so heavy pages are worked out one at a time.
+render_lock = threading.Lock()
 _pages: OrderedDict[tuple, bytes] = OrderedDict()
 _edits = 0
 _stamp: tuple | None = None
@@ -103,6 +105,7 @@ def start_warmer(app, paths: tuple[str, ...] = ("/",), every: float = 60.0) -> N
 
     def loop() -> None:
         seen = None
+        time.sleep(every)  # let the instance finish starting first
         while True:
             try:
                 with session_scope() as session:
