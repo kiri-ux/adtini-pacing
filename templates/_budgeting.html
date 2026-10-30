@@ -5,9 +5,9 @@
   {% if nav.prev %}<a class="gridnav" href="#" data-q="month={{ nav.prev }}">&lsaquo;</a>{% endif %}
   <b>{{ nav.month.strftime('%B %Y') }}</b>
   {% if nav.next %}<a class="gridnav" href="#" data-q="month={{ nav.next }}">&rsaquo;</a>{% endif %}
-  <a class="gridnav" href="#" data-q="days=all">Whole flight</a>
+  <a class="gridnav" href="#" data-q="days=all">Total</a>
   {% else %}
-  <b>Whole flight</b> <a class="gridnav" href="#" data-q="">Current month</a>
+  <b>Total</b> <a class="gridnav" href="#" data-q="">Current month</a>
   {% endif %}
 </p>
 {% endif %}

@@ -93,8 +93,8 @@ def test_the_page_says_which_orders_it_is_not_showing(site):
 
     assert shown == ["44807"], "only the live one is listed"
     assert hidden == {
-        "44808": "ended 31 May 2026",
-        "44809": "cancelled, nothing delivered",
+        "44808": "IO Complete",
+        "44809": "Cancelled",
         "44810": "Proposal",
         "44811": "Draft",
     }
@@ -106,7 +106,7 @@ def test_an_order_is_found_by_its_id(site):
     hidden, shown = _hidden("44808")
 
     assert shown == []
-    assert hidden == {"44808": "ended 31 May 2026"}
+    assert hidden == {"44808": "IO Complete"}
 
 
 def test_nothing_is_reported_hidden_once_the_filter_is_off(site):
@@ -132,5 +132,5 @@ def test_the_bar_renders_with_a_link_to_each_one(site):
     ).get_data(as_text=True)
 
     assert "4 hidden" in body
-    assert "ended 31 May 2026" in body
-    assert "cancelled, nothing delivered" in body
+    assert "IO Complete" in body
+    assert "Cancelled" in body

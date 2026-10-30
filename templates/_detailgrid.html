@@ -91,7 +91,7 @@
           {% for day in d.shown_dates %}{{ pacecell(d.month_actual.get(day), d.month_target.get(day), day) }}{% endfor %}
         </tr>
         <tr class="cumrow">
-          <th class="pin">Flight pacing</th><td colspan="7" class="sep"></td>
+          <th class="pin">Total pacing</th><td colspan="7" class="sep"></td>
           {% for day in d.shown_dates %}{{ pacecell(d.td_actual.get(day), d.td_target.get(day), day) }}{% endfor %}
         </tr>
 

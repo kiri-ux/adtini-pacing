@@ -237,6 +237,21 @@ def _daily_by_line_item(
 
 MAX_CHART_SERIES = 8
 
+# The only order statuses the buying team works. Line item statuses add a
+# suffix ("IO Live: Pending Revision"), so these match as prefixes.
+WORKED_STATUSES = ("io pending approval", "io pending launch", "io paused", "io live")
+
+
+def _worked_statuses(include_ended: bool) -> tuple[str, ...]:
+    # Asking for ended orders is asking for completed ones too.
+    return WORKED_STATUSES + (("io complete",) if include_ended else ())
+
+
+def _worked_clause(include_ended: bool):
+    status = func.lower(func.coalesce(Order.status, ""))
+    return or_(*(status.like(f"{s}%") for s in _worked_statuses(include_ended)))
+
+
 # Statuses that say an order has not started running yet.
 NOT_LAUNCHED_STATUSES = {
     "io pending launch", "pending launch", "pending", "not launched",
@@ -912,6 +927,8 @@ def hidden_matches(
         status = (order.status or "").strip().lower()
         if not include_non_io and kind != PACEABLE_ORDER_TYPE:
             reason = order.order_type or "no order type"
+        elif not include_non_io and not status.startswith(_worked_statuses(include_ended)):
+            reason = order.status or "no status"
         elif not order.active:
             reason = order.status or "never ran"
         elif not include_ended and order.end_date and order.end_date < as_of:
@@ -960,6 +977,7 @@ def overview(
         stmt = stmt.where(
             func.lower(func.coalesce(Order.order_type, "")) == PACEABLE_ORDER_TYPE
         )
+        stmt = stmt.where(_worked_clause(include_ended))
     # An order that never ran has nothing to pace and no delivery to show.
     stmt = stmt.where(Order.active.is_(True))
     if not include_ended:
