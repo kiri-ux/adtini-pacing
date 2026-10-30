@@ -73,16 +73,25 @@
 {%- endmacro %}
       {% for e in d.elements %}
         <tr class="{{ 'soldrow' if e.sold else 'unsoldrow' }}{% if loop.first %} prodstart{% endif %}">
-          {% if loop.first %}{{ prodcell() }}{% endif %}<th class="pin{% if e.target_list %} hastargets{% endif %}" title="{{ e.label }}{% if e.target_list %}&#10;&#10;{{ e.target_list|join('&#10;'|safe) }}{% endif %}">
+          {% if loop.first %}{{ prodcell() }}{% endif %}<th class="pin">
+            <div class="stratcell">
             {%- if e.sold -%}
             {% set opts = d.strategy_options %}
+            {% set picked = d.selected_option(e.label) %}
             <select form="splitform" name="st-{{ e.strategy_id }}-label">
-              {% if e.label not in opts %}<option value="{{ e.label }}" selected>{{ d.short_label(e.label) }}</option>{% endif %}
-              {% for opt in opts %}<option value="{{ opt }}"{% if opt == e.label %} selected{% endif %}>{{ d.short_label(opt) }}</option>{% endfor %}
+              {% if not picked %}<option value="{{ e.label }}" selected>{{ d.short_label(e.label) }}</option>{% endif %}
+              {% for opt in opts %}<option value="{{ opt }}"{% if opt == picked %} selected{% endif %}>{{ d.short_label(opt) }}</option>{% endfor %}
             </select>
             {%- else -%}
-            {{ d.short_label(e.label) }} <span class="setupflag">not sold</span>
-            {%- endif -%}</th>
+            <span class="stratname">{{ d.short_label(e.label) }} <span class="setupflag">not sold</span></span>
+            {%- endif -%}
+            <span class="targettip{% if e.target_list %} has{% endif %}" tabindex="0">i
+              <span class="tipbox"><b>{{ d.short_label(d.selected_option(e.label) or e.label) }}</b>
+                {%- if e.target_list -%}
+                <ul>{% for t in e.target_list %}<li>{{ t }}</li>{% endfor %}</ul>
+                {%- else -%}<em>No targets</em>{%- endif -%}
+              </span></span>
+            </div></th>
           {% if e.sold %}
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-monthly" value="{{ e.monthly|entry }}"></td>
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-total" value="{{ e.total|entry }}"></td>
@@ -166,7 +175,7 @@
   <summary><b>Demo settings</b></summary>
   <div class="drawerbody demogrid">
     {% for g, e in sold %}
-    <label class="f"><span>{% if grids|length > 1 %}{{ g.ext_id or g.item.id }} - {% endif %}{{ e.label }}</span>
+    <label class="f"><span>{% if grids|length > 1 %}{{ g.item.product or g.item.name }} - {% endif %}{{ g.short_label(g.selected_option(e.label) or e.label) }}</span>
       <textarea form="splitform" name="st-{{ e.strategy_id }}-targets" rows="3"
         placeholder="Categories, keywords, one per line">{{ e.targets or '' }}</textarea></label>
     {% endfor %}

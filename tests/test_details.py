@@ -316,4 +316,4 @@ def test_strategy_targets_save_and_show_on_hover(site):
         assert session.get(StrategyTerms, tid).targets == "Home Improvement\nInterior Design"
 
     html = client.get(f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
-    assert "Home Improvement&#10;Interior Design" in html
+    assert "<li>Home Improvement</li><li>Interior Design</li>" in html
