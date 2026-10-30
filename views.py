@@ -1441,6 +1441,9 @@ class LinkingView:
         return [c for c in self.candidates if c.taken_by is None]
 
 
+NAMED_LOOKBACK_DAYS = 120
+
+
 def campaign_candidates(
     session, order: Order, join: "_Join", as_of: dt.date
 ) -> list[CampaignCandidate]:
@@ -1471,10 +1474,26 @@ def campaign_candidates(
         clause = DailyDelivery.external_order_id == order.external_order_id
         conditions.append(clause)
         reasons.append(("order id", clause))
-        # The team writes the order number into the campaign name.
-        named = DailyDelivery.campaign_name.like(f"%{order.external_order_id}%")
-        conditions.append(named)
-        reasons.append(("named", named))
+        # The team writes the order number into the campaign name. No index
+        # can answer a LIKE '%...%', so it is asked of the last few months
+        # only, for the campaigns it names; those are then read whole by
+        # their own index. Across every day ever loaded, this one clause
+        # was most of a minute per order page.
+        since = as_of - dt.timedelta(days=NAMED_LOOKBACK_DAYS)
+        named_keys = session.execute(
+            select(DailyDelivery.data_source, DailyDelivery.campaign_id)
+            .where(
+                DailyDelivery.date >= since,
+                DailyDelivery.campaign_name.like(f"%{order.external_order_id}%"),
+            )
+            .distinct()
+        ).all()
+        if named_keys:
+            named = tuple_(DailyDelivery.data_source, DailyDelivery.campaign_id).in_(
+                [tuple(k) for k in named_keys]
+            )
+            conditions.append(named)
+            reasons.append(("named", named))
     if not conditions:
         return []
 

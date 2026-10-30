@@ -277,3 +277,43 @@ def test_budgeting_expand_loads_each_products_grid(site):
     grids = client.get(f"/orders/{order_id}/budgeting").get_data(as_text=True)
     assert "13-Oct" in grids and "11-Nov" not in grids
     assert "Build split" in grids
+
+
+def test_budgeting_expand_steps_through_the_months(site):
+    app_module, (order_id, li_id) = site
+    client = app_module.app.test_client()
+    grids = client.get(f"/orders/{order_id}/budgeting").get_data(as_text=True)
+    assert 'data-q="month=2026-11"' in grids and "October 2026" in grids
+
+    nov = client.get(f"/orders/{order_id}/budgeting?month=2026-11").get_data(as_text=True)
+    assert "11-Nov" in nov and "13-Oct" not in nov
+    assert 'data-q="month=2026-10"' in nov
+
+    whole = client.get(f"/orders/{order_id}/budgeting?days=all").get_data(as_text=True)
+    assert "13-Oct" in whole and "11-Nov" in whole
+
+
+def test_strategy_targets_save_and_show_on_hover(site):
+    import db as db_module
+    from models import StrategyTerms
+
+    app_module, (order_id, li_id) = site
+    client = app_module.app.test_client()
+    client.post(f"/orders/{order_id}/details/{li_id}/build")
+    with db_module.session_scope() as session:
+        term = session.query(StrategyTerms).filter_by(label="D - Behavioral").one()
+        tid = term.id
+
+    html = client.get(f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
+    assert f'name="st-{tid}-label"' in html and "<select" in html
+    assert "Demo settings" in html
+
+    client.post(f"/orders/{order_id}/strategies/save", data={
+        f"st-{tid}-label": "D - Behavioral",
+        f"st-{tid}-targets": "Home Improvement\nInterior Design\n",
+    })
+    with db_module.session_scope() as session:
+        assert session.get(StrategyTerms, tid).targets == "Home Improvement\nInterior Design"
+
+    html = client.get(f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
+    assert "Home Improvement&#10;Interior Design" in html

@@ -1,4 +1,16 @@
-{% from "_detailgrid.html" import grid with context %}
+{% from "_detailgrid.html" import grid, demo with context %}
+{% if nav.multi %}
+<p class="gridrange">
+  {% if not nav.show_all %}
+  {% if nav.prev %}<a class="gridnav" href="#" data-q="month={{ nav.prev }}">&lsaquo;</a>{% endif %}
+  <b>{{ nav.month.strftime('%B %Y') }}</b>
+  {% if nav.next %}<a class="gridnav" href="#" data-q="month={{ nav.next }}">&rsaquo;</a>{% endif %}
+  <a class="gridnav" href="#" data-q="days=all">Whole flight</a>
+  {% else %}
+  <b>Whole flight</b> <a class="gridnav" href="#" data-q="">Current month</a>
+  {% endif %}
+</p>
+{% endif %}
 {% for g in grids %}
 <div class="tablecard detailcard prodgrid">
   <div class="cardhead">
@@ -19,3 +31,4 @@
   <button class="btn save" type="submit" form="splitform">Save split</button>
 </div>
 {% endif %}
+{{ demo(grids) }}

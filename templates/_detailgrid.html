@@ -33,9 +33,13 @@
       <tbody>
       {% for e in d.elements %}
         <tr class="{{ 'soldrow' if e.sold else 'unsoldrow' }}">
-          <th class="pin" title="{{ e.label }}">
+          <th class="pin{% if e.target_list %} hastargets{% endif %}" title="{{ e.label }}{% if e.target_list %}&#10;&#10;{{ e.target_list|join('&#10;'|safe) }}{% endif %}">
             {%- if e.sold -%}
-            <input form="splitform" type="text" name="st-{{ e.strategy_id }}-label" value="{{ e.label }}">
+            {% set opts = d.strategy_options %}
+            <select form="splitform" name="st-{{ e.strategy_id }}-label">
+              {% if e.label not in opts %}<option selected>{{ e.label }}</option>{% endif %}
+              {% for opt in opts %}<option{% if opt == e.label %} selected{% endif %}>{{ opt }}</option>{% endfor %}
+            </select>
             {%- else -%}
             {{ e.label }} <span class="setupflag">not sold</span>
             {%- endif -%}</th>
@@ -83,15 +87,11 @@
           {% for day in d.shown_dates %}<td class="num{% if day.day == 1 %} mstart{% endif %}">{{ val(d.day_target.get(day)) }}</td>{% endfor %}
         </tr>
         <tr class="cumrow first">
-          <th class="pin">Month pacing</th>
-          <td colspan="6"></td>
-          <td class="num sep"><span class="pace {{ r.month_pacing_pct|paceclass }}" title="{{ val(r.month_to_date) }} of {{ val(r.month_on_pace) }}">{{ r.month_delivery_ratio|pct }}</span></td>
+          <th class="pin">Month pacing</th><td colspan="7" class="sep"></td>
           {% for day in d.shown_dates %}{{ pacecell(d.month_actual.get(day), d.month_target.get(day), day) }}{% endfor %}
         </tr>
         <tr class="cumrow">
-          <th class="pin">Flight pacing</th>
-          <td colspan="6"></td>
-          <td class="num sep"><span class="pace {{ r.pacing_pct|paceclass }}" title="{{ val(r.to_date) }} of {{ val(r.on_pace if r.total_target else none) }}">{{ r.delivery_ratio|pct }}</span></td>
+          <th class="pin">Flight pacing</th><td colspan="7" class="sep"></td>
           {% for day in d.shown_dates %}{{ pacecell(d.td_actual.get(day), d.td_target.get(day), day) }}{% endfor %}
         </tr>
 
@@ -128,4 +128,24 @@
       </tbody>
     </table>
   </div>
+{%- endmacro %}
+
+{# Targets typed in by hand, one strategy per box, until the adtini forms
+   carry them. Shown on hover over the strategy. #}
+{% macro demo(grids) -%}
+{% set sold = [] %}
+{% for g in grids %}{% for e in g.elements if e.sold %}{% set _ = sold.append((g, e)) %}{% endfor %}{% endfor %}
+{% if sold %}
+<details class="drawer demo">
+  <summary><b>Demo settings</b></summary>
+  <div class="drawerbody demogrid">
+    {% for g, e in sold %}
+    <label class="f"><span>{% if grids|length > 1 %}{{ g.ext_id or g.item.id }} - {% endif %}{{ e.label }}</span>
+      <textarea form="splitform" name="st-{{ e.strategy_id }}-targets" rows="3"
+        placeholder="Categories, keywords, one per line">{{ e.targets or '' }}</textarea></label>
+    {% endfor %}
+    <div class="cardfoot"><button class="btn save" type="submit" form="splitform">Save</button></div>
+  </div>
+</details>
+{% endif %}
 {%- endmacro %}
