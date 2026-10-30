@@ -49,6 +49,21 @@ DAY_OVER = 1.5
 DISPLAY_CTR_FLOOR = 0.0007
 
 
+# How each targeting reads in the strategy dropdown. Spelled out, so it is
+# plain which part of the adtini form a row matches to.
+OPTION_NAMES = {
+    "behavioral": "Behavioral Targeting",
+    "ai": "AI Targeting",
+    "keyword": "Keyword Targeting",
+    "category": "Category Targeting",
+    "content": "Content Targeting",
+    "lookalike": "Lookalike Audiences",
+    "matching": "Audience Matching",
+    "event": "Event Targeting",
+    "b2b": "B2B Targeting",
+}
+
+
 @dataclass
 class GridRow:
     """One Campaign Elements row."""
@@ -166,8 +181,15 @@ class DetailsView:
     def strategy_options(self) -> list[str]:
         """The strategies a row can be: this product's code, then targeting."""
         code = products.abbreviation(self.item.product)
-        names = dict.fromkeys(sheets.TARGETING_LABELS.values())
+        names = dict.fromkeys(OPTION_NAMES.get(k, v) for k, v in sheets.TARGETING_LABELS.items())
         return [f"{code} - {name}" if code else name for name in names]
+
+    def selected_option(self, label: str) -> str | None:
+        """The option a stored label is, by what it targets, not its wording."""
+        key = sheets.match_key(label)
+        if key is None:
+            return None
+        return next((o for o in self.strategy_options if sheets.match_key(o) == key), None)
 
     @property
     def product_pill(self) -> dict | None:
