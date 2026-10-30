@@ -94,9 +94,13 @@ def site(tmp_path):
 
 def test_the_grid_runs_the_whole_flight(site):
     app_module, (order_id, li_id) = site
-    page = app_module.app.test_client().get(f"/orders/{order_id}/details/{li_id}")
+    client = app_module.app.test_client()
+    page = client.get(f"/orders/{order_id}/details/{li_id}")
     assert page.status_code == 200
     html = page.get_data(as_text=True)
+    # Opens on the month the data runs through.
+    assert "13-Oct" in html and "31-Oct" in html and "11-Nov" not in html
+    html = client.get(f"/orders/{order_id}/details/{li_id}?days=all").get_data(as_text=True)
     assert "13-Oct" in html and "11-Nov" in html
     assert "Build split" in html
 
@@ -271,5 +275,5 @@ def test_budgeting_expand_loads_each_products_grid(site):
     assert "13-Oct" not in page  # the grids come with the expand, not the page
 
     grids = client.get(f"/orders/{order_id}/budgeting").get_data(as_text=True)
-    assert "13-Oct" in grids and "11-Nov" in grids
+    assert "13-Oct" in grids and "11-Nov" not in grids
     assert "Build split" in grids
