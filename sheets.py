@@ -58,7 +58,11 @@ TARGETING = {
     "cross platform": "cross platform",
     "website retargeting": "retargeting",
     "categories": "category",
-    "premium": "premium",
+    # Meta's placement, not a targeting: "Parkview - Facebook Premium" is a
+    # category audience, and the buying team's "FB - Premium" means the same.
+    # A named targeting in the label ("Retargeting ... Premium") is longer
+    # and is found first.
+    "premium": "category",
     "event": "event",
     "b2b": "b2b",
     "search terms": "search terms",
@@ -94,7 +98,7 @@ ABBREVIATIONS = {
     "cats": "category",
     "la": "lookalike",
     "look": "lookalike",
-    "prem": "premium",
+    "prem": "category",
     "ai": "ai",
     "b2b": "b2b",
     "st": "search terms",
@@ -116,7 +120,6 @@ TARGETING_LABELS = {
     "lookalike": "Lookalike",
     "matching": "Matching",
     "cross platform": "Cross Platform",
-    "premium": "Premium",
     "event": "Event",
     "b2b": "B2B",
     "search terms": "Search Terms",

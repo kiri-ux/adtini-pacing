@@ -874,7 +874,7 @@ table.daily.pinned.detailgrid tbody th,table.daily.pinned.detailgrid tbody td{
   border-top:0;border-bottom:1px solid var(--line)}
 table.daily.pinned.detailgrid th.pin{box-shadow:none;border-right:1px solid var(--line)}
 table.daily.pinned.detailgrid th.pin0{border-right:1px solid var(--line)}
-table.daily.pinned.detailgrid tbody th.prodcell{text-align:center;vertical-align:middle;padding:10px 6px}
+table.daily.pinned.detailgrid tbody th.prodcell{text-align:center;vertical-align:top;padding:16px 6px 10px}
 table.daily.pinned.detailgrid thead th.pin0{text-align:center}
 table.daily.pinned.detailgrid th.prodcell .buildbtn{margin:8px auto 0}
 table.daily.pinned.detailgrid tr.prodstart > *{border-top:2px solid var(--navy)}

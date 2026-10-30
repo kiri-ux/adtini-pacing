@@ -141,8 +141,8 @@ def test_the_strategy_tab_paces_each_targeting_separately(site):
         f"/orders/{order_id}/details/{meta_id}"
     ).get_data(as_text=True)
 
-    # Shown by what they target, without the product code the pill carries.
-    assert ">Retargeting</option>" in page
+    # Shown as adtini names them, without the product code the pill carries.
+    assert ">Website Retargeting</option>" in page
     assert ">Category Targeting</option>" in page
     # 20 days at 400 and 20 days at 3,800, matched onto the sold split.
     assert "8,000" in page
@@ -681,7 +681,7 @@ def test_a_strategy_is_named_the_way_the_buying_team_writes_it():
     """The feed's names are unreadable and do not line up with their sheets.
 
     "FB - Home Improvement Center/Interior Design Facebook Premium" is what
-    the feed calls it; every sheet the team keeps calls it "FB - Premium".
+    the feed calls it: a category audience on Meta's Premium placement.
     Shown the feed's way the strategy tab could not be checked against their
     own numbers at all.
     """
@@ -696,7 +696,7 @@ def test_a_strategy_is_named_the_way_the_buying_team_writes_it():
     assert label(meta, "FB - Retargeting Facebook Premium") == "M - Retargeting"
     assert label(
         meta, "FB - Home Improvement Center/Interior Design Facebook Premium"
-    ) == "M - Premium"
+    ) == "M - Categories"
     assert label("Display Ads", "D - Behavioral") == "D - Behavioral"
 
     # An audience list with no targeting word in it is category targeting.
