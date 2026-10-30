@@ -742,13 +742,76 @@ table.elements.show-all tbody tr{display:table-row}
 .prodpick select{width:auto;min-width:320px}
 .detailcard .charthead{padding-top:12px;padding-bottom:12px}
 
-/* ---- adtini's page tabs; this app is the Pacing one ---------------------- */
-.pagetabs{display:flex;gap:2px;margin:0 0 16px;border-bottom:1px solid var(--line)}
-.pagetabs button{font:inherit;font-size:13px;font-weight:600;background:none;border:0;
-  border-bottom:3px solid transparent;margin-bottom:-1px;padding:10px 18px;color:var(--navy);cursor:default}
-.pagetabs button:disabled{color:var(--muted);opacity:.6}
-.pagetabs button.on{border-bottom-color:var(--gold)}
+/* ---- adtini's Order / Product Details frame ------------------------------
+   Read off adtini's own Order Details page (pacing-redesign/
+   adtini-order-details-ref.jpg): breadcrumb and status above, then one white
+   card whose top edge is the navy tab bar, and navy-headed cards inside. */
+:root{--adt-navy:#03294D;--adt-gold:#F7C873;--adt-blue:#1B5FC1}
+.titlebar{padding-right:0;margin:0 0 12px}
+.titlebar .crumbs{font-size:11.5px}
+.titlebar .crumbs a,.titlebar .crumbs .crumbc{color:#1A2330;text-decoration:underline;font-weight:600}
+.statusbadge{background:#BFE0FB;color:#0B2440;font-weight:500;font-size:12.5px;padding:5px 14px}
+.statusbadge::before{background:#1C7ED6}
+.tbright{margin-left:auto}
+.pillbtn{background:var(--adt-blue);color:#fff;text-decoration:none;font-size:12px;
+  font-weight:600;padding:7px 18px;border-radius:999px}
+.pillbtn:hover{background:var(--adt-navy)}
+.titlebar .prodpick{margin:0}
+.titlebar .prodpick select{min-width:280px;padding:6px 12px;border-radius:999px;font-size:12.5px}
+
+.adtcard{background:var(--card);border-radius:10px;box-shadow:0 1px 4px rgba(16,40,70,.12);
+  margin-bottom:20px}
+.pagetabs{display:flex;margin:0;background:var(--adt-navy);border-radius:10px 10px 0 0;
+  overflow:hidden;border:0}
+.pagetabs button{flex:1 1 0;font:inherit;font-size:13px;font-weight:500;background:none;
+  border:0;border-bottom:2px solid transparent;margin:0;padding:10px 12px;color:#fff;cursor:default}
+.pagetabs button:disabled{color:#fff;opacity:1}
+.pagetabs button.on{border-bottom-color:var(--adt-gold)}
+.tabbody{padding:14px 12px 16px}
+
+.tabbody .infocard{grid-template-columns:repeat(6,minmax(0,1fr));gap:22px 18px;
+  border:1px solid #E4E4E4;border-radius:8px;box-shadow:0 1px 3px rgba(16,40,70,.10);
+  padding:16px 10px 20px;margin-bottom:14px}
+.tabbody .infocard small{font-size:12.5px;color:#383838;margin-bottom:6px}
+.tabbody .infocard b{font-size:15.5px;font-weight:600;color:#1A1A1A}
+
+.tabbody .tablecard{box-shadow:0 1px 3px rgba(16,40,70,.10);border:1px solid #E4E4E4;border-radius:8px}
+.tabbody .cardhead{padding:0 10px}
+.tabbody .cardhead h3{font-size:14px;font-weight:600;margin:12px 0 10px}
+.tabbody thead th{background:var(--adt-navy);font-weight:500;font-size:12px;padding:9px 8px}
+.tabbody tbody td{font-size:12.5px;padding:8px 8px}
+.tabbody a.detlink{color:#1A2330;font-weight:500;text-decoration:underline}
+
+/* Current / All, adtini's segmented toggle */
+.tabbody .scopetabs{gap:0;border:1px solid #9AA5B5;border-radius:999px;overflow:hidden;margin-left:12px}
+.tabbody .cardhead .scopetabs{margin-left:12px;margin-right:auto}
+.tabbody .scopetab{border:0;border-radius:0;background:#fff;color:#1A2330;font-size:12px;
+  font-weight:500;padding:5px 14px}
+.tabbody .scopetab + .scopetab{border-left:1px solid #9AA5B5}
+.tabbody .scopetab.on{background:#DCE3F0;color:#1A2330}
+.tabbody .scopetab.on::before{content:"\2713";margin-right:6px}
+
+/* Expands read as adtini's navy-titled cards */
+.tabbody details.drawer{border:1px solid #E4E4E4;border-radius:8px;overflow:hidden;
+  box-shadow:0 1px 3px rgba(16,40,70,.10);margin:14px 0 0}
+.tabbody details.drawer > summary{background:var(--adt-navy);padding:10px 12px}
+.tabbody details.drawer > summary b{color:#fff;font-size:13px;font-weight:500}
+.tabbody details.drawer > summary:hover b{color:#fff}
+.tabbody details.drawer > summary::before{color:#fff}
+.tabbody .drawerbody{background:#fff;border-top:0;padding:12px}
+.tabbody .prodgrid{margin-bottom:14px}
+.tabbody .gridsave{display:flex;justify-content:flex-end;margin:0 0 12px}
+.tabbody .buildsplit{margin:0 0 12px}
+details.subdrawer{margin:6px 0 0}
+details.subdrawer > summary{cursor:pointer;padding:8px 2px;color:var(--adt-navy)}
 .cardhead .prodpick{margin:0 0 0 auto}
-.cardhead .prodpick + .inlineform{margin-left:0}
 .cardhead .inlineform{margin-left:auto}
 .cardhead .prodpick ~ .inlineform{margin-left:0}
+@media (max-width:900px){.tabbody .infocard{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .pagetabs button{padding:10px 4px;font-size:12px}}
+/* The day log button sits bottom right, where adtini keeps its own round
+   button, so it never covers the page's buttons. */
+.logwrap.floating{top:auto;bottom:22px}
+.logwrap.floating .daylog{top:auto;bottom:calc(100% + 10px)}
+.titlebar .prodpick select{min-width:0;width:auto;height:32px;min-height:0;padding:4px 30px 4px 12px;font-size:12px}
+.titlebar .prodpick label{font-size:12px}
