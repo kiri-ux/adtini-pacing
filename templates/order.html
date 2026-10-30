@@ -1,21 +1,23 @@
 {% extends "base.html" %}
 {% from "_meter.html" import meter %}
+{% from "_detailgrid.html" import grid with context %}
 {% set nav = 'overview' %}
 {% set o = v.order %}
 {% set t = v.total %}
 {% block title %} — {{ v.client.name }}{% endblock %}
 {% block heading %}Order Details - {{ o.external_order_id or o.id }} - {{ v.client.name }}{% endblock %}
-{% block headactions %}
-  <a class="btn-create" href="{{ url_for('export_order', order_id=o.id) }}">&#8595; Export</a>
-{% endblock %}
+
 
 {% block body %}
 <div class="titlebar">
   <p class="crumbs"><a href="/">Pacing</a> &rsaquo; <span class="crumbc">Order {{ o.external_order_id or o.id }}</span></p>
   {% if o.status %}<span class="statusbadge">{{ o.status }}</span>{% endif %}
   <span class="asof">Data through {{ v.as_of.strftime('%-m/%-d/%Y') }}</span>
+  <a class="pillbtn tbright" href="{{ url_for('export_order', order_id=o.id) }}">Export</a>
 </div>
+<div class="adtcard">
 {% include "_pagetabs.html" %}
+<div class="tabbody">
 
 {% if v.status_contradicts_delivery %}
 <p class="warnbar">Status is {{ o.status }}, but {{ t.to_date|metric(t) }} has delivered.</p>
@@ -77,15 +79,36 @@
 </div>
 
 <details class="drawer">
-  <summary><b>Edit sold terms</b>
+  <summary><b>Budgeting</b>
     {% if o.terms_locked %}<span class="dsub">edited by hand</span>{% endif %}</summary>
   <div class="drawerbody">
 
+<form method="post" action="{{ url_for('strategies_save', order_id=o.id) }}" id="splitform"></form>
+{% for g in grids %}
+<div class="tablecard detailcard prodgrid">
+  <div class="cardhead">
+    <h3><a class="detlink" href="{{ url_for('details_page', order_id=o.id, line_item_id=g.item.id) }}">{{ g.ext_id or g.item.id }}</a>
+      - {{ g.item.product or g.item.name }}{% if g.row.status %} - {{ g.row.status }}{% endif %}</h3>
+    {% if not g.has_split %}
+    <form method="post" class="inlineform"
+      action="{{ url_for('details_build', order_id=o.id, line_item_id=g.item.id) }}">
+      <button class="btn save" type="submit">Build split</button>
+    </form>
+    {% endif %}
+  </div>
+  {{ grid(g) }}
+</div>
+{% endfor %}
+{% if grids %}
+<div class="cardfoot gridsave">
+  <button class="btn save" type="submit" form="splitform">Save split</button>
+</div>
+{% endif %}
 
-
+<details class="subdrawer">
+<summary><b>Product goals</b></summary>
 <form method="post" action="{{ url_for('order_save', order_id=o.id) }}">
 <div class="tablecard ordercard">
-  <div class="charthead"><h3>Budgeting</h3></div>
   <div class="orderterms">
     <div class="f"><label for="pacing_type">Pacing type</label>
       <select id="pacing_type" name="pacing_type" title="How this order paces unless a product says otherwise">
@@ -207,6 +230,7 @@
   <input type="file" name="file" accept=".csv,.gz,.zip">
   <button class="btn2 addprod" type="submit">Load</button>
 </form>
+</details>
   </div>
 </details>
 
@@ -399,6 +423,8 @@
   </div>
 </div>
 
+</div>
+</div>
 {% endblock %}
 
 {% block scripts %}<script src="/static/tips.js" defer></script>

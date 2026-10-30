@@ -552,8 +552,19 @@ def order_detail(order_id: int):
                 url_for("details_page", order_id=order_id, line_item_id=li.id)
                 for li in paced[:30]
             )
+        # The Budgeting expand: the details sheet for each product still
+        # running, the same grid the product page shows.
+        grids = [
+            g for g in (
+                details.details_view(db, order_id, r.line_item_id, as_of=view.as_of)
+                for r in (view.open_rows or view.rows)
+                if r.line_item_id and r.line_item
+                and products.is_paced(r.line_item.product)
+            ) if g is not None
+        ][:20]
         return render_template(
             "order.html",
+            grids=grids,
             v=view,
             t=view.total,
             pacing_choices=PACING_CHOICES,
