@@ -817,3 +817,12 @@ details.subdrawer > summary{cursor:pointer;padding:8px 2px;color:var(--adt-navy)
 .titlebar .prodpick label{font-size:12px}
 .gridrange{margin:0 0 10px;font-size:12.5px;color:var(--muted)}
 .gridrange a{margin-left:10px;color:var(--adt-blue);font-weight:600}
+/* Day-by-day pacing: colored text, not pills, so a row of them stays quiet. */
+.pacetxt{font-weight:600;font-size:12px}
+.pacetxt.on-pace{color:#17603A}
+.pacetxt.under{color:#B3261E}
+.pacetxt.over{color:#9A6408}
+.pacetxt.unknown{color:var(--muted)}
+.gridrange{display:flex;align-items:center;gap:10px}
+.gridrange b{color:var(--text);font-size:13px}
+.gridrange a{margin-left:0;text-decoration:none;font-size:13px}

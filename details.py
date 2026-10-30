@@ -158,24 +158,46 @@ class DetailsView:
     def is_future(self, day: dt.date) -> bool:
         return day > self.as_of
 
-    # A flight longer than this shows last month and this month only. A
-    # column per day of a five-year flight was thousands of cells a row, and
-    # building them was most of the page's time.
-    WHOLE_FLIGHT_DAYS = 93
+    # The grid opens on one month: the one the data runs through, or the
+    # nearest month of the flight. A column per day of a whole flight was
+    # thousands of cells a row and buried the month being worked.
     show_all: bool = False
+    month: dt.date | None = None  # first of the month to show, if picked
+
+    @property
+    def months_in_flight(self) -> list[dt.date]:
+        return sorted({d.replace(day=1) for d in self.dates})
+
+    @property
+    def shown_month(self) -> dt.date | None:
+        months = self.months_in_flight
+        if not months:
+            return None
+        if self.month in months:
+            return self.month
+        current = self.as_of.replace(day=1)
+        if current in months:
+            return current
+        return months[0] if current < months[0] else months[-1]
 
     @property
     def is_windowed(self) -> bool:
-        return not self.show_all and len(self.dates) > self.WHOLE_FLIGHT_DAYS
+        return not self.show_all and len(self.months_in_flight) > 1
+
+    def month_link(self, step: int) -> str | None:
+        months = self.months_in_flight
+        shown = self.shown_month
+        if shown is None:
+            return None
+        i = months.index(shown) + step
+        return months[i].strftime("%Y-%m") if 0 <= i < len(months) else None
 
     @property
     def shown_dates(self) -> list[dt.date]:
         if not self.is_windowed:
             return self.dates
-        start = (self.as_of.replace(day=1) - dt.timedelta(days=1)).replace(day=1)
-        end = (self.as_of.replace(day=28) + dt.timedelta(days=4)).replace(day=1)
-        shown = [d for d in self.dates if start <= d < end]
-        return shown or self.dates[-62:]
+        month = self.shown_month
+        return [d for d in self.dates if d.replace(day=1) == month]
 
 
 def details_view(

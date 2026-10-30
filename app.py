@@ -1028,6 +1028,10 @@ def details_page(order_id: int, line_item_id: int):
         if view is None:
             abort(404)
         view.show_all = request.args.get("days") == "all"
+        try:
+            view.month = dt.datetime.strptime(request.args.get("month", ""), "%Y-%m").date()
+        except ValueError:
+            view.month = None
         return render_template(
             "details.html",
             d=view,

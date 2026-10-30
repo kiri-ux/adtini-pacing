@@ -57,11 +57,18 @@
 <details class="drawer budget" id="budget" open>
   <summary><b>Budgeting</b></summary>
   <div class="drawerbody">
-    {% if d.is_windowed %}
-    <p class="gridrange">{{ d.shown_dates[0].strftime('%b %-d') }} - {{ d.shown_dates[-1].strftime('%b %-d, %Y') }}
-      <a href="?days=all#budget">Whole flight</a></p>
-    {% elif d.show_all and d.dates|length > d.WHOLE_FLIGHT_DAYS %}
-    <p class="gridrange">Whole flight <a href="?#budget">Last two months</a></p>
+    {% if d.months_in_flight|length > 1 %}
+    <p class="gridrange">
+      {% if d.is_windowed %}
+      {% set prev = d.month_link(-1) %}{% set nxt = d.month_link(1) %}
+      {% if prev %}<a href="?month={{ prev }}#budget">&lsaquo;</a>{% endif %}
+      <b>{{ d.shown_month.strftime('%B %Y') }}</b>
+      {% if nxt %}<a href="?month={{ nxt }}#budget">&rsaquo;</a>{% endif %}
+      <a href="?days=all#budget">Whole flight</a>
+      {% else %}
+      <b>Whole flight</b> <a href="?#budget">Current month</a>
+      {% endif %}
+    </p>
     {% endif %}
     {% if not d.has_split %}
     <form method="post" class="inlineform buildsplit"
