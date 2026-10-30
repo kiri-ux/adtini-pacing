@@ -123,7 +123,15 @@ def test_monthly_rows_start_again_on_the_first(site):
     # And the monthly target starts again on 1 Nov.
     # November's goal over the 11 days of the flight in November.
     assert d.month_target[dt.date(2026, 11, 1)] == pytest.approx(450_000 / 11)
-    assert d.day_target[dt.date(2026, 11, 1)] == pytest.approx(15_000)
+    # The daily goal is recalculated each day from what is left: November
+    # starts fresh against its own goal over its 11 days.
+    assert d.day_target[dt.date(2026, 11, 1)] == pytest.approx(450_000 / 11)
+    # October started on the 13th with nothing served before it, then ran
+    # 10,000 a day: by the 27th what is left is spread over the 5 days left.
+    assert d.day_target[dt.date(2026, 10, 13)] == pytest.approx(450_000 / 19)
+    assert d.day_target[dt.date(2026, 10, 27)] == pytest.approx(
+        (450_000 - 140_000) / 5
+    )
 
 
 def test_build_split_follows_the_setup_guide(site):
