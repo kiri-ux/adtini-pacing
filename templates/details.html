@@ -105,48 +105,6 @@
     {% endif %}
   </div>
 
-  <div class="qtiles checktiles">
-    <div class="qtile"><small>CTR</small><b>{{ r.ctr|pct }}</b>
-      <u>{% if d.ctr_trend %}{{ d.ctr_trend }} from {{ d.last_check.ctr|pct }}{% elif r.goal_label %}goal {{ r.goal_label }}{% else %}{{ r.clicks|num }} clicks{% endif %}</u></div>
-    <div class="qtile"><small>Served to date</small><b>{{ val(r.to_date) }}</b>
-      <u>on pace {{ val(r.on_pace) }}</u></div>
-    <div class="qtile"><small>Overall pacing</small>
-      <b class="pace {{ r.pacing_pct|paceclass }}">{{ r.pacing_pct|pct }}</b>
-      <u>{{ val(r.to_date - r.on_pace) }} vs even</u></div>
-    <div class="qtile"><small>Month to date</small><b>{{ val(r.month_to_date) }}</b>
-      <u>on pace {{ val(r.month_on_pace) }}</u></div>
-    <div class="qtile"><small>Month pacing</small>
-      <b class="pace {{ r.month_pacing_pct|paceclass }}">{{ r.month_pacing_pct|pct }}</b>
-      <u>{{ val(r.month_to_date - r.month_on_pace) }} vs even</u></div>
-    <div class="qtile"><small>Conversions</small><b>{{ r.conversions|num }}</b>
-      <u>{% if d.last_check and d.last_check.tracking_conversions is not none %}tracking: {{ 'yes' if d.last_check.tracking_conversions else 'no' }}{% else %}tracking not set{% endif %}</u></div>
-  </div>
-
-  <form method="post" class="checkform"
-    action="{{ url_for('details_check', order_id=o.id, line_item_id=d.item.id) }}">
-    <div class="f"><label for="checked_on">Checked on</label>
-      <input id="checked_on" type="date" name="checked_on" value="{{ today.isoformat() }}"></div>
-    <div class="f"><label for="author">Buyer</label>
-      <input id="author" type="text" name="author" autocomplete="name"
-        value="{{ (d.last_check.author if d.last_check else o.buyer) or '' }}"></div>
-    <div class="f"><label for="tracking_conversions">Tracking conversions</label>
-      {% set tc = d.last_check.tracking_conversions if d.last_check else none %}
-      <select id="tracking_conversions" name="tracking_conversions">
-        <option value="" {% if tc is none %}selected{% endif %}>Not set</option>
-        <option value="yes" {% if tc %}selected{% endif %}>Yes</option>
-        <option value="no" {% if tc is sameas false %}selected{% endif %}>No</option>
-      </select></div>
-    {% if d.is_search %}
-    <label class="chk"><input type="checkbox" name="search_terms_checked"> Search terms checked</label>
-    {% endif %}
-    <div class="f wide"><label for="optimizations">Optimizations made</label>
-      <textarea id="optimizations" name="optimizations" rows="2"
-        placeholder="Excluded gaming app categories, raised bid"></textarea></div>
-    <div class="f wide"><label for="cnotes">Notes</label>
-      <textarea id="cnotes" name="notes" rows="2"></textarea></div>
-    <div class="cardfoot"><button class="btn save" type="submit">Save check</button></div>
-  </form>
-
   {% if d.checks %}
   <div class="scroller">
     <table class="overview checktable">
@@ -184,14 +142,65 @@
   {% endif %}
 </div>
 
-<form method="post" action="{{ url_for('note_add', order_id=o.id) }}" class="addrow noteadd" id="daylog">
+
+</div>
+</div>
+
+<dialog class="daydlg" id="daydlg">
+  <div class="dlghead"><h3>Update - <span data-daylabel></span></h3>
+    <button type="button" class="x" data-close title="Close">&times;</button></div>
+  <h4>Note</h4>
+<form method="post" action="{{ url_for('note_add', order_id=o.id) }}" class="addrow noteadd">
   <input type="hidden" name="line_item_id" value="{{ d.item.id }}">
   <input type="hidden" name="back_li" value="{{ d.item.id }}">
-  <input type="date" name="date" value="{{ d.as_of.isoformat() }}">
+  <input type="date" name="date" value="{{ d.as_of.isoformat() }}" data-dayfield>
   <input type="text" name="body" placeholder="Note">
   <button class="btn2 addprod" type="submit">&#43; Note</button>
 </form>
-</div>
-</div>
+  <h4>Weekly check</h4>
+  <div class="qtiles checktiles">
+    <div class="qtile"><small>CTR</small><b>{{ r.ctr|pct }}</b>
+      <u>{% if d.ctr_trend %}{{ d.ctr_trend }} from {{ d.last_check.ctr|pct }}{% elif r.goal_label %}goal {{ r.goal_label }}{% else %}{{ r.clicks|num }} clicks{% endif %}</u></div>
+    <div class="qtile"><small>Served to date</small><b>{{ val(r.to_date) }}</b>
+      <u>on pace {{ val(r.on_pace) }}</u></div>
+    <div class="qtile"><small>Overall pacing</small>
+      <b class="pace {{ r.pacing_pct|paceclass }}">{{ r.pacing_pct|pct }}</b>
+      <u>{{ val(r.to_date - r.on_pace) }} vs even</u></div>
+    <div class="qtile"><small>Month to date</small><b>{{ val(r.month_to_date) }}</b>
+      <u>on pace {{ val(r.month_on_pace) }}</u></div>
+    <div class="qtile"><small>Month pacing</small>
+      <b class="pace {{ r.month_pacing_pct|paceclass }}">{{ r.month_pacing_pct|pct }}</b>
+      <u>{{ val(r.month_to_date - r.month_on_pace) }} vs even</u></div>
+    <div class="qtile"><small>Conversions</small><b>{{ r.conversions|num }}</b>
+      <u>{% if d.last_check and d.last_check.tracking_conversions is not none %}tracking: {{ 'yes' if d.last_check.tracking_conversions else 'no' }}{% else %}tracking not set{% endif %}</u></div>
+  </div>
+
+  <form method="post" class="checkform"
+    action="{{ url_for('details_check', order_id=o.id, line_item_id=d.item.id) }}">
+    <div class="f"><label for="checked_on">Checked on</label>
+      <input id="checked_on" type="date" name="checked_on" value="{{ today.isoformat() }}" data-dayfield></div>
+    <div class="f"><label for="author">Buyer</label>
+      <input id="author" type="text" name="author" autocomplete="name"
+        value="{{ (d.last_check.author if d.last_check else o.buyer) or '' }}"></div>
+    <div class="f"><label for="tracking_conversions">Tracking conversions</label>
+      {% set tc = d.last_check.tracking_conversions if d.last_check else none %}
+      <select id="tracking_conversions" name="tracking_conversions">
+        <option value="" {% if tc is none %}selected{% endif %}>Not set</option>
+        <option value="yes" {% if tc %}selected{% endif %}>Yes</option>
+        <option value="no" {% if tc is sameas false %}selected{% endif %}>No</option>
+      </select></div>
+    {% if d.is_search %}
+    <label class="chk"><input type="checkbox" name="search_terms_checked"> Search terms checked</label>
+    {% endif %}
+    <div class="f wide"><label for="optimizations">Optimizations made</label>
+      <textarea id="optimizations" name="optimizations" rows="2"
+        placeholder="Excluded gaming app categories, raised bid"></textarea></div>
+    <div class="f wide"><label for="cnotes">Notes</label>
+      <textarea id="cnotes" name="notes" rows="2"></textarea></div>
+    <div class="cardfoot"><button class="btn save" type="submit">Save check</button></div>
+  </form>
+
+</dialog>
 {% endblock %}
-{% block scripts %}<script src="/static/split.js" defer></script>{% endblock %}
+{% block scripts %}<script src="/static/split.js" defer></script>
+<script src="/static/dayadd.js" defer></script>{% endblock %}

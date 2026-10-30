@@ -16,7 +16,10 @@
 {%- endmacro %}
   <div class="scroller detailscroll">
     <table class="daily pinned detailgrid">
-      <thead><tr>
+      <thead><tr class="addhead">
+        <th class="pin0"></th><th class="pin"></th><th colspan="8" class="sep"></th>
+        {% for day in dates %}<th class="dayadd"><button type="button" class="dayplus" data-day="{{ day.isoformat() }}" data-label="{{ day.strftime('%-d %b %Y') }}" title="Add a check or note for {{ day.strftime('%-d %b') }}">+</button></th>{% endfor %}
+      </tr><tr>
         <th class="pin0">Product</th><th class="pin">Campaign Elements</th>
         <th class="num">%</th>
         {% if mixed %}
