@@ -26,6 +26,7 @@ from sqlalchemy import func, select
 import products
 import ratecard
 import sheets
+import strategy_menu
 import views
 from models import DayNote, LineItem, StrategyTerms, WeeklyCheck
 from pacing.calendar import inclusive_days, month_window, months_between
@@ -181,15 +182,25 @@ class DetailsView:
     def strategy_options(self) -> list[str]:
         """The strategies a row can be: this product's code, then targeting."""
         code = products.abbreviation(self.item.product)
-        names = dict.fromkeys(OPTION_NAMES.get(k, v) for k, v in sheets.TARGETING_LABELS.items())
+        names = strategy_menu.options(self.item.product) or list(dict.fromkeys(
+            OPTION_NAMES.get(k, v) for k, v in sheets.TARGETING_LABELS.items()
+        ))
         return [f"{code} - {name}" if code else name for name in names]
 
     def selected_option(self, label: str) -> str | None:
-        """The option a stored label is, by what it targets, not its wording."""
+        """The option a stored label is: by its wording, else by what it
+        targets, taking the plainest name ("Behavioral Targeting" over "B2B
+        Behavioral Targeting") when several target the same thing."""
+        opts = self.strategy_options
+        short = self.short_label(label).strip().lower()
+        for o in opts:
+            if self.short_label(o).lower() == short:
+                return o
         key = sheets.match_key(label)
         if key is None:
             return None
-        return next((o for o in self.strategy_options if sheets.match_key(o) == key), None)
+        same = [o for o in opts if sheets.match_key(o) == key]
+        return min(same, key=len) if same else None
 
     @property
     def product_pill(self) -> dict | None:
