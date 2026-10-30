@@ -826,3 +826,16 @@ details.subdrawer > summary{cursor:pointer;padding:8px 2px;color:var(--adt-navy)
 .gridrange{display:flex;align-items:center;gap:10px}
 .gridrange b{color:var(--text);font-size:13px}
 .gridrange a{margin-left:0;text-decoration:none;font-size:13px}
+/* Month arrows read as buttons, so the toggle is easy to find. */
+.gridrange a.arrow,.gridrange a.gridnav{display:inline-flex;align-items:center;justify-content:center;
+  min-width:28px;height:28px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:var(--card)}
+.gridrange a:hover{background:var(--fill)}
+.gridrange a[data-q^="month"],.gridrange a.arrow[href*="month"]{font-size:18px;line-height:1}
+table.detailgrid th.pin select{width:100%;min-width:220px;background:var(--fill);border:1px solid transparent;
+  border-radius:8px;padding:6px 8px;font:inherit;font-weight:500;color:var(--text)}
+table.detailgrid th.pin.hastargets{cursor:help}
+table.detailgrid th.pin.hastargets select{border-left:3px solid var(--adt-blue)}
+.drawer.demo .demogrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.drawer.demo .demogrid .f{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted)}
+.drawer.demo textarea{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:8px;resize:vertical}
+.drawer.demo .cardfoot{grid-column:1/-1}

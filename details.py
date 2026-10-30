@@ -71,6 +71,13 @@ class GridRow:
     # The StrategyTerms row behind it; None for targeting that is running
     # but sits in no sold row.
     strategy_id: int | None = None
+    # What the strategy targets - categories, keywords, places - one per
+    # line. Typed in by hand until the adtini forms carry it.
+    targets: str | None = None
+
+    @property
+    def target_list(self) -> list[str]:
+        return [t.strip() for t in (self.targets or "").splitlines() if t.strip()]
 
     @property
     def sold(self) -> bool:
@@ -154,6 +161,13 @@ class DetailsView:
         if self.row.ctr < self.checks[0].ctr:
             return "down"
         return "flat"
+
+    @property
+    def strategy_options(self) -> list[str]:
+        """The strategies a row can be: this product's code, then targeting."""
+        code = products.abbreviation(self.item.product)
+        names = dict.fromkeys(sheets.TARGETING_LABELS.values())
+        return [f"{code} - {name}" if code else name for name in names]
 
     def is_future(self, day: dt.date) -> bool:
         return day > self.as_of
@@ -267,6 +281,7 @@ def details_view(
                 impressions=sum(per_day(series, 0).values()),
                 clicks=sum(per_day(series, 1).values()),
                 strategy_id=srow.strategy_id,
+                targets=term.targets if term else None,
             )
         )
     for key, label, series, _ in grouped:

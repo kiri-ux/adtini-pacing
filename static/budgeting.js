@@ -11,17 +11,29 @@
   if (!drawer || !box) return;
 
   var loaded = false;
+  var query = "";
   function load() {
     if (loaded || !drawer.open) return;
     loaded = true;
-    fetch(box.dataset.src, { credentials: "same-origin" })
+    fetch(box.dataset.src + (query ? "?" + query : ""), { credentials: "same-origin" })
       .then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); })
-      .then(function (html) { box.innerHTML = html; })
+      .then(function (html) { box.innerHTML = html; box.style.opacity = ""; })
       .catch(function () {
         loaded = false;
         box.innerHTML = '<p class="empty">Could not load. Close and open again.</p>';
       });
   }
   drawer.addEventListener("toggle", load);
+
+  // Month arrows and Whole flight refetch the grids for that window.
+  box.addEventListener("click", function (event) {
+    var link = event.target.closest("a.gridnav");
+    if (!link) return;
+    event.preventDefault();
+    query = link.dataset.q || "";
+    loaded = false;
+    box.style.opacity = "0.5";
+    load();
+  });
   load();
 })();

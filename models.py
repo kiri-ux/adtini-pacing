@@ -298,6 +298,9 @@ class StrategyTerms(Base):
         ForeignKey("line_items.id", ondelete="CASCADE"), index=True
     )
     label: Mapped[str] = mapped_column(String(300))
+    # What the strategy targets, one per line: categories, keywords, places.
+    # Typed in on the details page until the adtini forms carry it.
+    targets: Mapped[str | None] = mapped_column(Text, nullable=True)
     # The targeting on its own, normalised, so a sold row finds the delivery
     # that ran under it despite the two naming products differently.
     match_key: Mapped[str | None] = mapped_column(String(120), index=True)

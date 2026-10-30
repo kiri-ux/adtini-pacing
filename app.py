@@ -588,7 +588,31 @@ def order_budgeting(order_id: int):
                 and products.is_paced(r.line_item.product)
             ) if g is not None
         ][:20]
-        return render_template("_budgeting.html", o=view.order, grids=grids)
+        show_all, month = _grid_window()
+        months = sorted({m for g in grids for m in g.months_in_flight})
+        if months and month not in months:
+            current = view.as_of.replace(day=1)
+            month = current if current in months else (months[0] if current < months[0] else months[-1])
+        for g in grids:
+            g.show_all, g.month = show_all, month
+        i = months.index(month) if month in months else -1
+        nav = {
+            "show_all": show_all,
+            "month": month,
+            "multi": len(months) > 1,
+            "prev": months[i - 1].strftime("%Y-%m") if i > 0 else None,
+            "next": months[i + 1].strftime("%Y-%m") if 0 <= i < len(months) - 1 else None,
+        }
+        return render_template("_budgeting.html", o=view.order, grids=grids, nav=nav)
+
+
+def _grid_window() -> tuple[bool, dt.date | None]:
+    """The ?days=all and ?month=YYYY-MM a details grid is shown with."""
+    try:
+        month = dt.datetime.strptime(request.args.get("month", ""), "%Y-%m").date()
+    except ValueError:
+        month = None
+    return request.args.get("days") == "all", month
 
 
 @app.route("/orders/<int:order_id>/save", methods=["POST"])
@@ -855,6 +879,8 @@ def strategies_save(order_id: int):
             term.monthly_target = as_float(prefix + "monthly")
             term.total_target = as_float(prefix + "total")
             term.rate = as_float(prefix + "rate")
+            if prefix + "targets" in form:
+                term.targets = (form.get(prefix + "targets") or "").strip() or None
 
     flash("Saved.")
     return _back(order_id)
@@ -1027,11 +1053,7 @@ def details_page(order_id: int, line_item_id: int):
         view = details.details_view(db, order_id, line_item_id, as_of=_as_of())
         if view is None:
             abort(404)
-        view.show_all = request.args.get("days") == "all"
-        try:
-            view.month = dt.datetime.strptime(request.args.get("month", ""), "%Y-%m").date()
-        except ValueError:
-            view.month = None
+        view.show_all, view.month = _grid_window()
         return render_template(
             "details.html",
             d=view,

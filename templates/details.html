@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_detailgrid.html" import grid with context %}
+{% from "_detailgrid.html" import grid, demo with context %}
 {% set nav = 'overview' %}
 {% set o = d.order %}
 {% set money = d.is_money %}
@@ -61,12 +61,12 @@
     <p class="gridrange">
       {% if d.is_windowed %}
       {% set prev = d.month_link(-1) %}{% set nxt = d.month_link(1) %}
-      {% if prev %}<a href="?month={{ prev }}#budget">&lsaquo;</a>{% endif %}
+      {% if prev %}<a class="arrow" href="?month={{ prev }}#budget">&lsaquo;</a>{% endif %}
       <b>{{ d.shown_month.strftime('%B %Y') }}</b>
-      {% if nxt %}<a href="?month={{ nxt }}#budget">&rsaquo;</a>{% endif %}
-      <a href="?days=all#budget">Whole flight</a>
+      {% if nxt %}<a class="arrow" href="?month={{ nxt }}#budget">&rsaquo;</a>{% endif %}
+      <a class="arrow" href="?days=all#budget">Whole flight</a>
       {% else %}
-      <b>Whole flight</b> <a href="?#budget">Current month</a>
+      <b>Whole flight</b> <a class="arrow" href="?#budget">Current month</a>
       {% endif %}
     </p>
     {% endif %}
@@ -91,6 +91,7 @@
   <input type="text" name="label" placeholder="Add a strategy row">
   <button class="btn2 addprod" type="submit">&#43; Add row</button>
 </form>
+{{ demo([d]) }}
   </div>
 </details>
 
