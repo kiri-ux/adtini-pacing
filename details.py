@@ -169,6 +169,25 @@ class DetailsView:
         names = dict.fromkeys(sheets.TARGETING_LABELS.values())
         return [f"{code} - {name}" if code else name for name in names]
 
+    @property
+    def product_pill(self) -> dict | None:
+        """The product's code and colors, for the pill left of the grid."""
+        code = products.abbreviation(self.item.product)
+        if not code:
+            return None
+        entry = products.lookup(self.item.product)
+        return {
+            "code": code,
+            "hex": entry.hex if entry else "#123A63",
+            "text_hex": entry.text_hex if entry else "#FFFFFF",
+        }
+
+    def short_label(self, label: str) -> str:
+        """A strategy label without the product code the pill already shows."""
+        code = products.abbreviation(self.item.product)
+        prefix = f"{code} - " if code else ""
+        return label[len(prefix):] if prefix and label.startswith(prefix) else label
+
     def is_future(self, day: dt.date) -> bool:
         return day > self.as_of
 
