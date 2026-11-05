@@ -37,6 +37,8 @@
   <div><small>Market</small><b>{{ v.client.market or '—' }}</b></div>
 </div>
 
+{% with show_line=true %}{% include "_saalerts.html" %}{% endwith %}
+
 <div class="tablecard">
   <div class="cardhead">
     <h3>Products</h3>
