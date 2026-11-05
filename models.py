@@ -472,3 +472,31 @@ class IngestedFile(Base):
     stale_rows: Mapped[int | None] = mapped_column(Integer)
     stale_impressions: Mapped[float | None] = mapped_column(Float)
     ingested_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class SaAlert(Base):
+    """One StackAdapt pacing alert from the launcher's nightly run.
+
+    Posted by adtini-launcher `rebalance.py` (POST /api/sa-alerts). Each post
+    replaces that run date's rows; pages show only the newest run date, so an
+    alert that stops firing drops off the next morning.
+    """
+
+    __tablename__ = "sa_alerts"
+    __table_args__ = (Index("ix_sa_alerts_line_item", "external_line_item_id", "run_date"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_date: Mapped[dt.date] = mapped_column(Date, index=True)
+    external_order_id: Mapped[str | None] = mapped_column(String(64))
+    external_line_item_id: Mapped[str | None] = mapped_column(String(64))
+    group_id: Mapped[str | None] = mapped_column(String(64))
+    group_name: Mapped[str | None] = mapped_column(String(400))
+    campaign_id: Mapped[str | None] = mapped_column(String(64))
+    campaign_name: Mapped[str | None] = mapped_column(String(400))
+    # "high_cpm_overshare" or "low_ecpm"
+    kind: Mapped[str] = mapped_column(String(40))
+    alert: Mapped[str | None] = mapped_column(Text)
+    adjustment: Mapped[str | None] = mapped_column(Text)
+    # "dry run", "applied", or "error: ..."
+    status: Mapped[str | None] = mapped_column(String(300))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())

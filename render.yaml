@@ -42,6 +42,9 @@ services:
         sync: false
       - key: APP_PASSWORD
         sync: false
+      # adtini-launcher's nightly run posts StackAdapt alerts with this (its PACING_TOKEN)
+      - key: SA_ALERTS_TOKEN
+        sync: false
       - key: SESSION_SECRET
         generateValue: true
 

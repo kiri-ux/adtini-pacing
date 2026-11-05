@@ -2447,3 +2447,23 @@ def _draft_block(session, block: "StrategyBlock") -> int:
         taken.add(observed.label)
         added += 1
     return added
+
+
+SA_ALERT_LABELS = {"high_cpm_overshare": "High CPM over share", "low_ecpm": "Low eCPM"}
+
+
+def sa_alerts(db, external_ids) -> list:
+    """StackAdapt alerts from the newest nightly run for these line items."""
+    from models import SaAlert
+
+    ids = [i for i in external_ids if i and not i.startswith("name:")]
+    if not ids:
+        return []
+    newest = db.execute(select(func.max(SaAlert.run_date))).scalar()
+    if newest is None:
+        return []
+    return list(db.execute(
+        select(SaAlert)
+        .where(SaAlert.run_date == newest, SaAlert.external_line_item_id.in_(ids))
+        .order_by(SaAlert.external_line_item_id, SaAlert.kind, SaAlert.id)
+    ).scalars())

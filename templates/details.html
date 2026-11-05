@@ -50,6 +50,8 @@
 
 {% for f in d.flags %}<p class="warnbar">{{ f }}</p>{% endfor %}
 
+{% with show_line=false %}{% include "_saalerts.html" %}{% endwith %}
+
 <form method="post" action="{{ url_for('strategies_save', order_id=o.id) }}" id="splitform">
   <input type="hidden" name="back_li" value="{{ d.item.id }}">
 </form>

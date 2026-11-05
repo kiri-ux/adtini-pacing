@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import datetime as dt
 import functools
+import hmac
 import io
 import logging
 import math
@@ -50,6 +51,7 @@ from models import (
     IngestedFile,
     LineItem,
     Order,
+    SaAlert,
     StrategyTerms,
     WeeklyCheck,
 )
@@ -129,6 +131,9 @@ def _num(value, places=0):
     if value < 0:
         return f"({abs(value):,.{places}f})"
     return f"{value:,.{places}f}"
+
+
+app.jinja_env.globals["alert_labels"] = views.SA_ALERT_LABELS
 
 
 @app.template_filter("num")
@@ -564,6 +569,7 @@ def order_detail(order_id: int):
             )
         return render_template(
             "order.html",
+            sa_alerts=views.sa_alerts(db, [li.external_id for li in view.order.line_items]),
             v=view,
             t=view.total,
             pacing_choices=PACING_CHOICES,
@@ -1066,6 +1072,7 @@ def details_page(order_id: int, line_item_id: int):
         view.show_all, view.month = _grid_window()
         return render_template(
             "details.html",
+            sa_alerts=views.sa_alerts(db, [view.item.external_id]),
             d=view,
             r=view.row,
             siblings=[
@@ -1483,6 +1490,41 @@ def _server_timing(response):
             f"app;dur={(time.perf_counter() - started) * 1000:.0f}"
         )
     return response
+
+
+@app.route("/api/sa-alerts", methods=["POST"])
+def sa_alerts_post():
+    """The launcher's nightly StackAdapt alerts. Replaces that run date's rows.
+
+    Token auth (X-Alerts-Token = SA_ALERTS_TOKEN), not the login: a cron posts it.
+    """
+    token = os.getenv("SA_ALERTS_TOKEN", "")
+    sent = request.headers.get("X-Alerts-Token", "")
+    if not token or not hmac.compare_digest(token, sent):
+        abort(403)
+    body = request.get_json(silent=True) or {}
+    try:
+        run_date = dt.date.fromisoformat(body.get("run_date") or "")
+    except ValueError:
+        abort(400)
+    rows = body.get("alerts") or []
+    with session_scope() as db:
+        db.query(SaAlert).filter(SaAlert.run_date == run_date).delete()
+        for a in rows:
+            db.add(SaAlert(
+                run_date=run_date,
+                external_order_id=str(a.get("order_id") or "")[:64] or None,
+                external_line_item_id=str(a.get("line_item_id") or "")[:64] or None,
+                group_id=str(a.get("group_id") or "")[:64] or None,
+                group_name=(a.get("group") or "")[:400] or None,
+                campaign_id=str(a.get("campaign_id") or "")[:64] or None,
+                campaign_name=(a.get("campaign") or "")[:400] or None,
+                kind=(a.get("kind") or "")[:40],
+                alert=a.get("alert"),
+                adjustment=a.get("adjustment"),
+                status=(a.get("status") or "")[:300] or None,
+            ))
+    return {"ok": True, "run_date": run_date.isoformat(), "alerts": len(rows)}
 
 
 @app.route("/healthz")

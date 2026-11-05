@@ -1,0 +1,29 @@
+{# StackAdapt alerts from the launcher's newest nightly run (sa_alerts). #}
+{% if sa_alerts %}
+<div class="tablecard saalerts">
+  <div class="cardhead">
+    <h3>StackAdapt Alerts</h3>
+    <span class="dsub">{{ sa_alerts[0].run_date.strftime('%-m/%-d/%Y') }}</span>
+  </div>
+  <div class="scroller">
+    <table class="overview satable">
+      <thead><tr>
+        {% if show_line %}<th>Product ID</th>{% endif %}
+        <th>Alert</th><th>Campaign</th><th>Detail</th><th>Adjustment</th><th>Status</th>
+      </tr></thead>
+      <tbody>
+      {% for a in sa_alerts %}
+        <tr>
+          {% if show_line %}<td class="orderid">{{ a.external_line_item_id }}</td>{% endif %}
+          <td class="nowrap"><span class="saflag {{ a.kind }}">{{ alert_labels.get(a.kind, a.kind) }}</span></td>
+          <td class="clip" title="{{ a.campaign_name or a.group_name }}">{{ a.campaign_name or 'Group' }}</td>
+          <td>{{ a.alert }}</td>
+          <td>{{ a.adjustment }}</td>
+          <td class="nowrap">{{ (a.status or '')|capitalize }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}

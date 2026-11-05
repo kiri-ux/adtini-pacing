@@ -913,3 +913,10 @@ table.detailgrid .dayplus{display:inline-flex;align-items:center;justify-content
 /* The hovered day's whole column. */
 table.daily.pinned.detailgrid tbody td.colhot{background:#EAF2FD}
 table.daily.pinned.detailgrid thead tr:not(.addhead) th.colhot{background:#1C4A7A}
+
+/* StackAdapt alerts (nightly run) */
+.tabbody .saalerts{margin:14px 0}
+table.overview.satable{min-width:0;width:100%}
+.saflag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11.5px;font-weight:600;
+  background:#FBEBC2;color:#7A4C09}
+.saflag.low_ecpm{background:#E3EEFB;color:#03294D}
