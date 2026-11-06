@@ -308,3 +308,20 @@ def test_a_day_that_missed_its_target_is_marked(site):
     # adtini's rule on the product page: against total / days, more than 50%
     # over reads red.
     assert "daypill over" in body
+
+
+def test_the_order_number_opens_the_order(site):
+    app_module, order_id = site
+    client = app_module.app.test_client()
+
+    response = client.get("/orders/51741")
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith(f"/orders/{order_id}")
+
+    assert client.get("/orders/99999").status_code == 404
+
+
+def test_budgeting_starts_open(site):
+    app_module, order_id = site
+    body = app_module.app.test_client().get(f"/orders/{order_id}").get_data(as_text=True)
+    assert '<details class="drawer" id="budgetdrawer" open>' in body

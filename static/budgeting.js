@@ -1,7 +1,8 @@
 /* The Budgeting expand fills itself the first time it opens.
  *
- * A grid per product is the heaviest thing on the order page, and most
- * visits never open it, so the page is served without it.
+ * It starts open (kiri, Nov 2026), but a grid per product is the heaviest
+ * thing on the order page, so the page is served without it and the grids
+ * come in right after.
  */
 (function () {
   "use strict";

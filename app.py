@@ -558,6 +558,15 @@ def order_detail(order_id: int):
             db, order_id, as_of=_as_of(), grid_range=grid_range
         )
         if view is None:
+            # People type and share the order number (56935), not our row id.
+            # Row ids win when both exist, so existing links keep working.
+            match = db.execute(
+                select(Order.id)
+                .where(Order.external_order_id == str(order_id))
+                .order_by(Order.id.desc())
+            ).scalars().first()
+            if match is not None:
+                return redirect(url_for("order_detail", order_id=match, **request.args))
             abort(404)
         if _warmer_started:
             paced = [li for li in view.order.line_items if products.is_paced(li.product)]
