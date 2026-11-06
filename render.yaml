@@ -7,7 +7,10 @@ services:
   - type: web
     name: adtini-pacing
     runtime: python
-    plan: starter
+    # Standard (1 CPU, 2 GB), set in the dashboard. The blueprint re-applies
+    # this on every merge, so it has to match: the #20 merge on Nov 5 2026
+    # synced it back to Starter and pages stalled on 0.5 CPU.
+    plan: standard
     buildCommand: pip install -r requirements.txt
     # Applied before traffic moves to the new version, so the code and the
     # schema never disagree. The app itself never creates or alters tables.
