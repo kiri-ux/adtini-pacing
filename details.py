@@ -65,6 +65,33 @@ OPTION_NAMES = {
 }
 
 
+# The running CPM's window: the last week up to the as-of date. Long enough
+# that one thin day does not swing it, short enough that a bid change shows
+# within days - the Forrest cap from $1.96 to $1.50 read in full by day 4.
+RUN_CPM_DAYS = 7
+
+
+def run_cpm(points, as_of: dt.date) -> float | None:
+    """Cost per thousand over (date, impressions, cost) points in the window.
+
+    None with no impressions in the window, rather than 0, because a line
+    that did not serve did not clear at $0.
+    """
+    first = as_of - dt.timedelta(days=RUN_CPM_DAYS - 1)
+    impressions = cost = 0.0
+    for day, imps, spent in points:
+        if first <= day <= as_of:
+            impressions += imps or 0.0
+            cost += spent or 0.0
+    return (cost / impressions * 1000.0) if impressions else None
+
+
+def _series_points(series):
+    if series is None:
+        return []
+    return [(d, v[0], v[2]) for d, v in series.metrics_by_date.items()]
+
+
 @dataclass
 class GridRow:
     """One Campaign Elements row."""
@@ -84,6 +111,10 @@ class GridRow:
     clicks_by_date: dict[dt.date, float] = field(default_factory=dict)
     impressions: float = 0.0
     clicks: float = 0.0
+    # Internal cost / impressions over the last RUN_CPM_DAYS served days up
+    # to as_of. What the line is actually clearing at, beside the CPM it was
+    # set up at - the card's starting and max sit on DetailsView.card.
+    run_cpm: float | None = None
     # The StrategyTerms row behind it; None for targeting that is running
     # but sits in no sold row.
     strategy_id: int | None = None
@@ -128,6 +159,11 @@ class DetailsView:
     # What the product needs to serve tomorrow to land its goal; the Day
     # Budg. column on the Total row.
     day_budget: float | None = None
+    # The whole product's running CPM, same window as GridRow.run_cpm.
+    run_cpm: float | None = None
+    # The rate card entry for the product: starting / max CPM to read the
+    # running CPM against. None for products bought on spend.
+    card: "ratecard.Rate | None" = None
 
     @property
     def order(self):
@@ -377,6 +413,7 @@ def details_view(
                 clicks_by_date=per_day(series, 1),
                 impressions=sum(per_day(series, 0).values()),
                 clicks=sum(per_day(series, 1).values()),
+                run_cpm=None if money else run_cpm(_series_points(series), as_of),
                 strategy_id=srow.strategy_id,
                 targets=term.targets if term else None,
             )
@@ -393,6 +430,7 @@ def details_view(
                 clicks_by_date=per_day(series, 1),
                 impressions=sum(per_day(series, 0).values()),
                 clicks=sum(per_day(series, 1).values()),
+                run_cpm=None if money else run_cpm(_series_points(series), as_of),
             )
         )
 
@@ -517,6 +555,10 @@ def details_view(
         checks=checks,
         flags=flags,
         day_state=day_state,
+        run_cpm=None if money else run_cpm(
+            [(p.date, p.impressions, p.cost) for p in row.daily], as_of),
+        card=None if money else ratecard.lookup(
+            item.product, restricted=bool(item.restricted)),
     )
 
 
