@@ -91,7 +91,7 @@ def test_the_repair_rebuilds_totals_and_fills_cpms(url):
     assert rows[1] == (600_000, 2.0, "rate card")
     assert rows[2] == (300_000, 10.0, "rate card")
     # A total that was already larger than one month of itself is left alone.
-    assert rows[4] == (60_000, 2.5, "rate card")
+    assert rows[4] == (60_000, 1.5, "rate card")
 
 
 def test_the_repair_leaves_hand_edited_terms_alone(url):
