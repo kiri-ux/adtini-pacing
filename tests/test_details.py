@@ -349,3 +349,35 @@ def test_strategy_targets_save_and_show_on_hover(site):
 
     html = client.get(f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
     assert "<li>Home Improvement</li><li>Interior Design</li>" in html
+
+
+def test_running_cpm_is_last_weeks_internal_cost_against_the_card(site):
+    import db as db_module
+    import details
+
+    app_module, (order_id, li_id) = site
+    with db_module.session_scope() as session:
+        d = details.details_view(session, order_id, li_id, as_of=dt.date(2026, 10, 26))
+        # 20.40 cost per 10,000 impressions every day = $2.04 CPM.
+        assert d.run_cpm == pytest.approx(2.04)
+        assert all(e.run_cpm == pytest.approx(2.04) for e in d.elements if e.impressions)
+        # Display: starting $1.00, max $2.50 on the card.
+        assert d.card is not None and d.card.max_cpm == 2.50
+
+    html = app_module.app.test_client().get(
+        f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
+    assert "Run. CPM" in html and "$2.04" in html
+
+
+def test_running_cpm_only_counts_the_window():
+    pts = [(dt.date(2026, 11, 1), 1000, 3.0)] + [
+        (dt.date(2026, 11, d), 1000, 1.5) for d in range(3, 10)
+    ]
+    # Nov 3-9 is the 7-day window ending Nov 9; Nov 1 drops out.
+    assert details_mod().run_cpm(pts, dt.date(2026, 11, 9)) == pytest.approx(1.5)
+    assert details_mod().run_cpm([], dt.date(2026, 11, 9)) is None
+
+
+def details_mod():
+    import details
+    return details

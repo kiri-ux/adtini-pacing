@@ -17,7 +17,7 @@
   <div class="scroller detailscroll">
     <table class="daily pinned detailgrid">
       <thead><tr class="addhead">
-        <th class="pin0"></th><th class="pin"></th><th colspan="8" class="sep"></th>
+        <th class="pin0"></th><th class="pin"></th><th colspan="9" class="sep"></th>
         {% for day in dates %}<th class="dayadd"><button type="button" class="dayplus" data-day="{{ day.isoformat() }}" data-label="{{ day.strftime('%-d %b %Y') }}" title="Add a check or note for {{ day.strftime('%-d %b') }}">+</button></th>{% endfor %}
       </tr><tr>
         <th class="pin0">Product</th><th class="pin">Campaign Elements</th>
@@ -29,6 +29,7 @@
         <th class="num">{{ 'Tot. Spend' if g0.is_money else 'Tot. Impr.' }}</th>
         <th class="num">{{ 'CPC' if g0.is_money else 'CPM' }}</th>
         {% endif %}
+        <th class="num">Run. CPM</th>
         <th class="num">Day Budg.</th>
         <th class="num">Served</th>
         <th class="num">Left</th>
@@ -38,7 +39,7 @@
       <tbody>
       {% for d in gs %}{{ section(d, dates, pacecell, linked) }}{% endfor %}
         <tr class="cumrow first noterow">
-          <th class="pin0"></th><th class="pin">Notes</th><td colspan="8" class="sep"></td>
+          <th class="pin0"></th><th class="pin">Notes</th><td colspan="9" class="sep"></td>
           {% for day in dates %}
             {% set ns = [] %}
             {% for d in gs %}{% for n in d.notes_by_date.get(day, []) %}{% if n not in ns %}{% set _ = ns.append(n) %}{% endif %}{% endfor %}{% endfor %}
@@ -51,6 +52,16 @@
       </tbody>
     </table>
   </div>
+{%- endmacro %}
+
+{# Last 7 days' internal cost per thousand, against the card's starting and
+   max CPM: above max reads "over", below starting reads "under". #}
+{% macro runcpm(d, x) -%}
+  {%- set c = d.card -%}
+  {%- set state = 'over' if (x is not none and c and c.max_cpm and x > c.max_cpm) else ('under' if (x is not none and c and c.starting_cpm and x < c.starting_cpm) else '') -%}
+  <td class="num runcpm{% if state %} {{ state }}{% endif %}"
+    {%- if c and (c.starting_cpm or c.max_cpm) %} title="Starting {{ c.starting_cpm|money if c.starting_cpm else '—' }} · Max {{ c.max_cpm|money if c.max_cpm else '—' }}"{% endif %}>
+    {%- if x is none -%}&mdash;{%- else -%}{{ x|money }}{%- endif -%}</td>
 {%- endmacro %}
 
 {% macro val(d, x) -%}
@@ -108,6 +119,7 @@
           {% else %}
           <td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">&mdash;</td>
           {% endif %}
+          {{ runcpm(d, e.run_cpm) }}
           <td class="num" title="Total budget {{ e.total_budget|money if e.total_budget is not none else '—' }}">{{ e.daily_budget|money if e.daily_budget is not none else '—' }}</td>
           <td class="num">{{ val(d, e.to_date) }}</td>
           <td class="num">{{ val(d, e.remaining) }}</td>
@@ -120,7 +132,7 @@
         </tr>
       {% else %}
         <tr class="prodstart">{{ prodcell() }}<th class="pin muted">No strategies yet</th>
-          <td class="num sep" colspan="8"></td>
+          <td class="num sep" colspan="9"></td>
           {% for day in dates %}<td></td>{% endfor %}</tr>
       {% endfor %}
 
@@ -136,6 +148,7 @@
           <td class="num">{{ val(d, r.monthly_target or none) }}</td>
           <td class="num">{{ val(d, r.total_target or none) }}</td>
           <td class="num">{{ r.unit_cost|money if r.unit_cost else '—' }}</td>
+          {{ runcpm(d, d.run_cpm) }}
           <td class="num" title="Total budget {{ r.total_budget|money if r.total_budget else '—' }}">{{ d.day_budget|money if d.day_budget else '—' }}</td>
           <td class="num">{{ val(d, r.to_date) }}</td>
           <td class="num">{{ val(d, r.remaining if r.total_target else none) }}</td>
@@ -148,26 +161,27 @@
           {% endfor %}
         </tr>
         <tr class="ontrack">
-          <th class="pin">Daily goal</th><td colspan="8" class="sep"></td>
+          <th class="pin">Daily goal</th><td colspan="9" class="sep"></td>
           {% for day in dates %}<td class="num{% if day.day == 1 %} mstart{% endif %}">{{ val(d, d.day_target.get(day)) }}</td>{% endfor %}
         </tr>
         <tr class="cumrow first">
-          <th class="pin">Month pacing</th><td colspan="8" class="sep"></td>
+          <th class="pin">Month pacing</th><td colspan="9" class="sep"></td>
           {% for day in dates %}{{ pacecell(d, d.month_actual.get(day), d.month_target.get(day), day) }}{% endfor %}
         </tr>
         <tr class="cumrow">
-          <th class="pin">Total pacing</th><td colspan="8" class="sep"></td>
+          <th class="pin">Total pacing</th><td colspan="9" class="sep"></td>
           {% for day in dates %}{{ pacecell(d, d.td_actual.get(day), d.td_target.get(day), day) }}{% endfor %}
         </tr>
 
         {% if money %}
-        <tr class="cumrow first clickhead"><th class="pin">Clicks</th><td colspan="8" class="sep"></td>
+        <tr class="cumrow first clickhead"><th class="pin">Clicks</th><td colspan="9" class="sep"></td>
           {% for day in dates %}<td class="{% if day.day == 1 %}mstart{% endif %}"></td>{% endfor %}</tr>
         {% for e in d.elements %}
         <tr class="clickrow">
           <th class="pin">{{ d.short_label(e.label) }}</th>
           <td colspan="3"></td>
           <td class="num">{{ (e.to_date / e.clicks)|money if e.clicks else '—' }}</td>
+          <td></td>
           <td></td>
           <td class="num">{{ e.clicks|num }}</td>
           <td></td><td class="sep"></td>
