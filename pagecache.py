@@ -152,8 +152,12 @@ def start_warmer(app, paths=("/",), every: float = 60.0) -> None:
                     stamp = data_stamp(session, fresh=True)
                 # The date is in every page's cache key, so a new day needs
                 # warming as much as new data does.
-                if (stamp, dt.date.today()) != seen:
-                    seen = (stamp, dt.date.today())
+                # Any save clears every cached page (`edited`), so the next
+                # visitor to each would wait for a rebuild; edits re-warm too.
+                with _lock:
+                    edits = _edits
+                if (stamp, dt.date.today(), edits) != seen:
+                    seen = (stamp, dt.date.today(), edits)
                     client = app.test_client()
                     with client.session_transaction() as sess:
                         sess["ok"] = True

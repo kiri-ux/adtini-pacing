@@ -146,7 +146,7 @@ h3.products{display:flex;align-items:center;gap:10px}
 /* ---- table -------------------------------------------------------------- */
 .tablecard{background:var(--card);border-radius:14px;overflow:hidden;
   box-shadow:0 1px 3px rgba(16,40,70,.08)}
-.scroller{overflow-x:auto}
+.scroller{overflow-x:auto;padding-bottom:12px}
 table{border-collapse:collapse;width:100%;min-width:1080px}
 thead th{
   background:var(--navy);color:#fff;text-align:left;

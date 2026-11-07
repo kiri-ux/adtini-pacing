@@ -417,6 +417,11 @@ def cached_page(view):
 def _drop_cache_on_write(response):
     if request.method == "POST" and response.status_code < 500:
         pagecache.edited()
+        order_id = (request.view_args or {}).get("order_id")
+        if order_id and _warmer_started:
+            # The redirect back renders the order page itself (uncached, it
+            # carries the flash); its Budgeting grids are fetched right after.
+            pagecache.prefetch([url_for("order_budgeting", order_id=order_id)])
     return response
 
 
