@@ -1,0 +1,80 @@
+{# The pacing table, shared by the overview and My Day. Needs rows and page_total. #}
+{% from "_meter.html" import meter %}
+<div class="tablecard">
+ <div class="scroller">
+  <table class="overview">
+    <thead>
+      <tr>
+        <th class="rowacts"></th>
+        <th>Buyer</th><th>Partner</th><th>Client</th><th>Order ID</th><th>Products</th>
+        <th class="num">Monthly Serve / Goal</th><th class="meterhead">Monthly Pacing</th>
+        <th class="num">Total Serve / Goal</th><th class="meterhead">Total Pacing</th>
+        <th class="num">Avg Daily Serve / Needed</th><th class="num">Days Left</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for r in rows %}
+      {% set t = r.total %}
+      <tr>
+        <td class="rowacts">
+          <a href="{{ url_for('order_detail', order_id=r.order.id) }}" title="Order pacing"
+            aria-label="Order pacing for {{ r.client.name }}">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"
+              fill="none" stroke="currentColor" stroke-width="2"/>
+              <path d="M12 7v5l3.5 2" fill="none" stroke="currentColor" stroke-width="2"/></svg></a>
+          <a href="{{ url_for('export_order', order_id=r.order.id) }}" title="Export"
+            aria-label="Export {{ r.client.name }}" class="secondary">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20h14v-2H5z"/>
+              <path d="M11 4h2v8h3l-4 5-4-5h3z"/></svg></a>
+        </td>
+        <td class="clip">{{ r.order.buyer or '—' }}</td>
+        <td class="clip" title="{{ r.client.market or '' }}">{{ r.client.market or '—' }}</td>
+        <td class="lnk clip" title="{{ r.client.name }}"><a
+          href="{{ url_for('order_detail', order_id=r.order.id) }}">{{ r.client.name }}</a></td>
+        <td class="num orderid">{{ r.order.external_order_id or '—' }}</td>
+        <td class="pills">
+          {% for p in r.products[:5] %}
+            <span class="pill-prod" style="background:{{ p.hex }};color:{{ p.text_hex }}">{{ p.code }}
+              <i class="pdot {{ p.health }}"></i>
+              <span class="mtip"><b>{{ p.name }}</b><br>
+                Served: {{ p.served|metric(t) }}<br>
+                Expected: {{ p.expected|metric(t) }}</span></span>
+          {% endfor %}
+          {% if r.products|length > 5 %}<span class="pill-more">+{{ r.products|length - 5 }}</span>{% endif %}
+        </td>
+        <td class="num pair">{{ t.month_to_date|metric(t) }} <i>/ {{ t.monthly_target|metric(t) }}</i></td>
+        <td>{{ meter(t.month_to_date, t.month_on_pace, t.monthly_target,
+                     t.month_delivery_ratio, r.health, t.is_money) }}</td>
+        <td class="num pair">{{ t.to_date|metric(t) }} <i>/ {{ t.total_target|metric(t) }}</i></td>
+        <td>{{ meter(t.to_date, t.on_pace, t.total_target,
+                     t.delivery_ratio, r.total_health, t.is_money) }}
+          {% if r.partial_history %}<span class="partial" title="This order started before the delivery feed's earliest day, so the total figures are short by whatever ran earlier.">partial</span>{% endif %}</td>
+        <td class="num pair">{{ t.avg_daily|metric(t) }} <i>/ {{ t.daily_needed|metric(t) }}</i></td>
+        <td class="num">{{ t.days_left if t.flight_days else '—' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="12" class="empty">{% if empty_text %}{{ empty_text }}{% else %}Nothing to pace yet. Load a delivery file on the
+        <a href="/data">Data</a> page.{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+    {% if rows %}
+    <tfoot>
+      <tr class="totalrow">
+        <td class="rowacts"></td>
+        <td colspan="5">Pacing total &middot; {{ rows|length }} orders on this page</td>
+        <td class="num pair">{{ page_total.month_to_date|num }} <i>/ {{ page_total.monthly_target|num }}</i></td>
+        <td>{{ meter(page_total.month_to_date, page_total.month_on_pace,
+                     page_total.monthly_target, page_total.month_delivery_ratio,
+                     page_total.month_health, false) }}</td>
+        <td class="num pair">{{ page_total.to_date|num }} <i>/ {{ page_total.total_target|num }}</i></td>
+        <td>{{ meter(page_total.to_date, page_total.on_pace, page_total.total_target,
+                     page_total.delivery_ratio, page_total.health, false) }}</td>
+        <td class="num pair">{{ page_total.avg_daily|num }} <i>/ {{ page_total.daily_needed|num }}</i></td>
+        <td></td>
+      </tr>
+    </tfoot>
+    {% endif %}
+  </table>
+ </div>
+</div>
+

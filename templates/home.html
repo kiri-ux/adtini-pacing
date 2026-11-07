@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %} · Home{% endblock %}
+{% block heading %}Home{% endblock %}
+
+{% block body %}
+<p class="crumbs">{{ day_name }}{% if as_of %} &middot; Paced through
+  <span class="crumbc">{{ as_of.strftime('%-d %b %Y') }}</span>{% endif %}</p>
+
+<div class="hometiles">
+  <a class="hometile" href="{{ url_for('my_day') }}"><b>My Day</b><span>Your partners for today</span></a>
+  <a class="hometile" href="{{ url_for('overview') }}"><b>Pacing</b><span>All orders</span></a>
+  <a class="hometile" href="{{ url_for('data_page') }}"><b>Data</b><span>Files and schedule</span></a>
+</div>
+
+<h3 class="homehead">{{ day_name }} updates</h3>
+<div class="tablecard hometable">
+  <table class="overview homebuyers">
+    <thead><tr><th>Buyer</th><th class="num">Partners</th></tr></thead>
+    <tbody>
+    {% for b, n in today.items() %}
+      <tr><td class="lnk"><a href="{{ url_for('my_day', buyer=b, day=weekday) }}">{{ b }}</a></td>
+        <td class="num">{{ n }}</td></tr>
+    {% else %}
+      <tr><td colspan="2" class="empty">No schedule loaded.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

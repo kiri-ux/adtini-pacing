@@ -68,6 +68,19 @@
   </div>
 
   <div class="datarow">
+    <form method="post" action="{{ url_for('data_action') }}" enctype="multipart/form-data">
+      <input type="hidden" name="action" value="schedule">
+      <div>
+        <h4>Update schedule</h4>
+        <p class="hint">The Update Schedule tab of the Weekly Campaign Update
+          Schedule sheet, downloaded as CSV. Replaces the whole schedule.</p>
+      </div>
+      <input type="file" name="file" accept=".csv">
+      <button class="btn preview" type="submit">Load</button>
+    </form>
+  </div>
+
+  <div class="datarow">
     <form method="post" action="{{ url_for('data_action') }}">
       <input type="hidden" name="action" value="recompute">
       <div>

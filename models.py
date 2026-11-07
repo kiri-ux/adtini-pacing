@@ -500,3 +500,23 @@ class SaAlert(Base):
     # "dry run", "applied", or "error: ..."
     status: Mapped[str | None] = mapped_column(String(300))
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class ScheduleEntry(Base):
+    """One partner on one buyer's update day, from the Weekly Campaign Update
+    Schedule sheet (tab "Update Schedule").
+
+    The sheet is the source of truth: each load replaces every row, so a
+    partner moved to another day or buyer in the sheet moves here too.
+    """
+
+    __tablename__ = "schedule_entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # The sheet's partner name, which is the orders drop's business unit
+    # (Client.market) give or take spacing and case.
+    market: Mapped[str] = mapped_column(String(200))
+    # 0 = Monday ... 4 = Friday
+    weekday: Mapped[int] = mapped_column(Integer, index=True)
+    buyer: Mapped[str] = mapped_column(String(120), index=True)
+    email: Mapped[str | None] = mapped_column(String(200))

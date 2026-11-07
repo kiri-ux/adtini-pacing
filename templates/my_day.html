@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %} · My Day{% endblock %}
+{% block heading %}My Day{% endblock %}
+
+{% block body %}
+<form class="controls" method="get">
+  <select name="buyer" class="filtersel" onchange="this.form.submit()">
+    <option value="">Pick a buyer</option>
+    {% for b in buyers %}
+      <option value="{{ b }}" {% if b == buyer %}selected{% endif %}>{{ b }}</option>
+    {% endfor %}
+  </select>
+  <span class="daytabs">
+  {% for d in weekdays %}
+    <a class="{{ 'on' if loop.index0 == weekday }}"
+       href="{{ url_for('my_day', buyer=buyer, day=loop.index0) if buyer else url_for('my_day', day=loop.index0) }}">{{ d[:3] }}</a>
+  {% endfor %}
+  </span>
+</form>
+
+{% if buyer %}
+<p class="crumbs">{{ buyer }} &middot; {{ weekdays[weekday] }}
+  &middot; {{ partners|length }} partners &middot; {{ rows|length }} orders
+  {% if as_of %}&middot; Paced through <span class="crumbc">{{ as_of.strftime('%-d %b %Y') }}</span>{% endif %}</p>
+
+{% if partners %}
+<div class="partnerchips">
+  {% for p in partners %}
+    <span class="pchip{% if p in missing %} none{% endif %}">{{ p }}{% if p in missing %} <i>no orders</i>{% endif %}</span>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% set empty_text = "No live orders for these partners." if partners else "Nothing on the schedule for this day." %}
+{% include "_ordertable.html" %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}<script src="/static/tips.js" defer></script>{% endblock %}
