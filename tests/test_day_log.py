@@ -325,3 +325,14 @@ def test_budgeting_starts_open(site):
     app_module, order_id = site
     body = app_module.app.test_client().get(f"/orders/{order_id}").get_data(as_text=True)
     assert '<details class="drawer" id="budgetdrawer" open>' in body
+
+
+def test_the_order_page_lists_every_note(site):
+    app_module, order_id = site
+    client = app_module.app.test_client()
+    for day, body in (("2026-09-10", "Lowered budget"), ("2026-09-20", "Creative swapped")):
+        client.post(f"/orders/{order_id}/notes", data={"date": day, "body": body})
+    html = client.get(f"/orders/{order_id}").get_data(as_text=True)
+    table = html[html.index('class="elements notestable"'):]
+    assert table.index("Creative swapped") < table.index("Lowered budget")
+    assert "9/20/2026" in table and "Whole order" in table

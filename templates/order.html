@@ -219,6 +219,32 @@
   </div>
 </details>
 
+<details class="drawer notesdrawer" id="notesdrawer"{% if notes %} open{% endif %}>
+  <summary><b>Notes</b>{% if notes %}<span class="dsub">{{ notes|length }}</span>{% endif %}</summary>
+  <div class="drawerbody">
+  {% if notes %}
+  <table class="elements notestable">
+    <thead><tr><th>Date</th><th>Product</th><th>Note</th><th>By</th><th></th></tr></thead>
+    <tbody>
+    {% for n in notes|sort(attribute='date', reverse=true) %}
+      <tr>
+        <td class="nowrap">{{ n.date.strftime('%-m/%-d/%Y') }}</td>
+        <td>{{ lineitem_names.get(n.line_item_id, '') if n.line_item_id else 'Whole order' }}</td>
+        <td class="notebody">{{ n.body }}</td>
+        <td>{{ n.author or '' }}</td>
+        <td><form method="post" class="inlineform"
+            action="{{ url_for('note_delete', order_id=o.id, note_id=n.id) }}">
+            <button class="x" type="submit" title="Remove">&times;</button></form></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No notes</p>
+  {% endif %}
+  </div>
+</details>
+
 <details class="drawer linkcard"{% if linking.unmatched_count %} open{% endif %}>
   <summary><b>Campaign links</b>
     {% if linking.unmatched_count %}<i class="tabflag">{{ linking.unmatched_count }} unmatched</i>{% endif %}
