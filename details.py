@@ -33,9 +33,9 @@ from pacing.calendar import inclusive_days, month_window, months_between
 from pacing.engine import PacingRow
 
 
-# The setup guide: retargeting falls outside the line item minimums, so it
-# takes a fixed 10K a month off another strategy rather than an even share.
-RETARGETING_MONTHLY_IMPRESSIONS = 10_000.0
+# Retargeting falls outside the line item minimums, so it takes a fixed 5%
+# of the product's monthly impression goal rather than an even share.
+RETARGETING_SHARE = 0.05
 
 # CTV + Video sells one budget across two rates. The guide puts two thirds
 # of the impressions on the video half and a third on CTV.
@@ -666,11 +666,16 @@ class PlannedStrategy:
     rate: float | None
 
 
-def _shares(names: list[str], monthly: float | None, money: bool) -> list[float]:
-    """Each strategy's share of the monthly goal.
+def _shares(
+    names: list[str], monthly: float | None, money: bool,
+    goal: float | None = None,
+) -> list[float]:
+    """Each strategy's share of `monthly`.
 
-    Even, except retargeting on an impression line: it takes a flat 10K and
-    the rest is split across the others. Alone, it takes everything.
+    Even, except retargeting on an impression line: it takes 5% of `goal`
+    (the product's whole monthly goal, which is more than `monthly` on one
+    half of CTV + Video) and the rest is split across the others. Alone, it
+    takes everything.
     """
     retargeting = [
         i for i, name in enumerate(names) if sheets.match_key(name) == "retargeting"
@@ -678,7 +683,7 @@ def _shares(names: list[str], monthly: float | None, money: bool) -> list[float]
     others = [i for i in range(len(names)) if i not in retargeting]
     if money or not monthly or not retargeting or not others:
         return [1.0 / len(names)] * len(names)
-    fixed = min(RETARGETING_MONTHLY_IMPRESSIONS * len(retargeting), monthly / 2)
+    fixed = min(RETARGETING_SHARE * (goal or monthly) * len(retargeting), monthly / 2)
     each_fixed = fixed / len(retargeting) / monthly
     rest = (1.0 - each_fixed * len(retargeting)) / len(others)
     return [each_fixed if i in retargeting else rest for i in range(len(names))]
@@ -719,7 +724,7 @@ def plan_split(item: LineItem, money: bool) -> list[PlannedStrategy]:
                 if half == "video" or sheets.match_key(n) != "retargeting"
             ] or names
             half_monthly = (monthly * portion) if monthly else None
-            for name, share in zip(wanted, _shares(wanted, half_monthly, money)):
+            for name, share in zip(wanted, _shares(wanted, half_monthly, money, monthly)):
                 label = _label(product, name)
                 part = (half_monthly * share) if half_monthly else None
                 plan.append(
