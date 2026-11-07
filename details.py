@@ -476,6 +476,33 @@ def details_view(
         ordered.setdefault(sheets.match_key(name) or name.lower(), name)
     combined = bool(views.combined_strategy(item.product))
 
+    # With no split yet, each strategy the order lists shows its share of
+    # the product's goal, the way a drafted split would.
+    unsplit = not combined and not (block and block.rows) and bool(ordered)
+    keys_in_order = list(ordered)
+    shares = dict(zip(keys_in_order, _shares(
+        [ordered[k] for k in keys_in_order], row.monthly_target or None, money,
+        row.monthly_target or None,
+    ))) if unsplit else {}
+
+    def estimate(key: str) -> dict:
+        if key not in shares:
+            return {}
+        share = shares[key]
+        monthly = (row.monthly_target * share) or None
+        total = (row.total_target * share) or None
+        rate = row.unit_cost or None
+        return dict(
+            monthly=monthly,
+            total=total,
+            daily=(row.daily_target * share) or None,
+            rate=rate,
+            daily_budget=day_budget(catch_up(monthly, total, {}, tomorrow), rate),
+            total_budget=(row.total_budget * share) or None,
+            remaining=total,
+            media_budget=None if money else media_budget(0.0, total, 0.0, rate),
+        )
+
     elements: list[GridRow] = []
     claimed: set[str] = set()
     split_keys: set[str] = set()
@@ -540,8 +567,12 @@ def details_view(
         if key in claimed:
             continue
         by_date = per_day(series, index)
+        est = estimate(key)
+        if est.get("total"):
+            est["remaining"] = max(est["total"] - sum(by_date.values()), 0.0)
         elements.append(
             GridRow(
+                **est,
                 label=label,
                 to_date=sum(by_date.values()),
                 by_date=by_date,
@@ -559,10 +590,7 @@ def details_view(
             if key in split_keys or key in ran:
                 continue
             elements.append(
-                GridRow(
-                    label=_label(item.product, name),
-                    ordered=True,
-                )
+                GridRow(label=_label(item.product, name), ordered=True, **estimate(key))
             )
 
     # The whole flight, future days included, the way the tab is laid out:
