@@ -853,9 +853,10 @@ table.detailgrid th.prodcell .pilllink{text-decoration:none}
 table.detailgrid th.prodcell .buildbtn{display:block;margin-top:8px;font-size:11px;padding:3px 8px;white-space:nowrap}
 /* Strategy cell: dropdown plus an info dot that shows the targets. */
 table.detailgrid th.pin .stratcell{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
-table.detailgrid th.pin .stratcell select{flex:1 1 170px;width:auto;min-width:170px;box-sizing:border-box}
+table.detailgrid th.pin .stratcell select{flex:1 1 0;width:auto;min-width:120px;box-sizing:border-box}
 /* Flags take their own line under the name so the dropdown keeps its width. */
 table.detailgrid th.pin .stratcell .setupflag{order:3;margin-top:0}
+table.detailgrid th.pin .stratcell .targettip,table.detailgrid th.pin .stratcell .servegap{flex:0 0 auto}
 .servegap{position:relative;flex:0 0 auto;color:#B3261E;font-size:14px;line-height:1;cursor:help}
 .servegap .tipbox{display:none;position:absolute;left:20px;top:-4px;z-index:20;white-space:nowrap;
   background:#fff;color:#B3261E;border:1px solid #F0C4C4;border-radius:8px;padding:5px 9px;
