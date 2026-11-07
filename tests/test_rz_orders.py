@@ -160,14 +160,18 @@ def test_sync_adds_new_orders_and_refreshes_recent_ones(db):
     def transport(method, url, body, headers):
         if url.endswith(rz_orders.OPEN_ORDERS_PATH):
             fake.calls.append("open")
-            rows = [{"id": k, "order_name": "QXO Goodrich"} for k in open_list]
+            assert json.loads(body) == {"clusterIds": []}
+            rows = [{"id": k, "order_name": "QXO Goodrich", "cluster_id": "6",
+                     "status_name": "IO Pending Approval"} for k in open_list]
+            rows.append({"id": "13806", "cluster_id": "49", "status_name": "RFP Complete"})
             return 200, [], json.dumps(rows).encode()
         return fake(method, url, body, headers)
 
     client = rz_orders.RZClient("bot@example.com", "pw", transport=transport)
     result = rz_orders.sync(client, db.session_scope, today=dt.date(2026, 11, 7), pause=0)
 
-    assert result.orders_seen == 2
+    assert result.open_listed == 2
+    assert result.orders_seen == 2  # the RFP is skipped
     assert result.orders_read == 2
     assert result.errors == []
     assert result.orders_added == 1
@@ -196,7 +200,8 @@ def test_one_failing_order_does_not_stop_the_rest(db):
 
     def transport(method, url, body, headers):
         if url.endswith(rz_orders.OPEN_ORDERS_PATH) and "sid=" in headers.get("Cookie", ""):
-            return 200, [], json.dumps([{"id": "56142"}, {"id": "99999"}]).encode()
+            rows = [{"id": i, "status_name": "IO Live"} for i in ("56142", "99999")]
+            return 200, [], json.dumps(rows).encode()
         return fake(method, url, body, headers)
 
     client = rz_orders.RZClient("bot@example.com", "pw", transport=transport)
@@ -204,3 +209,10 @@ def test_one_failing_order_does_not_stop_the_rest(db):
     assert result.orders_read == 1
     assert len(result.errors) == 1 and "99999" in result.errors[0]
     assert result.line_items_added == 2
+
+
+def test_only_active_io_statuses_are_read():
+    assert rz_orders.is_active({"status_name": "IO Live: Pending Revision"})
+    assert rz_orders.is_active({"status_name": "IO Paused"})
+    assert not rz_orders.is_active({"status_name": "IO Complete"})
+    assert not rz_orders.is_active({"status_name": "RFP Complete"})
