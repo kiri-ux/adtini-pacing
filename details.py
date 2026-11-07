@@ -123,6 +123,10 @@ class GridRow:
     targets: str | None = None
     # The order lists this targeting for the product.
     ordered: bool = False
+    # Running and on no row: the delivery group it is, for linking by hand.
+    feed_key: str | None = None
+    # Delivery linked to this row by hand: (group key, label).
+    linked: list[tuple[str, str]] = field(default_factory=list)
 
     @property
     def running(self) -> bool:
@@ -333,6 +337,7 @@ def details_view(
     )
     grouped = views.group_by_targeting(item.product, view.strategies.get(item.id, []))
     ran = {key: series for key, _, series, _ in grouped}
+    labels = {key: label for key, label, _, _ in grouped}
 
     start, end = row.start_date, row.end_date
     in_flight = (
@@ -400,13 +405,23 @@ def details_view(
     terms = {t.id: t for t in (block.terms if block else [])}
     for srow in block.rows if block else []:
         term = terms.get(srow.strategy_id)
-        key = (sheets.match_key(term.label) if term else None) or srow.label.lower()
-        if views.combined_strategy(item.product):
+        if combined:
             key = views.COMBINED_KEY
-        series = ran.get(key)
-        if series is not None:
-            claimed.add(key)
+            series = ran.get(key)
+            keys = [key] if series is not None else []
+        elif term is not None:
+            series, keys = views.claim(term, ran)
+            key = views.term_keys(term)[0]
+        else:
+            key = srow.label.lower()
+            series = ran.get(key)
+            keys = [key] if series is not None else []
+        claimed.update(keys)
         split_keys.add(key)
+        linked = [
+            (k, labels[k]) for k in (views.term_keys(term)[1:] if term else [])
+            if k in ran
+        ]
         sold = bool(srow.total_target)
         elements.append(
             GridRow(
@@ -433,6 +448,7 @@ def details_view(
                 strategy_id=srow.strategy_id,
                 targets=term.targets if term else None,
                 ordered=combined or key in ordered,
+                linked=linked,
             )
         )
     for key, label, series, _ in grouped:
@@ -449,6 +465,7 @@ def details_view(
                 clicks=sum(per_day(series, 1).values()),
                 run_cpm=None if money else run_cpm(_series_points(series), as_of),
                 ordered=combined or key in ordered,
+                feed_key=key,
             )
         )
     if not combined:

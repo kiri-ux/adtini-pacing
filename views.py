@@ -1341,13 +1341,14 @@ def strategy_pacing(session, view: "OrderView") -> list[StrategyPacing]:
     labels: dict[str, list[str]] = defaultdict(list)
     for items in view.strategies.values():
         for series in items:
-            key = sheets.match_key(series.label)
+            key = sheets.match_key(series.label) or series.label.lower()
             if key:
                 delivered[key] += series.total
                 labels[key].append(series.label)
 
     out = []
     for term in terms:
+        keys = [term.match_key or ""] + term_keys(term)[1:]
         out.append(
             StrategyPacing(
                 label=term.label,
@@ -1355,8 +1356,8 @@ def strategy_pacing(session, view: "OrderView") -> list[StrategyPacing]:
                 monthly_target=term.monthly_target,
                 total_target=term.total_target,
                 rate=term.rate,
-                delivered=delivered.get(term.match_key or "", 0.0),
-                matched_labels=sorted(set(labels.get(term.match_key or "", []))),
+                delivered=sum(delivered.get(k, 0.0) for k in keys),
+                matched_labels=sorted({l for k in keys for l in labels.get(k, [])}),
             )
         )
     return out
@@ -1919,6 +1920,48 @@ class StrategyBlock:
         return item.goal_cpm or item.goal_cpc or item.goal_cpe or 0.0
 
 
+def term_keys(term: StrategyTerms) -> list[str]:
+    """The delivery groups a strategy row claims: its own targeting, then
+    any a buyer linked to it by hand."""
+    own = sheets.match_key(term.label) or term.label.lower()
+    linked = [k.strip() for k in (term.linked_keys or "").splitlines() if k.strip()]
+    return [own] + [k for k in linked if k != own]
+
+
+def claim(term: StrategyTerms, ran: dict[str, "StrategySeries"]):
+    """(the delivery a row claims merged into one series or None, keys used)."""
+    keys = [k for k in term_keys(term) if k in ran]
+    if not keys:
+        return None, []
+    if len(keys) == 1:
+        return ran[keys[0]], keys
+    return _merge([ran[k] for k in keys]), keys
+
+
+def _merge(parts: list["StrategySeries"]) -> "StrategySeries":
+    first = parts[0]
+    out = StrategySeries(
+        line_item_id=first.line_item_id,
+        label=first.label,
+        product=first.product,
+        by_date={},
+        metrics_by_date={},
+    )
+    for series in parts:
+        for date, value in series.by_date.items():
+            out.by_date[date] = out.by_date.get(date, 0.0) + value
+        for date, values in series.metrics_by_date.items():
+            bucket = out.metrics_by_date.setdefault(date, [0.0, 0.0, 0.0, 0.0])
+            for index in range(4):
+                bucket[index] += values[index]
+        out.total += series.total
+        out.impressions += series.impressions
+        out.clicks += series.clicks
+        out.cost += series.cost
+        out.conversions += series.conversions
+    return out
+
+
 def group_by_targeting(
     product: str | None, running: list["StrategySeries"]
 ) -> list[tuple[str, str, "StrategySeries", list[str]]]:
@@ -2122,10 +2165,8 @@ def strategy_blocks(session, view: "OrderView") -> list[StrategyBlock]:
         ran = {key: series for key, _, series, _ in grouped}
         claimed: set[str] = set()
         for term in block.terms:
-            key = sheets.match_key(term.label) or term.label.lower()
-            series = ran.get(key)
-            if series is not None:
-                claimed.add(key)
+            series, keys = claim(term, ran)
+            claimed.update(keys)
             points = [
                 DailyPoint(
                     date=date,

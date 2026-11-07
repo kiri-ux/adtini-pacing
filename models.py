@@ -304,6 +304,9 @@ class StrategyTerms(Base):
     # The targeting on its own, normalised, so a sold row finds the delivery
     # that ran under it despite the two naming products differently.
     match_key: Mapped[str | None] = mapped_column(String(120), index=True)
+    # Delivery groups (group_by_targeting keys) a buyer linked to this row
+    # because their names did not pair on their own. One per line.
+    linked_keys: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     monthly_target: Mapped[float | None] = mapped_column(Float)
     total_target: Mapped[float | None] = mapped_column(Float)
