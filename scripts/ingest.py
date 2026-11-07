@@ -72,7 +72,14 @@ def sync_rz_orders(log: logging.Logger) -> bool:
         log.info("rz orders: RZ_USER/RZ_PASS not set, skipped")
         return False
     try:
-        result = rz_orders.sync(rz_orders.RZClient(user, password), session_scope)
+        clusters = [
+            c.strip() for c in os.environ.get("RZ_CLUSTER_IDS", "").split(",")
+            if c.strip()
+        ]
+        result = rz_orders.sync(
+            rz_orders.RZClient(user, password), session_scope,
+            cluster_ids=clusters or None,
+        )
     except Exception:  # RZ being down must not turn the sweep red
         log.exception("rz orders sync failed")
         return False

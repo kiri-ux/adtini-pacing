@@ -39,8 +39,13 @@ BASE = "https://www.reporting.zone"
 LOGIN_PATH = "/server/api/session/login"
 OPEN_ORDERS_PATH = "/app/iotool/orders/openOrders"
 ORDER_PATH = "/app/iotool/orders/order?id={id}"
-# Vici's cluster in RZ.
-CLUSTER_IDS = ["49"]
+# Every cluster (business unit). An empty list is the IO tool's "all"; set
+# RZ_CLUSTER_IDS (comma separated) to narrow it.
+CLUSTER_IDS: list[str] = []
+# Open orders worth reading. Matched as prefixes, since RZ adds suffixes
+# like "IO Live: Pending Revision". RZ's open list also carries years-old
+# "RFP Complete" orders, which are skipped.
+ACTIVE_STATUSES = ("io pending approval", "io pending launch", "io live", "io paused")
 RECENT_DAYS = 30
 # Orders written per transaction.
 BATCH = 25
@@ -158,8 +163,9 @@ class RZClient:
                 raise RZError(f"{path}: session expired after re-login")
         return data
 
-    def open_orders(self) -> list[dict]:
-        data = self.call("POST", OPEN_ORDERS_PATH, {"clusterIds": CLUSTER_IDS})
+    def open_orders(self, cluster_ids: list[str] | None = None) -> list[dict]:
+        ids = CLUSTER_IDS if cluster_ids is None else cluster_ids
+        data = self.call("POST", OPEN_ORDERS_PATH, {"clusterIds": ids})
         return _unwrap_list(data)
 
     def order(self, order_id) -> dict:
@@ -313,6 +319,8 @@ def frame_for(rows: list[dict]) -> OrdersFrame:
 # ---------------------------------------------------------------------------
 @dataclass
 class SyncResult:
+    open_listed: int = 0
+    clusters: int = 0
     orders_seen: int = 0
     orders_read: int = 0
     orders_added: int = 0
@@ -326,6 +334,7 @@ class SyncResult:
 
     def summary(self) -> str:
         return (
+            f"{self.open_listed} open in RZ across {self.clusters} clusters, "
             f"{self.orders_read}/{self.orders_seen} orders read, "
             f"{self.orders_added} new, {self.line_items_added} lines added, "
             f"{self.line_items_updated} updated, {len(self.errors)} errors"
@@ -349,11 +358,17 @@ def recent_order_ids(session, today: dt.date, days: int = RECENT_DAYS) -> list[s
     return [r for r in rows if r]
 
 
+def is_active(entry: dict) -> bool:
+    status = (_clean(entry.get("status_name")) or "").lower()
+    return status.startswith(ACTIVE_STATUSES)
+
+
 def sync(
     client: RZClient,
     session_scope,
     today: dt.date | None = None,
     pause: float = 0.2,
+    cluster_ids: list[str] | None = None,
 ) -> SyncResult:
     """Read every open and recently ended order from RZ into the order book."""
     from models import IngestedFile
@@ -364,9 +379,14 @@ def sync(
     result = SyncResult()
 
     names: dict[str, str | None] = {}
-    for entry in client.open_orders():
+    listed = client.open_orders(cluster_ids)
+    result.open_listed = len(listed)
+    result.clusters = len({_clean(e.get("cluster_id")) for e in listed} - {None})
+    if not listed:
+        result.errors.append("openOrders returned no orders")
+    for entry in listed:
         order_id = _clean(entry.get("id"))
-        if order_id:
+        if order_id and is_active(entry):
             names[order_id] = _clean(entry.get("order_name"))
     with session_scope() as session:
         for order_id in recent_order_ids(session, today):
