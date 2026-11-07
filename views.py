@@ -290,6 +290,8 @@ class StrategySeries:
     # be added up from these rather than fetched again by a second query
     # over the same rows.
     metrics_by_date: dict[dt.date, list[float]] = field(default_factory=dict)
+    # The DSP's own strategy line names behind it, as the feed has them.
+    names: set[str] = field(default_factory=set)
 
     @property
     def ctr(self) -> float | None:
@@ -364,6 +366,8 @@ def strategy_series(
                 line_item_id=target, label=label, product=product, by_date={}
             )
             collected[key] = series
+        if strategy_name and strategy_name.strip():
+            series.names.add(strategy_name.strip())
         amount = metrics[metric]
         series.by_date[date] = series.by_date.get(date, 0.0) + amount
         series.total += amount
@@ -1959,6 +1963,7 @@ def _merge(parts: list["StrategySeries"]) -> "StrategySeries":
         out.clicks += series.clicks
         out.cost += series.cost
         out.conversions += series.conversions
+        out.names |= series.names
     return out
 
 
@@ -1999,8 +2004,10 @@ def group_by_targeting(
                 metrics_by_date={
                     date: list(values) for date, values in series.metrics_by_date.items()
                 },
+                names=set(series.names),
             )
             continue
+        existing.names |= series.names
         for date, value in series.by_date.items():
             existing.by_date[date] = existing.by_date.get(date, 0.0) + value
         for date, values in series.metrics_by_date.items():
@@ -2175,6 +2182,15 @@ def strategy_blocks(session, view: "OrderView") -> list[StrategyBlock]:
                 )
                 for date, value in sorted((series.by_date if series else {}).items())
             ]
+            # A row's total follows its monthly share of the product's total.
+            # Totals were drafted from the product as it stood that day; when
+            # the product's flight or total moved later, the stored totals
+            # kept the old length and every row read as far ahead.
+            total_target = term.total_target
+            p_monthly = (item.monthly_spend if money else item.monthly_impressions)
+            p_total = (item.total_spend if money else item.total_impressions)
+            if term.monthly_target and p_monthly and p_total:
+                total_target = term.monthly_target * p_total / p_monthly
             # A stand-in for the strategy: its own sold figures, its
             # product's flight and pacing type.
             ghost = LineItem(
@@ -2184,10 +2200,10 @@ def strategy_blocks(session, view: "OrderView") -> list[StrategyBlock]:
                 start_date=item.start_date,
                 end_date=item.end_date,
                 monthly_impressions=term.monthly_target,
-                total_impressions=term.total_target,
+                total_impressions=total_target,
                 goal_cpm=term.rate,
                 monthly_spend=term.monthly_target,
-                total_spend=term.total_target,
+                total_spend=total_target,
                 goal_cpc=term.rate,
             )
             row = compute_row(ghost, order, points, view.as_of)

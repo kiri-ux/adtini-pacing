@@ -95,6 +95,8 @@ def _series_points(series):
 # How far the running CPM can sit from the setup CPM, and pacing from 100%,
 # before a row says the CPM is why it is ahead or behind.
 CPM_DRIFT = 0.05
+# Days without a serve before a row shows its last serve date.
+STALE_DAYS = 3
 PACE_BAND = 0.05
 
 
@@ -117,9 +119,9 @@ def cpm_flag(run: float | None, setup: float | None,
     pace = to_date / on_pace
     drift = run / setup - 1.0
     if pace < 1.0 - PACE_BAND and drift > CPM_DRIFT:
-        return f"Behind: CPM ${run:.2f} vs ${setup:.2f}"
+        return f"High CPM: ${run:.2f} vs ${setup:.2f}"
     if pace > 1.0 + PACE_BAND and drift < -CPM_DRIFT:
-        return f"Ahead: CPM ${run:.2f} vs ${setup:.2f}"
+        return f"Low CPM: ${run:.2f} vs ${setup:.2f}"
     return None
 
 
@@ -162,10 +164,27 @@ class GridRow:
     feed_key: str | None = None
     # Delivery linked to this row by hand: (group key, label).
     linked: list[tuple[str, str]] = field(default_factory=list)
+    # The DSP strategy line names delivering to this row.
+    feed_names: list[str] = field(default_factory=list)
 
     @property
     def running(self) -> bool:
         return any(self.by_date.values())
+
+    @property
+    def last_serve(self) -> dt.date | None:
+        served = [d for d, v in self.by_date.items() if v]
+        return max(served) if served else None
+
+    def serve_gap(self, as_of: dt.date) -> str | None:
+        """"n/a" when it never served, the last date when that was
+        STALE_DAYS or more before as_of, else None."""
+        last = self.last_serve
+        if last is None:
+            return "n/a"
+        if (as_of - last).days >= STALE_DAYS:
+            return f"{last.month}/{last.day}"
+        return None
 
     @property
     def target_list(self) -> list[str]:
@@ -244,6 +263,27 @@ class DetailsView:
     @property
     def has_split(self) -> bool:
         return any(e.sold for e in self.elements)
+
+    @property
+    def live_shares(self) -> dict[int, float]:
+        """Each sold row's share of what the product served over the last
+        RUN_CPM_DAYS days to as_of, in percent. Empty when nothing served.
+
+        What the split button sets the % column to: the mix actually running,
+        not the drafted one.
+        """
+        first = self.as_of - dt.timedelta(days=RUN_CPM_DAYS - 1)
+        served = {
+            e.strategy_id: sum(
+                v for d, v in e.by_date.items() if first <= d <= self.as_of
+            )
+            for e in self.elements
+            if e.sold
+        }
+        total = sum(served.values())
+        if not total:
+            return {}
+        return {sid: v / total * 100 for sid, v in served.items()}
 
     @property
     def is_search(self) -> bool:
@@ -493,6 +533,7 @@ def details_view(
                 targets=term.targets if term else None,
                 ordered=combined or key in ordered,
                 linked=linked,
+                feed_names=sorted(ran[key].names) if key in ran else [],
             )
         )
     for key, label, series, _ in grouped:
@@ -510,6 +551,7 @@ def details_view(
                 run_cpm=None if money else run_cpm(_series_points(series), as_of),
                 ordered=combined or key in ordered,
                 feed_key=key,
+                feed_names=sorted(series.names),
             )
         )
     if not combined:
@@ -623,6 +665,19 @@ def details_view(
     if checks and checks[0].tracking_conversions and not row.conversions:
         flags.append("Tracking conversions - none reported")
 
+    # With a split, the Total row's budgets are the rows' added up, each at
+    # its own CPM. The product's goal CPM is the client's rate, not what any
+    # DSP line is set to, so budgets from it never matched the rows above.
+    priced = [e for e in elements if e.sold and e.rate]
+    split_day_budget = (
+        sum(e.daily_budget or 0.0 for e in priced) if priced else None
+    )
+    split_left = None
+    if priced and not money:
+        split_left = sum(
+            max((e.total or 0.0) - e.to_date, 0.0) * e.rate / 1000.0 for e in priced
+        )
+
     return DetailsView(
         view=view,
         item=item,
@@ -637,7 +692,7 @@ def details_view(
         month_actual=month_actual,
         month_target=month_target,
         day_target=day_target,
-        day_budget=day_budget(
+        day_budget=split_day_budget if split_day_budget is not None else day_budget(
             catch_up(row.monthly_target, row.total_target, total_by_date, tomorrow),
             row.unit_cost,
         ),
@@ -648,8 +703,10 @@ def details_view(
         run_cpm=None if money else run_cpm(
             [(p.date, p.impressions, p.cost) for p in row.daily], as_of),
         media_spent=None if money else product_spent,
-        media_budget=None if money else media_budget(
-            product_spent, row.total_target, row.to_date, row.unit_cost),
+        media_budget=None if money else (
+            product_spent + split_left if split_left is not None else media_budget(
+                product_spent, row.total_target, row.to_date, row.unit_cost)
+        ),
         card=None if money else ratecard.lookup(
             item.product, restricted=bool(item.restricted)),
     )

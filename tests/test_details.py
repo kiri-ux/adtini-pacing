@@ -228,7 +228,7 @@ def test_a_bought_strategy_shows_before_it_runs(site):
     html = app_module.app.test_client().get(
         f"/orders/{order_id}/details/{li_id}"
     ).get_data(as_text=True)
-    assert "not running" in html
+    assert "Last serve: n/a" in html
     assert "not sold" not in html
 
 
@@ -498,8 +498,8 @@ def test_media_budget_after_a_cpm_change():
 def test_cpm_flag_says_ahead_or_behind_on_the_cpm():
     import details
 
-    assert details.cpm_flag(2.40, 2.00, 80, 100) == "Behind: CPM $2.40 vs $2.00"
-    assert details.cpm_flag(1.60, 2.00, 120, 100) == "Ahead: CPM $1.60 vs $2.00"
+    assert details.cpm_flag(2.40, 2.00, 80, 100) == "High CPM: $2.40 vs $2.00"
+    assert details.cpm_flag(1.60, 2.00, 120, 100) == "Low CPM: $1.60 vs $2.00"
     assert details.cpm_flag(2.40, 2.00, 100, 100) is None
     assert details.cpm_flag(1.60, 2.00, 80, 100) is None
 
@@ -551,3 +551,76 @@ def test_the_morning_sweep_drafts_missing_splits(site):
         "behavioral": pytest.approx(427_500),
         "retargeting": pytest.approx(22_500),
     }
+
+
+def test_split_button_matches_what_is_serving(site):
+    """Only Behavioral is serving, so the button's shares are 100 / 0."""
+    import details
+    import db as db_module
+
+    app_module, (order_id, li_id) = site
+    client = app_module.app.test_client()
+    client.post(f"/orders/{order_id}/details/{li_id}/build")
+    with db_module.session_scope() as session:
+        d = details.details_view(session, order_id, li_id)
+        by_label = {e.label: e.strategy_id for e in d.elements if e.sold}
+        live = d.live_shares
+    assert live[by_label["D - Behavioral"]] == pytest.approx(100)
+    assert live[by_label["D - Retargeting"]] == pytest.approx(0)
+
+    html = client.get(f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
+    assert 'data-live="100.0"' in html
+    assert "Match serving" in html
+
+
+def test_serve_gap_shows_the_last_serve():
+    import details
+
+    as_of = dt.date(2026, 11, 6)
+    never = details.GridRow(label="R")
+    fresh = details.GridRow(label="B", by_date={dt.date(2026, 11, 5): 10.0})
+    stale = details.GridRow(
+        label="C", by_date={dt.date(2026, 11, 2): 10.0, dt.date(2026, 11, 4): 0.0}
+    )
+    assert never.serve_gap(as_of) == "n/a"
+    assert fresh.serve_gap(as_of) is None
+    assert stale.serve_gap(as_of) == "11/2"
+
+
+def test_grid_names_the_dsp_lines_and_totals_the_rows(site):
+    import details
+    import db as db_module
+
+    app_module, (order_id, li_id) = site
+    client = app_module.app.test_client()
+    client.post(f"/orders/{order_id}/details/{li_id}/build")
+    with db_module.session_scope() as session:
+        d = details.details_view(session, order_id, li_id)
+        behavioral = next(e for e in d.elements if e.label == "D - Behavioral")
+        assert behavioral.feed_names == ["Display - Behavioral"]
+        # Each row's impressions left at its own CPM, added up.
+        assert d.media_budget == pytest.approx(
+            14 * 20.4 + (287_500 + 22_500) * 2.04 / 1000
+        )
+    html = client.get(f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
+    assert "Display - Behavioral" in html
+
+
+def test_row_total_follows_the_product_total(site):
+    """A total drafted when the flight was shorter must not make the row
+    read as far ahead."""
+    import details
+    import db as db_module
+    from models import LineItem, StrategyTerms
+
+    app_module, (order_id, li_id) = site
+    app_module.app.test_client().post(f"/orders/{order_id}/details/{li_id}/build")
+    with db_module.session_scope() as session:
+        item = session.get(LineItem, li_id)
+        ratio = item.total_impressions / item.monthly_impressions
+        for t in session.query(StrategyTerms).filter_by(line_item_id=li_id):
+            t.total_target = t.monthly_target * ratio / 2  # stale, half length
+    with db_module.session_scope() as session:
+        d = details.details_view(session, order_id, li_id)
+        behavioral = next(e for e in d.elements if e.label == "D - Behavioral")
+        assert behavioral.total == pytest.approx(behavioral.monthly * ratio)

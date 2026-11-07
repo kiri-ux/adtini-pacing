@@ -2,7 +2,8 @@
  *
  * Typing a % fills the row's monthly and total from the product's own
  * goals; typing a monthly figure moves the % to match. Only the figures
- * are saved, so the % is never out of step with what is stored.
+ * are saved, so the % is never out of step with what is stored. The button
+ * sets the % to what each row actually served over the last 7 days.
  */
 (function () {
   "use strict";
@@ -43,18 +44,21 @@
     out.classList.toggle("off", Math.abs(total - 100) > 0.5);
   }
 
-  // Scale every row of the product so the shares add to 100%, keeping
-  // their proportions; the last row takes the rounding.
+  // Set every row of the product to its share of the last 7 days' serve.
+  // With nothing served yet, scale the typed shares to 100% instead,
+  // keeping their proportions. The last row takes the rounding.
   document.addEventListener("click", function (event) {
     var btn = event.target.closest(".pctfix");
     if (!btn) return;
     var list = rows(btn.dataset.li);
-    var total = list.reduce(function (acc, el) { return acc + (num(el.value) || 0); }, 0);
+    var live = list.some(function (el) { return num(el.dataset.live) !== null; });
+    var pick = function (el) { return num(live ? el.dataset.live : el.value) || 0; };
+    var total = list.reduce(function (acc, el) { return acc + pick(el); }, 0);
     var used = 0;
     list.forEach(function (el, i) {
       var share;
       if (!total) share = 100 / list.length;
-      else share = (num(el.value) || 0) * 100 / total;
+      else share = pick(el) * 100 / total;
       share = i === list.length - 1 ? 100 - used : Math.round(share * 10) / 10;
       used += share;
       el.value = share.toFixed(1);

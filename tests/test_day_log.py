@@ -236,7 +236,7 @@ def test_the_row_labels_are_pinned(site):
         as_text=True
     )
     # Row labels are header cells, so a screen reader announces them too.
-    assert re.search(r'<tr class="totalrow">\s*<th class="pin">', body)
+    assert re.search(r'<tr class="totalrow">\s*(<th class="pin0 prodfill"[^>]*></th>\s*)?<th class="pin">', body)
     assert re.search(r'<tr class="ontrack">\s*<th class="pin">', body)
 
 
