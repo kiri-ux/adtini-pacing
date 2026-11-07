@@ -342,17 +342,22 @@ class SyncResult:
 
 
 def recent_order_ids(session, today: dt.date, days: int = RECENT_DAYS) -> list[str]:
-    """Insertion Orders in the book that ended recently or have no end yet."""
-    from sqlalchemy import func, or_, select
+    """Insertion Orders in the book still marked active, or that ended in the
+    last `days` days, so a flip to Complete or Cancelled lands."""
+    from sqlalchemy import and_, func, or_, select
 
     from models import Order
 
     cutoff = today - dt.timedelta(days=days)
+    status = func.lower(func.coalesce(Order.status, ""))
     rows = session.execute(
         select(Order.external_order_id).where(
             Order.external_order_id.isnot(None),
             func.lower(Order.order_type) == "insertion order",
-            or_(Order.end_date.is_(None), Order.end_date >= cutoff),
+            or_(
+                *[status.like(f"{s}%") for s in ACTIVE_STATUSES],
+                and_(Order.end_date >= cutoff, Order.end_date <= today),
+            ),
         )
     ).scalars()
     return [r for r in rows if r]
@@ -394,6 +399,10 @@ def sync(
 
     ids = sorted(names, key=lambda x: int(x) if x.isdigit() else 0)
     result.orders_seen = len(ids)
+    log.info(
+        "rz orders: %s open in RZ across %s clusters; reading %s orders",
+        result.open_listed, result.clusters, len(ids),
+    )
 
     cache: dict = {}
     for start in range(0, len(ids), BATCH):
@@ -415,6 +424,7 @@ def sync(
             result.orders_added += outcome.orders_added
             result.line_items_added += outcome.line_items_added
             result.line_items_updated += outcome.line_items_updated
+        log.info("rz orders: %s/%s read", min(start + BATCH, len(ids)), len(ids))
 
     with session_scope() as session:
         key = SOURCE_KEY.format(date=today.isoformat())
