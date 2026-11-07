@@ -121,6 +121,12 @@ class GridRow:
     # What the strategy targets - categories, keywords, places - one per
     # line. Typed in by hand until the adtini forms carry it.
     targets: str | None = None
+    # The order lists this targeting for the product.
+    ordered: bool = False
+
+    @property
+    def running(self) -> bool:
+        return any(self.by_date.values())
 
     @property
     def target_list(self) -> list[str]:
@@ -380,8 +386,17 @@ def details_view(
             return goal
         return goal * rate / 1000.0 if rate else None
 
+    # The targeting the order says was bought. A strategy that was bought
+    # but has not started serving (retargeting waiting on a pixel, say) has
+    # no delivery to show it by, so it is listed from here.
+    ordered: dict[str, str] = {}
+    for name in views.sold_strategy_names(item):
+        ordered.setdefault(sheets.match_key(name) or name.lower(), name)
+    combined = bool(views.combined_strategy(item.product))
+
     elements: list[GridRow] = []
     claimed: set[str] = set()
+    split_keys: set[str] = set()
     terms = {t.id: t for t in (block.terms if block else [])}
     for srow in block.rows if block else []:
         term = terms.get(srow.strategy_id)
@@ -391,6 +406,7 @@ def details_view(
         series = ran.get(key)
         if series is not None:
             claimed.add(key)
+        split_keys.add(key)
         sold = bool(srow.total_target)
         elements.append(
             GridRow(
@@ -416,6 +432,7 @@ def details_view(
                 run_cpm=None if money else run_cpm(_series_points(series), as_of),
                 strategy_id=srow.strategy_id,
                 targets=term.targets if term else None,
+                ordered=combined or key in ordered,
             )
         )
     for key, label, series, _ in grouped:
@@ -431,8 +448,19 @@ def details_view(
                 impressions=sum(per_day(series, 0).values()),
                 clicks=sum(per_day(series, 1).values()),
                 run_cpm=None if money else run_cpm(_series_points(series), as_of),
+                ordered=combined or key in ordered,
             )
         )
+    if not combined:
+        for key, name in ordered.items():
+            if key in split_keys or key in ran:
+                continue
+            elements.append(
+                GridRow(
+                    label=_label(item.product, name),
+                    ordered=True,
+                )
+            )
 
     # The whole flight, future days included, the way the tab is laid out:
     # the last date header is the end date, and the to-date target on it is
@@ -669,24 +697,30 @@ def build_split(session, item: LineItem, money: bool) -> tuple[int, str]:
     if existing:
         return 0, "existing"
 
-    # Already running: each targeting gets the share of the goal it is
-    # actually serving. Only a product with nothing delivered yet falls back
-    # to the order's strategies and the setup guide's split.
-    metric = "cost" if money else "impressions"
-    running = views.strategy_series(session, [item], metric=metric).get(item.id, [])
-    added = views._draft_item(session, item, running)
-    if added:
-        return added, "delivery"
-
+    # The order's strategies decide the rows: what was bought, running yet or
+    # not (retargeting waiting on a pixel still gets its row). Only a product
+    # whose order lists no strategies is drafted from what is running.
     plan = plan_split(item, money)
     if not plan:
-        return 0, "delivery"
+        metric = "cost" if money else "impressions"
+        running = views.strategy_series(session, [item], metric=metric).get(item.id, [])
+        return views._draft_item(session, item, running), "delivery"
 
+    return write_plan(session, item, plan), "order"
+
+
+def write_plan(session, item: LineItem, plan: list[PlannedStrategy]) -> int:
+    """Add a drafted split's rows. Returns how many were added."""
     count = session.execute(
         select(func.count())
         .select_from(StrategyTerms)
         .where(StrategyTerms.order_id == item.order_id)
     ).scalar() or 0
+    # Rows added earlier in the same run are not flushed yet.
+    count += sum(
+        1 for pending in session.new
+        if isinstance(pending, StrategyTerms) and pending.order_id == item.order_id
+    )
     seen: set[str] = set()
     for planned in plan:
         if planned.label in seen:
@@ -706,7 +740,7 @@ def build_split(session, item: LineItem, money: bool) -> tuple[int, str]:
                 added_by_hand=True,
             )
         )
-    return len(seen), "order"
+    return len(seen)
 
 
 def record_check(

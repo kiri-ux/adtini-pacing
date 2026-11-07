@@ -164,18 +164,72 @@ def test_build_split_follows_the_setup_guide(site):
     assert "D - Behavioral" in html
 
 
-def test_build_split_follows_actual_serve_once_running(site):
-    """Running already: each targeting gets the share it is serving."""
+def test_build_split_keeps_a_bought_strategy_that_is_not_running(site):
+    """Only Behavioral is serving; the order also bought Retargeting."""
     import db as db_module
     from models import StrategyTerms
 
     app_module, (order_id, li_id) = site
     app_module.app.test_client().post(f"/orders/{order_id}/details/{li_id}/build")
     with db_module.session_scope() as session:
+        terms = {
+            t.match_key: t.monthly_target
+            for t in session.query(StrategyTerms).filter_by(line_item_id=li_id)
+        }
+    assert terms == {
+        "behavioral": pytest.approx(440_000),
+        "retargeting": pytest.approx(10_000),
+    }
+
+
+def test_build_split_follows_serve_when_the_order_lists_none(site):
+    import db as db_module
+    from models import LineItem, StrategyTerms
+
+    app_module, (order_id, li_id) = site
+    with db_module.session_scope() as session:
+        session.get(LineItem, li_id).sold_strategies = None
+    app_module.app.test_client().post(f"/orders/{order_id}/details/{li_id}/build")
+    with db_module.session_scope() as session:
         terms = session.query(StrategyTerms).filter_by(line_item_id=li_id).all()
         assert [(t.match_key, t.monthly_target) for t in terms] == [
             ("behavioral", pytest.approx(450_000))
         ]
+
+
+def test_draft_missing_splits_uses_the_order(site):
+    import db as db_module
+    import views
+    from models import StrategyTerms
+
+    app_module, (order_id, li_id) = site
+    with db_module.session_scope() as session:
+        views.draft_missing_splits(session, as_of=dt.date(2026, 10, 26))
+    with db_module.session_scope() as session:
+        keys = {
+            t.match_key
+            for t in session.query(StrategyTerms).filter_by(line_item_id=li_id)
+        }
+    assert keys == {"behavioral", "retargeting"}
+
+
+def test_a_bought_strategy_shows_before_it_runs(site):
+    import details
+    import db as db_module
+
+    app_module, (order_id, li_id) = site
+    with db_module.session_scope() as session:
+        d = details.details_view(session, order_id, li_id)
+        rows = {e.label: e for e in d.elements}
+    assert set(rows) == {"D - Behavioral", "D - Retargeting"}
+    assert rows["D - Retargeting"].ordered and not rows["D - Retargeting"].running
+    assert rows["D - Behavioral"].running
+
+    html = app_module.app.test_client().get(
+        f"/orders/{order_id}/details/{li_id}"
+    ).get_data(as_text=True)
+    assert "not running" in html
+    assert "not sold" not in html
 
 
 def test_ctv_and_video_splits_two_thirds_to_video():

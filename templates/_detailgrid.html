@@ -98,8 +98,12 @@
               {% for opt in opts %}<option value="{{ opt }}"{% if opt == picked %} selected{% endif %}>{{ d.short_label(opt) }}</option>{% endfor %}
             </select>
             {%- else -%}
-            <span class="stratname">{{ d.short_label(e.label) }} <span class="setupflag">not sold</span></span>
+            <span class="stratname">{{ d.short_label(e.label) }}
+              {%- if not e.ordered %} <span class="setupflag">not sold</span>{% endif -%}
+              {%- if e.ordered and not e.running %} <span class="setupflag">not running</span>{% endif -%}
+            </span>
             {%- endif -%}
+            {%- if e.sold and not e.running %} <span class="setupflag">not running</span>{% endif -%}
             <span class="targettip{% if e.target_list %} has{% endif %}" tabindex="0">i
               <span class="tipbox"><b>{{ d.short_label(d.selected_option(e.label) or e.label) }}</b>
                 {%- if e.target_list -%}
