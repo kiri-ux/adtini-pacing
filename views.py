@@ -952,6 +952,7 @@ def overview(
     include_ended: bool = False,
     needs_terms: bool | None = None,
     include_non_io: bool = False,
+    markets: list[str] | None = None,
 ) -> list[OverviewRow]:
     """One computed line per order, which is the summary tab.
 
@@ -970,6 +971,8 @@ def overview(
         stmt = stmt.where(Order.buyer == buyer)
     if market:
         stmt = stmt.where(Client.market == market)
+    if markets is not None:
+        stmt = stmt.where(Client.market.in_(markets))
     if pacing_type:
         stmt = stmt.where(Order.pacing_type == pacing_type)
     if query:

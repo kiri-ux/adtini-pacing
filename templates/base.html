@@ -14,8 +14,11 @@
 <body>
 
 <nav class="rail">
-  <a href="/" title="Home" aria-label="Home"><svg viewBox="0 0 24 24" aria-hidden="true">
+  <a href="{{ url_for('home') }}" title="Home" aria-label="Home"{% if nav == 'home' %} class="here"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true">
     <path d="M12 3 3 10v11h6v-6h6v6h6V10z"/></svg></a>
+  <a href="{{ url_for('my_day') }}" title="My Day" aria-label="My Day" class="mark{% if nav == 'myday' %} on{% endif %}">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M7 2h2v2h6V2h2v2h3v18H4V4h3zm-1 8v10h12V10zm2 2h3v3H8z"/></svg></a>
   <a href="/" title="Pacing" aria-label="Pacing" class="mark{% if nav == 'overview' %} on{% endif %}">
     <svg viewBox="0 0 24 24" aria-hidden="true">
     <path d="M4 19h16v2H4z"/><path d="M6 15h3v3H6zm5-6h3v9h-3zm5-5h3v14h-3z"/></svg></a>

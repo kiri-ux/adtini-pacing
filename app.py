@@ -36,6 +36,7 @@ import details
 import exports
 import pagecache
 import products
+import schedule
 import sheets
 import views
 from config import get_settings
@@ -1293,6 +1294,85 @@ def campaign_unlink(order_id: int, line_item_id: int):
 
 
 # --------------------------------------------------------------------------
+# Home and My Day
+# --------------------------------------------------------------------------
+@app.route("/home")
+@login_required
+def home():
+    weekday = schedule.today_weekday()
+    with session_scope() as db:
+        schedule.seed_if_empty(db)
+        today = schedule.by_day(db, weekday)
+        as_of = views.latest_delivery_date(db)
+    return render_template(
+        "home.html",
+        nav="home",
+        weekday=weekday,
+        day_name=schedule.WEEKDAYS[weekday],
+        today=today,
+        as_of=as_of,
+    )
+
+
+MY_DAY_COOKIE = "my_day_buyer"
+
+
+@app.route("/my-day")
+@login_required
+def my_day():
+    buyer = request.args.get("buyer")
+    if not buyer and request.cookies.get(MY_DAY_COOKIE):
+        return redirect(url_for("my_day", buyer=request.cookies[MY_DAY_COOKIE],
+                                **{k: v for k, v in request.args.items() if k != "buyer"}))
+    try:
+        weekday = int(request.args.get("day", schedule.today_weekday()))
+    except ValueError:
+        weekday = schedule.today_weekday()
+    if not 0 <= weekday <= 4:
+        weekday = schedule.today_weekday()
+
+    with session_scope() as db:
+        schedule.seed_if_empty(db)
+        buyers = schedule.buyers(db)
+        rows, partners, missing, as_of = [], [], [], None
+        if buyer:
+            # A buyer's day is the partners the sheet gives them that day,
+            # plus their own orders under any partner updated that day: the
+            # sheet assigns partners, the orders drop assigns orders, and
+            # the two disagree (Laura's Lotus Las Vegas orders sit on
+            # Olivia's Thursday).
+            partners = schedule.day_markets(db, buyer, weekday)
+            mine, missing = schedule.matching_markets(db, partners)
+            day = schedule.day_market_values(db, weekday)
+            full_name = schedule.order_buyer(db, buyer)
+            mine_keys = {schedule.key(m) for m in mine}
+            rows = [
+                r for r in (views.overview(db, as_of=_as_of(), markets=day) if day else [])
+                if schedule.key(r.client.market) in mine_keys
+                or (full_name and r.order.buyer == full_name)
+            ]
+            shown = {r.client.market for r in rows if r.client.market}
+            partners = sorted(set(partners) | shown, key=str.lower)
+        as_of = rows[0].as_of if rows else views.latest_delivery_date(db)
+        response = make_response(render_template(
+            "my_day.html",
+            nav="myday",
+            buyer=buyer,
+            buyers=buyers,
+            weekday=weekday,
+            weekdays=schedule.WEEKDAYS,
+            partners=partners,
+            missing=missing,
+            rows=rows,
+            page_total=views.page_total(rows),
+            as_of=as_of,
+        ))
+    if buyer:
+        response.set_cookie(MY_DAY_COOKIE, buyer, max_age=60 * 60 * 24 * 365, samesite="Lax")
+    return response
+
+
+# --------------------------------------------------------------------------
 # Data
 # --------------------------------------------------------------------------
 @app.route("/data", methods=["POST"])
@@ -1365,6 +1445,15 @@ def data_action():
     elif action == "recompute":
         with session_scope() as db:
             message = recompute_terms(db).summary()
+    elif action == "schedule":
+        upload = request.files.get("file")
+        if upload and upload.filename:
+            try:
+                with session_scope() as db:
+                    count = schedule.load(db, upload.read().decode("utf-8-sig"))
+                message = f"Schedule loaded: {count} partners."
+            except (ValueError, UnicodeDecodeError) as exc:
+                message = f"Schedule not loaded: {exc}"
     elif action == "draft-splits":
         with session_scope() as db:
             message = views.draft_missing_splits(db, as_of=_as_of()).summary()

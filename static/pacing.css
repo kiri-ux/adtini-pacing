@@ -922,3 +922,19 @@ table.overview.satable{min-width:0;width:100%}
 .saflag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11.5px;font-weight:600;
   background:#FBEBC2;color:#7A4C09}
 .saflag.low_ecpm{background:#E3EEFB;color:#03294D}
+/* Home and My Day */
+.hometiles{display:flex;gap:14px;flex-wrap:wrap;margin:6px 0 22px}
+.hometile{flex:1 1 200px;max-width:280px;background:#fff;border:1px solid var(--line,#E3E8EF);border-radius:12px;
+  padding:16px 18px;display:flex;flex-direction:column;gap:4px;color:inherit;text-decoration:none}
+.hometile b{font-size:16px}
+.hometile span{font-size:13px;color:var(--muted)}
+.hometile:hover{border-color:var(--orange)}
+.homehead{font-size:15px;margin:0 0 8px}
+.hometable{max-width:460px}
+.daytabs{display:inline-flex;gap:4px}
+.daytabs a{padding:6px 10px;border-radius:8px;color:var(--muted);text-decoration:none;font-size:13px}
+.daytabs a.on{background:var(--navy,#0F2A47);color:#fff}
+.partnerchips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.pchip{font-size:12px;padding:4px 9px;border-radius:999px;background:#EEF2F7}
+.pchip.none{background:#FBEFE0;color:#7A4A09}
+.pchip i{font-style:normal;opacity:.75}

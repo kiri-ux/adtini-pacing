@@ -14,3 +14,4 @@ data/*
 !data/rate_card.csv
 !data/products.csv
 !data/strategy_seed.csv
+!data/update_schedule.csv
