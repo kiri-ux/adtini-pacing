@@ -2235,7 +2235,7 @@ class DraftResult:
         ]
         if self.orders_without_delivery:
             parts.append(
-                f"{self.orders_without_delivery} had nothing running to draft from"
+                f"{self.orders_without_delivery} had nothing to draft from"
             )
         return ", ".join(parts) + f" (of {self.orders_seen} missing one)"
 
@@ -2253,9 +2253,9 @@ def draft_missing_splits(session, as_of: dt.date | None = None) -> DraftResult:
     it. Doing that a product at a time, by hand, across a thousand orders is
     not work anybody is going to finish.
 
-    What is running is knowable; what each targeting was *bought* for is not,
-    so this apportions the product's sold figures by the shares actually
-    running and leaves the rows editable. It is a first draft for a buyer to
+    The order's strategies decide the rows (bought and not yet serving still
+    gets one, split the setup guide's way); a product whose order lists none
+    is apportioned by the shares actually running. Rows stay editable. It is a first draft for a buyer to
     correct, not an answer - which is why it only ever fills a gap and never
     touches a row that already exists.
     """
@@ -2319,7 +2319,9 @@ def draft_missing_splits(session, as_of: dt.date | None = None) -> DraftResult:
             for item in order.line_items:
                 if not products.is_paced(item.product):
                     continue
-                added += _draft_item(session, item, series.get(item.id, []))
+                added += _draft_from_order(session, item) or _draft_item(
+                    session, item, series.get(item.id, [])
+                )
             if added:
                 result.orders_drafted += 1
                 result.strategies_added += added
@@ -2333,6 +2335,27 @@ def draft_missing_splits(session, as_of: dt.date | None = None) -> DraftResult:
         session.expunge_all()
 
     return result
+
+
+def _draft_from_order(session, item: LineItem) -> int:
+    """The order's strategies, split the setup guide's way, for a product
+    with no rows. 0 when the order lists none."""
+    import details  # details imports views
+
+    if session.execute(
+        select(func.count())
+        .select_from(StrategyTerms)
+        .where(StrategyTerms.line_item_id == item.id)
+    ).scalar():
+        return 0
+    if any(
+        isinstance(p, StrategyTerms) and p.line_item_id == item.id
+        for p in session.new
+    ):
+        return 0
+    money = (item.pacing_type or item.order.pacing_type or "impression") != "impression"
+    plan = details.plan_split(item, money)
+    return details.write_plan(session, item, plan) if plan else 0
 
 
 def _draft_item(

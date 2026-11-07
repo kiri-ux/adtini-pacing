@@ -171,7 +171,9 @@ following the setup guide: retargeting takes a flat 10K impressions a month
 and the rest is shared evenly; CTV + Video puts two thirds on the video half
 and a third on CTV, with retargeting on video only. Where the order lists no
 strategies it falls back to apportioning what is running. It never touches a
-product that already has rows.
+product that already has rows. The Data page's draft-splits button does the
+same across the book. A strategy the order lists that has not served shows on
+the grid as "not running".
 
 **Weekly check** is the Updates sheet row. Saving one snapshots CTR, served
 against on pace, and month to date; the buyer adds whether conversions are
