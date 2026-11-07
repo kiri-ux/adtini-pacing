@@ -1304,6 +1304,9 @@ def home():
         schedule.seed_if_empty(db)
         today = schedule.by_day(db, weekday)
         as_of = views.latest_delivery_date(db)
+    if _warmer_started:
+        # Each name here is a click away; build their pages behind this one.
+        pagecache.prefetch([url_for("my_day", buyer=b, day=weekday) for b in today])
     return render_template(
         "home.html",
         nav="home",
@@ -1324,37 +1327,60 @@ def my_day():
     if not buyer and request.cookies.get(MY_DAY_COOKIE):
         return redirect(url_for("my_day", buyer=request.cookies[MY_DAY_COOKIE],
                                 **{k: v for k, v in request.args.items() if k != "buyer"}))
+    response = make_response(_my_day_page())
+    if buyer:
+        response.set_cookie(MY_DAY_COOKIE, buyer, max_age=60 * 60 * 24 * 365, samesite="Lax")
+    return response
+
+
+def _my_day_weekday() -> int:
     try:
         weekday = int(request.args.get("day", schedule.today_weekday()))
     except ValueError:
-        weekday = schedule.today_weekday()
-    if not 0 <= weekday <= 4:
-        weekday = schedule.today_weekday()
+        return schedule.today_weekday()
+    return weekday if 0 <= weekday <= 4 else schedule.today_weekday()
 
+
+@cached_page
+def _my_day_page():
+    buyer = request.args.get("buyer")
+    weekday = _my_day_weekday()
     with session_scope() as db:
         schedule.seed_if_empty(db)
         buyers = schedule.buyers(db)
-        rows, partners, missing, as_of = [], [], [], None
+        rows, partners, missing = [], [], []
         if buyer:
             # A buyer's day is the partners the sheet gives them that day,
             # plus their own orders under any partner updated that day: the
             # sheet assigns partners, the orders drop assigns orders, and
             # the two disagree (Laura's Lotus Las Vegas orders sit on
-            # Olivia's Thursday).
+            # Olivia's Thursday). Only those partners are paced, so the page
+            # works out tens of orders, not the whole book.
             partners = schedule.day_markets(db, buyer, weekday)
             mine, missing = schedule.matching_markets(db, partners)
-            day = schedule.day_market_values(db, weekday)
             full_name = schedule.order_buyer(db, buyer)
+            theirs = []
+            if full_name:
+                day = set(schedule.day_market_values(db, weekday))
+                theirs = [
+                    m for m in db.execute(
+                        select(Client.market)
+                        .join(Order, Order.client_id == Client.id)
+                        .where(Order.buyer == full_name, Client.market.isnot(None))
+                        .distinct()
+                    ).scalars() if m in day
+                ]
             mine_keys = {schedule.key(m) for m in mine}
+            markets = sorted(set(mine) | set(theirs))
             rows = [
-                r for r in (views.overview(db, as_of=_as_of(), markets=day) if day else [])
+                r for r in (views.overview(db, as_of=_as_of(), markets=markets) if markets else [])
                 if schedule.key(r.client.market) in mine_keys
                 or (full_name and r.order.buyer == full_name)
             ]
             shown = {r.client.market for r in rows if r.client.market}
             partners = sorted(set(partners) | shown, key=str.lower)
         as_of = rows[0].as_of if rows else views.latest_delivery_date(db)
-        response = make_response(render_template(
+        return render_template(
             "my_day.html",
             nav="myday",
             buyer=buyer,
@@ -1366,10 +1392,7 @@ def my_day():
             rows=rows,
             page_total=views.page_total(rows),
             as_of=as_of,
-        ))
-    if buyer:
-        response.set_cookie(MY_DAY_COOKIE, buyer, max_age=60 * 60 * 24 * 365, samesite="Lax")
-    return response
+        )
 
 
 # --------------------------------------------------------------------------
@@ -1451,6 +1474,7 @@ def data_action():
             try:
                 with session_scope() as db:
                     count = schedule.load(db, upload.read().decode("utf-8-sig"))
+                pagecache.edited()
                 message = f"Schedule loaded: {count} partners."
             except (ValueError, UnicodeDecodeError) as exc:
                 message = f"Schedule not loaded: {exc}"
