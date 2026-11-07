@@ -290,6 +290,8 @@ class StrategySeries:
     # be added up from these rather than fetched again by a second query
     # over the same rows.
     metrics_by_date: dict[dt.date, list[float]] = field(default_factory=dict)
+    # The DSP's own strategy line names behind it, as the feed has them.
+    names: set[str] = field(default_factory=set)
 
     @property
     def ctr(self) -> float | None:
@@ -364,6 +366,8 @@ def strategy_series(
                 line_item_id=target, label=label, product=product, by_date={}
             )
             collected[key] = series
+        if strategy_name and strategy_name.strip():
+            series.names.add(strategy_name.strip())
         amount = metrics[metric]
         series.by_date[date] = series.by_date.get(date, 0.0) + amount
         series.total += amount
@@ -1959,6 +1963,7 @@ def _merge(parts: list["StrategySeries"]) -> "StrategySeries":
         out.clicks += series.clicks
         out.cost += series.cost
         out.conversions += series.conversions
+        out.names |= series.names
     return out
 
 
@@ -1999,8 +2004,10 @@ def group_by_targeting(
                 metrics_by_date={
                     date: list(values) for date, values in series.metrics_by_date.items()
                 },
+                names=set(series.names),
             )
             continue
+        existing.names |= series.names
         for date, value in series.by_date.items():
             existing.by_date[date] = existing.by_date.get(date, 0.0) + value
         for date, values in series.metrics_by_date.items():

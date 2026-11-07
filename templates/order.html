@@ -3,6 +3,8 @@
 {% set nav = 'overview' %}
 {% set o = v.order %}
 {% set t = v.total %}
+{# The card describes the products running now, same as the table's default. #}
+{% set h = v.open_total if (v.open_total and v.open_total.total_target) else v.total %}
 {% block title %} — {{ v.client.name }}{% endblock %}
 {% block heading %}Order Details - {{ o.external_order_id or o.id }} - {{ v.client.name }}{% endblock %}
 
@@ -24,17 +26,17 @@
 
 <div class="infocard">
   <div><small>Buyer</small><b>{{ o.buyer or '—' }}</b></div>
-  <div><small>{{ 'Spend' if t.is_money else 'Impressions' }}</small><b>{{ t.total_target|metric(t) if t.total_target else '—' }}</b></div>
-  <div><small>Budget</small><b>{{ t.total_budget|money if t.total_budget else '—' }}</b></div>
+  <div><small>{{ 'Spend' if h.is_money else 'Impressions' }}</small><b>{{ h.total_target|metric(h) if h.total_target else '—' }}</b></div>
+  <div><small>Budget</small><b>{{ h.total_budget|money if h.total_budget else '—' }}</b></div>
   <div><small>Start Date</small><b>{{ o.start_date.strftime('%-m/%-d/%Y') if o.start_date else '—' }}</b></div>
   <div><small>End Date</small><b>{{ o.end_date.strftime('%-m/%-d/%Y') if o.end_date else '—' }}</b></div>
   <div><small>Order Name</small><b>{{ o.name }}</b></div>
-  <div><small>Monthly Pacing</small><b><span class="pace {{ t.month_pacing_pct|paceclass }}">{{ t.month_delivery_ratio|pct }}</span></b></div>
-  <div><small>Total Pacing</small><b><span class="pace {{ t.pacing_pct|paceclass }}">{{ t.delivery_ratio|pct }}</span></b></div>
-  <div><small>Served</small><b>{{ t.to_date|metric(t) }}</b></div>
-  <div><small>Left</small><b>{{ t.remaining|metric(t) if t.total_target else '—' }}</b></div>
-  <div><small>CTR</small><b>{{ t.ctr|pct }}</b></div>
-  <div><small>Market</small><b>{{ v.client.market or '—' }}</b></div>
+  <div><small>Monthly Pacing</small><b><span class="pace {{ h.month_pacing_pct|paceclass }}">{{ h.month_delivery_ratio|pct }}</span></b></div>
+  <div><small>Total Pacing</small><b><span class="pace {{ h.pacing_pct|paceclass }}">{{ h.delivery_ratio|pct }}</span></b></div>
+  <div><small>Served</small><b>{{ h.to_date|metric(h) }}</b></div>
+  <div><small>Left</small><b>{{ h.remaining|metric(h) if h.total_target else '—' }}</b></div>
+  <div><small>CTR</small><b>{{ h.ctr|pct }}</b></div>
+  <div><small>Partner</small><b>{{ v.client.market or '—' }}</b></div>
 </div>
 
 {% with show_line=true %}{% include "_saalerts.html" %}{% endwith %}
