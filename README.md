@@ -194,11 +194,18 @@ Render dashboard → **New → Blueprint** → pick this repo. It reads
 
 | Service | Type | Plan | What it does |
 |---|---|---|---|
-| `adtini-pacing` | Web Service (Python) | Starter | the tool itself |
+| `adtini-pacing` | Web Service (Python) | Standard | the tool itself |
 | `adtini-pacing-ingest` | Cron Job (Python) | Starter | pulls S3 daily at 13:00 UTC |
-| `adtini-pacing-db` | Postgres | Basic 256MB | shared by both |
+| `adtini-pacing-db` | Postgres | Basic 1GB | shared by both |
 
-Starter is the right size to begin with. The web service needs a paid plan
+The blueprint re-applies these plans on every merge, so change them in
+`render.yaml`, not only in the dashboard. Basic 256MB (0.1 CPU) pinned at
+100% on every uncached page in Nov 2026; Starter web was too small too.
+A plan change on the database restarts it, and a deploy that lands during
+the restart fails its pre-deploy migration with a connection timeout: deploy
+again once the database shows Available.
+
+The web service needs a paid plan
 regardless - Free spins down after inactivity, and a cold start on a table
 this size is a bad first impression for the team. Storage is the thing to
 watch: a year of daily delivery at the current volume is roughly 1.5-2 GB, so
