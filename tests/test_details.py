@@ -624,3 +624,38 @@ def test_row_total_follows_the_product_total(site):
         d = details.details_view(session, order_id, li_id)
         behavioral = next(e for e in d.elements if e.label == "D - Behavioral")
         assert behavioral.total == pytest.approx(behavioral.monthly * ratio)
+
+
+def test_a_save_drops_only_its_orders_pages():
+    """A save on one order left every other order to rebuild on refresh."""
+    import pagecache
+
+    pagecache.clear()
+    stamp = ("t", 1)
+    a, b, table = (pagecache.key(p, stamp) for p in ("/orders/1?", "/orders/2/budgeting?", "/?"))
+    for k in (a, b, table):
+        pagecache.put(k, b"page")
+    pagecache.edited(1)
+    assert pagecache.get(pagecache.key("/orders/1?", stamp)) is None
+    assert pagecache.get(pagecache.key("/?", stamp)) is None
+    assert pagecache.get(pagecache.key("/orders/2/budgeting?", stamp)) == b"page"
+    assert pagecache.stale("/orders/2/budgeting?") == b"page"
+    # A page built before the save does not get stored after it.
+    pagecache.put(a, b"old")
+    assert pagecache.get(pagecache.key("/orders/1?", stamp)) is None
+    pagecache.edited()
+    assert pagecache.get(pagecache.key("/orders/2/budgeting?", stamp)) is None
+    pagecache.clear()
+
+
+def test_the_warmer_builds_the_pilot_buyers_orders(site):
+    import db as db_module
+    from models import Order
+
+    app_module, (order_id, _) = site
+    with db_module.session_scope() as session:
+        order = session.get(Order, order_id)
+        order.buyer, order.active, order.end_date = "Laura Ostrowski", True, None
+    with app_module.app.test_request_context():
+        assert f"/orders/{order_id}" in app_module._warm_paths()
+        assert f"/orders/{order_id}" not in app_module._warm_paths(full=False)
