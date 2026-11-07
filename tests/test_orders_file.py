@@ -1160,3 +1160,11 @@ def test_a_fuller_export_still_updates_what_it_carries():
         order = session.query(Order).one()
         assert order.order_type == "Proposal"
         assert order.status == "Cancelled"
+
+
+def test_cached_pages_say_how_they_were_served(tmp_path, monkeypatch):
+    """A slow load needs telling apart: built, or served from memory."""
+    import app as app_module
+
+    response = app_module._timed(app_module.Response("x"), "miss", 1.234)
+    assert response.headers["Server-Timing"] == 'page;desc="miss";dur=1234'

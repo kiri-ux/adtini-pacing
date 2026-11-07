@@ -22,6 +22,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import queue
+import re
 import threading
 import time
 from collections import OrderedDict
@@ -32,9 +33,9 @@ from models import IngestedFile
 
 log = logging.getLogger(__name__)
 
-# Rendered pages kept. Most are the pacing table under a few filters and the
-# orders being worked that day; a page is 50-400KB.
-MAX_PAGES = 120
+# Rendered pages kept. The pacing table under a few filters, My Day, and the
+# pilot buyers' running orders (page and Budgeting each); a page is 50-400KB.
+MAX_PAGES = 600
 # How long the data stamp is trusted before the database is asked again.
 STAMP_TTL = 30.0
 
@@ -74,18 +75,55 @@ def data_stamp(session, fresh: bool = False) -> tuple:
     return _stamp
 
 
-def edited() -> None:
-    """Something was saved here. Every cached page may now be wrong."""
-    global _edits
+# Saves made on one order. Its own pages and the pages that add up every
+# order (pacing table, Home, My Day) are dropped; every other order's pages
+# stay, so a refresh elsewhere after a save is still served from memory.
+_order_edits: dict[int, int] = {}
+_shared_edits = 0
+_ORDER_PATH = re.compile(r"^/orders/(\d+)(?:[/?]|$)")
+
+
+def _order_of(path: str) -> int | None:
+    match = _ORDER_PATH.match(path)
+    return int(match.group(1)) if match else None
+
+
+def _scope_count(path: str) -> int:
+    order_id = _order_of(path)
+    return _order_edits.get(order_id, 0) if order_id is not None else _shared_edits
+
+
+def edited(order_id: int | None = None) -> None:
+    """Something was saved here.
+
+    Saved on an order: that order's pages and the shared pages may now be
+    wrong. Anywhere else: every cached page may be.
+    """
+    global _edits, _shared_edits
     with _lock:
-        _edits += 1
-        _pages.clear()
-        _latest.clear()
+        if order_id is None:
+            _edits += 1
+            _pages.clear()
+            _latest.clear()
+            return
+        _order_edits[order_id] = _order_edits.get(order_id, 0) + 1
+        _shared_edits += 1
+        for store in (_pages, _latest):
+            for k in list(store):
+                path = k[0] if isinstance(k, tuple) else k
+                owner = _order_of(path)
+                if owner is None or owner == order_id:
+                    del store[k]
+
+
+def edit_count() -> int:
+    """Moves on every save, scoped or not; what the warmer watches."""
+    return _edits + _shared_edits
 
 
 def key(path: str, stamp: tuple) -> tuple:
     # Today is in the key because pages default a date input to it.
-    return (path, stamp, _edits, dt.date.today())
+    return (path, stamp, _edits, _scope_count(path), dt.date.today())
 
 
 def get(page_key: tuple) -> bytes | None:
@@ -98,7 +136,7 @@ def get(page_key: tuple) -> bytes | None:
 
 def put(page_key: tuple, body: bytes) -> None:
     with _lock:
-        if page_key[2] != _edits:
+        if page_key[2] != _edits or page_key[3] != _scope_count(page_key[0]):
             return  # an edit landed while this was rendering
         _pages[page_key] = body
         _pages.move_to_end(page_key)
@@ -155,14 +193,15 @@ def start_warmer(app, paths=("/",), every: float = 60.0) -> None:
                 # Any save clears every cached page (`edited`), so the next
                 # visitor to each would wait for a rebuild; edits re-warm too.
                 with _lock:
-                    edits = _edits
+                    edits = edit_count()
                 if (stamp, dt.date.today(), edits) != seen:
+                    full = seen is None or seen[:2] != (stamp, dt.date.today())
                     seen = (stamp, dt.date.today(), edits)
                     client = app.test_client()
                     with client.session_transaction() as sess:
                         sess["ok"] = True
                     with app.test_request_context():
-                        todo = paths() if callable(paths) else paths
+                        todo = paths(full) if callable(paths) else paths
                     for path in todo:
                         started = time.monotonic()
                         client.get(path)

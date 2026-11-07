@@ -28,7 +28,7 @@ from flask import (
     session as flask_session,
     url_for,
 )
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import OperationalError
 from werkzeug.exceptions import HTTPException
 
@@ -385,7 +385,7 @@ def cached_page(view):
         page_key = pagecache.key(request.full_path, stamp)
         body = pagecache.get(page_key)
         if body is not None:
-            return Response(body, mimetype="text/html")
+            return _timed(Response(body, mimetype="text/html"), "hit")
         # New data landed since this page was built (the nightly load drops
         # files one at a time for most of an hour). Show the last copy now
         # and build the new one behind it.
@@ -393,14 +393,15 @@ def cached_page(view):
             body = pagecache.stale(request.full_path)
             if body is not None:
                 pagecache.prefetch([request.full_path])
-                return Response(body, mimetype="text/html")
+                return _timed(Response(body, mimetype="text/html"), "stale")
         # A page is built once at a time. Two pacing tables at once (a
         # visitor and the warmer) were enough for the database to drop the
         # connection.
         with pagecache.render_lock(request.path):
             body = pagecache.get(page_key)
             if body is not None:
-                return Response(body, mimetype="text/html")
+                return _timed(Response(body, mimetype="text/html"), "hit")
+            started = time.monotonic()
             try:
                 response = make_response(view(*args, **kwargs))
             except OperationalError:
@@ -410,16 +411,25 @@ def cached_page(view):
                 response = make_response(view(*args, **kwargs))
         if response.status_code == 200 and response.mimetype == "text/html":
             pagecache.put(page_key, response.get_data())
-        return response
+        elapsed = time.monotonic() - started
+        app.logger.info("rendered %s in %.2fs", request.full_path, elapsed)
+        return _timed(response, "miss", elapsed)
 
     return wrapped
+
+
+def _timed(response, how: str, seconds: float = 0.0):
+    """Say in the response how the page was served, so a slow load can be
+    told apart in the browser's network panel: from memory or built."""
+    response.headers["Server-Timing"] = f'page;desc="{how}";dur={seconds * 1000:.0f}'
+    return response
 
 
 @app.after_request
 def _drop_cache_on_write(response):
     if request.method == "POST" and response.status_code < 500:
-        pagecache.edited()
         order_id = (request.view_args or {}).get("order_id")
+        pagecache.edited(order_id)
         if order_id and _warmer_started:
             # The redirect back renders the order page itself (uncached, it
             # carries the flash); its Budgeting grids are fetched right after.
@@ -439,13 +449,37 @@ def _start_warmer():
     pagecache.start_warmer(app, paths=_warm_paths)
 
 
-def _warm_paths() -> list[str]:
+def _warm_paths(full: bool = True) -> list[str]:
     """What the warmer builds whenever data lands or the day turns: the
     pacing table, Home, and the pilot buyers' My Day for every weekday."""
-    return ["/", url_for("home")] + [
+    paths = ["/", url_for("home")] + [
         url_for("my_day", buyer=b, day=d)
         for b in settings.pilot_buyers for d in range(5)
     ]
+    # And the pilot buyers' running orders, page and Budgeting both, so a
+    # refresh after a deploy or the morning load is served from memory.
+    # Only when data or the day turned (or after a deploy): an edit already
+    # re-warms the order it was made on, and hundreds of rebuilds after every
+    # save would compete with the buyer making them.
+    if full and settings.pilot_buyers:
+        from models import Order
+
+        today = dt.date.today()
+        with session_scope() as db:
+            orders = db.execute(
+                select(Order.id).where(
+                    Order.active.is_(True),
+                    or_(Order.end_date.is_(None), Order.end_date >= today),
+                    or_(*[
+                        func.lower(Order.buyer).like(f"{b.lower()}%")
+                        for b in settings.pilot_buyers
+                    ]),
+                ).order_by(Order.id)
+            ).scalars().all()
+        for order_id in orders:
+            paths.append(url_for("order_detail", order_id=order_id))
+            paths.append(url_for("order_budgeting", order_id=order_id))
+    return paths
 
 
 def _back(order_id: int, anchor: str = ""):
