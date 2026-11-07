@@ -31,6 +31,10 @@ class Settings:
         self.session_secret = os.getenv("SESSION_SECRET", "dev-secret")
         self.ingest_on_start = _bool("INGEST_ON_START", False)
         self.build = os.getenv("RENDER_GIT_COMMIT", "")[:7]
+        # Buyers whose My Day pages are built ahead of the first click.
+        self.pilot_buyers = [
+            b.strip() for b in os.getenv("PILOT_BUYERS", "Laura,Mallory").split(",") if b.strip()
+        ]
 
     @property
     def is_sqlite(self) -> bool:

@@ -167,3 +167,22 @@ def test_schedule_names_map_to_order_buyers(site):
     with db_module.session_scope() as session:
         assert schedule.order_buyer(session, "Mallory") == "Mallory Hoenig"
         assert schedule.order_buyer(session, "Nobody") is None
+
+
+def test_seeding_reads_back_in_the_same_session(site):
+    import db as db_module
+    from models import ScheduleEntry
+
+    with db_module.session_scope() as session:
+        session.query(ScheduleEntry).delete()
+    with db_module.session_scope() as session:
+        schedule.seed_if_empty(session)
+        assert schedule.by_day(session, 0)
+
+
+def test_the_warmer_builds_the_pilot_my_days(site):
+    with site.app.test_request_context():
+        paths = site._warm_paths()
+    assert "/home" in paths
+    assert "/my-day?buyer=Laura&day=0" in paths
+    assert "/my-day?buyer=Mallory&day=4" in paths
