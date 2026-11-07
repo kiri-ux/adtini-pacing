@@ -92,6 +92,37 @@ def _series_points(series):
     return [(d, v[0], v[2]) for d, v in series.metrics_by_date.items()]
 
 
+# How far the running CPM can sit from the setup CPM, and pacing from 100%,
+# before a row says the CPM is why it is ahead or behind.
+CPM_DRIFT = 0.05
+PACE_BAND = 0.05
+
+
+def media_budget(spent: float, total: float | None, served: float,
+                 cpm: float | None) -> float | None:
+    """Media cost to set in the DSP: what has been spent, plus the
+    impressions still owed at the current CPM. With the setup CPM unchanged
+    and delivery on its rate this is total x CPM; after a CPM change it is
+    the figure the budget has to move to."""
+    if not total or not cpm:
+        return None
+    return spent + max(total - served, 0.0) * cpm / 1000.0
+
+
+def cpm_flag(run: float | None, setup: float | None,
+             to_date: float, on_pace: float | None) -> str | None:
+    """Ahead or behind on impressions while the CPM has moved the same way."""
+    if not run or not setup or not on_pace:
+        return None
+    pace = to_date / on_pace
+    drift = run / setup - 1.0
+    if pace < 1.0 - PACE_BAND and drift > CPM_DRIFT:
+        return f"Behind: CPM ${run:.2f} vs ${setup:.2f}"
+    if pace > 1.0 + PACE_BAND and drift < -CPM_DRIFT:
+        return f"Ahead: CPM ${run:.2f} vs ${setup:.2f}"
+    return None
+
+
 @dataclass
 class GridRow:
     """One Campaign Elements row."""
@@ -121,6 +152,10 @@ class GridRow:
     # What the strategy targets - categories, keywords, places - one per
     # line. Typed in by hand until the adtini forms carry it.
     targets: str | None = None
+    # Feed cost in the flight, and the media budget at the row's CPM.
+    media_spent: float | None = None
+    media_budget: float | None = None
+    cpm_flag: str | None = None
     # The order lists this targeting for the product.
     ordered: bool = False
     # Running and on no row: the delivery group it is, for linking by hand.
@@ -171,6 +206,8 @@ class DetailsView:
     day_budget: float | None = None
     # The whole product's running CPM, same window as GridRow.run_cpm.
     run_cpm: float | None = None
+    media_spent: float | None = None
+    media_budget: float | None = None
     # The rate card entry for the product: starting / max CPM to read the
     # running CPM against. None for products bought on spend.
     card: "ratecard.Rate | None" = None
@@ -423,6 +460,8 @@ def details_view(
             if k in ran
         ]
         sold = bool(srow.total_target)
+        spent = None if money else sum(per_day(series, 2).values())
+        row_run_cpm = None if money else run_cpm(_series_points(series), as_of)
         elements.append(
             GridRow(
                 label=srow.label,
@@ -444,7 +483,12 @@ def details_view(
                 clicks_by_date=per_day(series, 1),
                 impressions=sum(per_day(series, 0).values()),
                 clicks=sum(per_day(series, 1).values()),
-                run_cpm=None if money else run_cpm(_series_points(series), as_of),
+                run_cpm=row_run_cpm,
+                media_spent=spent,
+                media_budget=None if money else media_budget(
+                    spent, srow.total_target, srow.to_date, srow.unit_cost),
+                cpm_flag=None if money else cpm_flag(
+                    row_run_cpm, srow.unit_cost, srow.to_date, srow.on_pace),
                 strategy_id=srow.strategy_id,
                 targets=term.targets if term else None,
                 ordered=combined or key in ordered,
@@ -491,6 +535,7 @@ def details_view(
     else:
         dates = sorted({d for e in elements for d in e.by_date})
 
+    product_spent = sum(p.cost for p in row.daily if in_flight(p.date))
     total_by_date: dict[dt.date, float] = {}
     clicks_by_date: dict[dt.date, float] = {}
     attr = "cost" if money else "impressions"
@@ -602,6 +647,9 @@ def details_view(
         day_state=day_state,
         run_cpm=None if money else run_cpm(
             [(p.date, p.impressions, p.cost) for p in row.daily], as_of),
+        media_spent=None if money else product_spent,
+        media_budget=None if money else media_budget(
+            product_spent, row.total_target, row.to_date, row.unit_cost),
         card=None if money else ratecard.lookup(
             item.product, restricted=bool(item.restricted)),
     )

@@ -484,3 +484,38 @@ def test_an_unmatched_line_links_to_a_strategy_and_unlinks(site):
     with db_module.session_scope() as session:
         d = details.details_view(session, order_id, li_id)
         assert any(e.feed_key for e in d.elements)
+
+
+def test_media_budget_after_a_cpm_change():
+    import details
+
+    # 100K sold, 40K served for $80 at $2.00; CPM moves to $2.50.
+    assert details.media_budget(80.0, 100_000, 40_000, 2.50) == pytest.approx(230.0)
+    assert details.media_budget(80.0, 100_000, 40_000, None) is None
+
+
+def test_cpm_flag_says_ahead_or_behind_on_the_cpm():
+    import details
+
+    assert details.cpm_flag(2.40, 2.00, 80, 100) == "Behind: CPM $2.40 vs $2.00"
+    assert details.cpm_flag(1.60, 2.00, 120, 100) == "Ahead: CPM $1.60 vs $2.00"
+    assert details.cpm_flag(2.40, 2.00, 100, 100) is None
+    assert details.cpm_flag(1.60, 2.00, 80, 100) is None
+
+
+def test_the_grid_shows_media_cost(site):
+    import details
+    import db as db_module
+
+    app_module, (order_id, li_id) = site
+    client = app_module.app.test_client()
+    client.post(f"/orders/{order_id}/details/{li_id}/build")
+    with db_module.session_scope() as session:
+        d = details.details_view(session, order_id, li_id)
+        behavioral = next(e for e in d.elements if e.label == "D - Behavioral")
+    # 14 days x $20.40 served; 440K - 140K left at $2.04.
+    assert behavioral.media_spent == pytest.approx(14 * 20.4)
+    assert behavioral.media_budget == pytest.approx(14 * 20.4 + 300_000 * 2.04 / 1000)
+    assert d.media_spent == pytest.approx(14 * 20.4)
+    html = client.get(f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
+    assert "Media Budg." in html
