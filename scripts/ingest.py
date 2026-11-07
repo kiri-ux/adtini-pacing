@@ -57,6 +57,31 @@ def draft_splits(log: logging.Logger) -> None:
         log.exception("drafting splits failed")
 
 
+def sync_rz_orders(log: logging.Logger) -> bool:
+    """Refresh open and recently ended orders straight from RZ.
+
+    Skipped when the bot login is not set. Returns whether anything changed.
+    """
+    import os
+
+    from ingest import rz_orders
+
+    user = os.environ.get("RZ_USER", "").strip()
+    password = os.environ.get("RZ_PASS", "")
+    if not user or not password:
+        log.info("rz orders: RZ_USER/RZ_PASS not set, skipped")
+        return False
+    try:
+        result = rz_orders.sync(rz_orders.RZClient(user, password), session_scope)
+    except Exception:  # RZ being down must not turn the sweep red
+        log.exception("rz orders sync failed")
+        return False
+    log.info("rz orders: %s", result.summary())
+    for error in result.errors[:20]:
+        log.warning("rz orders: %s", error)
+    return result.changed
+
+
 def main() -> int:
     logging.basicConfig(
         level=logging.INFO,
@@ -83,6 +108,11 @@ def main() -> int:
         if arg == "--kind" and i + 1 < len(sys.argv):
             kind = sys.argv[i + 1]
 
+    if "--rz-only" in sys.argv:
+        if sync_rz_orders(log):
+            draft_splits(log)
+        return 0
+
     if only:
         log.info("loading one file: %s", only)
     if kind:
@@ -105,11 +135,15 @@ def main() -> int:
         )
         return 1
 
-    if result.rows_written:
+    # After the files, so a monthly export never overwrites a fresher read,
+    # and before adopting, so new delivery joins its real order.
+    rz_changed = False if only or kind == "delivery" else sync_rz_orders(log)
+
+    if result.rows_written or rz_changed:
         with session_scope() as session:
             log.info("order book: %s", adopt_unmatched_delivery(session).summary())
 
-    if result.files_loaded:
+    if result.files_loaded or rz_changed:
         draft_splits(log)
 
     # Loading nothing is fine; failing to read the bucket is not, and the
