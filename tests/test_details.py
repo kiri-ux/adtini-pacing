@@ -659,3 +659,21 @@ def test_the_warmer_builds_the_pilot_buyers_orders(site):
     with app_module.app.test_request_context():
         assert f"/orders/{order_id}" in app_module._warm_paths()
         assert f"/orders/{order_id}" not in app_module._warm_paths(full=False)
+
+
+def test_unsplit_strategies_show_their_share_of_the_goal(site):
+    import details
+    import db as db_module
+
+    app_module, (order_id, li_id) = site
+    with db_module.session_scope() as session:
+        d = details.details_view(session, order_id, li_id)
+        rows = {e.label: e for e in d.elements}
+        r = d.row
+        assert not any(e.sold for e in d.elements)
+        ret, beh = rows["D - Retargeting"], rows["D - Behavioral"]
+        assert ret.monthly == pytest.approx(r.monthly_target * 0.05)
+        assert ret.monthly + beh.monthly == pytest.approx(r.monthly_target)
+        assert ret.rate == r.unit_cost
+        assert ret.remaining == ret.total
+        assert beh.remaining == pytest.approx(beh.total - beh.to_date)

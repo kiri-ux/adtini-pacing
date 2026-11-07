@@ -90,7 +90,7 @@
 {%- endmacro %}
 {% macro servegap(e) -%}
   {%- set gap = e.serve_gap(d.as_of) -%}
-  {%- if gap %} <span class="servegap" title="Last serve: {{ gap }}">&#9888; Last serve: {{ gap }}</span>{% endif -%}
+  {%- if gap %} <span class="servegap" tabindex="0" aria-label="Last serve: {{ gap }}">&#9888;<span class="tipbox">Last serve: {{ gap }}</span></span>{% endif -%}
 {%- endmacro %}
       {% for e in d.elements %}
         <tr class="{{ 'soldrow' if e.sold else 'unsoldrow' }}{% if loop.first %} prodstart{% endif %}">
@@ -106,7 +106,6 @@
             {%- else -%}
             <span class="stratname">{{ d.short_label(e.label) }}
               {%- if not e.ordered %} <span class="setupflag">not sold</span>{% endif -%}
-              {%- if e.ordered %}{{ servegap(e) }}{% endif -%}
             </span>
             {%- if e.feed_key and d.has_split %}
             <form method="post" class="linkform" action="{{ url_for('strategy_link', order_id=d.order.id, line_item_id=d.item.id) }}">
@@ -125,7 +124,6 @@
               <span class="linkchip">+ {{ d.short_label(l) }} <button type="submit" title="Unlink">&times;</button></span>
             </form>
             {%- endfor -%}
-            {%- if e.sold %}{{ servegap(e) }}{% endif -%}
             {%- if e.cpm_flag %} <span class="setupflag">{{ e.cpm_flag }}</span>{% endif -%}
             <span class="targettip{% if e.target_list %} has{% endif %}" tabindex="0">i
               <span class="tipbox"><b>{{ d.short_label(d.selected_option(e.label) or e.label) }}</b>
@@ -133,6 +131,7 @@
                 <ul>{% for t in e.target_list %}<li>{{ t }}</li>{% endfor %}</ul>
                 {%- else -%}<em>No targets</em>{%- endif -%}
               </span></span>
+            {%- if e.sold or e.ordered %}{{ servegap(e) }}{% endif -%}
             </div>
             {%- if e.feed_names %}<div class="feednames">{% for n in e.feed_names %}<div title="{{ n }}">{{ n }}</div>{% endfor %}</div>{% endif -%}
             </th>
@@ -147,6 +146,13 @@
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-monthly" value="{{ e.monthly|entry(not money) }}"></td>
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-total" value="{{ e.total|entry(not money) }}"></td>
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-rate" value="{{ e.rate|entry }}"></td>
+          {% elif e.ordered and (e.monthly or e.total) %}
+          {% set base = r.monthly_target or r.total_target %}
+          {% set mine = e.monthly if r.monthly_target else e.total %}
+          <td class="num">{{ '%.1f'|format(mine / base * 100) if (mine and base) else '—' }}</td>
+          <td class="num">{{ val(d, e.monthly) }}</td>
+          <td class="num">{{ val(d, e.total) }}</td>
+          <td class="num">{{ e.rate|money if e.rate else '—' }}</td>
           {% else %}
           <td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">&mdash;</td>
           {% endif %}
