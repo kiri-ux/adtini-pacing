@@ -79,5 +79,8 @@ services:
 
 databases:
   - name: adtini-pacing-db
-    plan: basic-256mb
+    # basic-1gb (0.5 CPU). On basic-256mb (0.1 CPU) every uncached page
+    # pinned the database and took 45-65 s while the web service sat idle
+    # (Nov 2026). The blueprint re-applies this on every merge.
+    plan: basic-1gb
     postgresMajorVersion: "16"

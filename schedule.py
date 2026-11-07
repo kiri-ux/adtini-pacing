@@ -82,6 +82,9 @@ def load(session, text: str) -> int:
         ScheduleEntry(market=e.market, weekday=e.weekday, buyer=e.buyer, email=e.email)
         for e in entries
     )
+    # The sessions run without autoflush; the page that seeded the schedule
+    # reads it back in the same session.
+    session.flush()
     return len(entries)
 
 

@@ -135,7 +135,7 @@ def prefetch(paths) -> None:
         _wanted.put(path)
 
 
-def start_warmer(app, paths: tuple[str, ...] = ("/",), every: float = 60.0) -> None:
+def start_warmer(app, paths=("/",), every: float = 60.0) -> None:
     """Re-render the pacing table whenever new data lands.
 
     The first person to open it after the nightly load would otherwise wait
@@ -150,12 +150,16 @@ def start_warmer(app, paths: tuple[str, ...] = ("/",), every: float = 60.0) -> N
             try:
                 with session_scope() as session:
                     stamp = data_stamp(session, fresh=True)
-                if stamp != seen:
-                    seen = stamp
+                # The date is in every page's cache key, so a new day needs
+                # warming as much as new data does.
+                if (stamp, dt.date.today()) != seen:
+                    seen = (stamp, dt.date.today())
                     client = app.test_client()
                     with client.session_transaction() as sess:
                         sess["ok"] = True
-                    for path in paths:
+                    with app.test_request_context():
+                        todo = paths() if callable(paths) else paths
+                    for path in todo:
                         started = time.monotonic()
                         client.get(path)
                         log.info(

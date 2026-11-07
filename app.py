@@ -429,7 +429,16 @@ def _start_warmer():
     if _warmer_started or app.config.get("TESTING"):
         return
     _warmer_started = True
-    pagecache.start_warmer(app)
+    pagecache.start_warmer(app, paths=_warm_paths)
+
+
+def _warm_paths() -> list[str]:
+    """What the warmer builds whenever data lands or the day turns: the
+    pacing table, Home, and the pilot buyers' My Day for every weekday."""
+    return ["/", url_for("home")] + [
+        url_for("my_day", buyer=b, day=d)
+        for b in settings.pilot_buyers for d in range(5)
+    ]
 
 
 def _back(order_id: int, anchor: str = ""):
