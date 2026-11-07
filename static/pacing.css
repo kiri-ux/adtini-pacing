@@ -938,3 +938,7 @@ table.overview.satable{min-width:0;width:100%}
 .pchip{font-size:12px;padding:4px 9px;border-radius:999px;background:#EEF2F7}
 .pchip.none{background:#FBEFE0;color:#7A4A09}
 .pchip i{font-style:normal;opacity:.75}
+.linkform{display:inline-block;margin:4px 0 0 4px}
+.linkform select{font-size:11px;padding:1px 4px;max-width:140px}
+.linkchip{display:inline-block;font-size:11px;background:#E6EEF7;color:#123A63;border-radius:9px;padding:1px 6px}
+.linkchip button{border:0;background:none;color:inherit;cursor:pointer;padding:0 0 0 2px;font-size:12px}

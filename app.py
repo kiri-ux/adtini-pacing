@@ -1143,6 +1143,49 @@ def details_build(order_id: int, line_item_id: int):
     )
 
 
+@app.route("/orders/<int:order_id>/details/<int:line_item_id>/link", methods=["POST"])
+@login_required
+def strategy_link(order_id: int, line_item_id: int):
+    """Pair a delivery group with a strategy row when the names did not."""
+    form = request.form
+    with session_scope() as db:
+        item = db.get(LineItem, line_item_id)
+        if item is None or item.order_id != order_id:
+            abort(404)
+        terms = list(
+            db.execute(
+                select(StrategyTerms).where(StrategyTerms.line_item_id == item.id)
+            ).scalars()
+        )
+
+        def keys_of(term):
+            return [k for k in (term.linked_keys or "").splitlines() if k.strip()]
+
+        if form.get("unlink"):
+            term = next((t for t in terms if str(t.id) == form["unlink"]), None)
+            key = (form.get("key") or "").strip()
+            if term is not None:
+                term.linked_keys = "\n".join(
+                    k for k in keys_of(term) if k != key
+                ) or None
+        else:
+            key = (form.get("key") or "").strip()
+            term = next((t for t in terms if str(t.id) == form.get("term")), None)
+            if key and term is not None:
+                for other in terms:
+                    if key in keys_of(other):
+                        other.linked_keys = "\n".join(
+                            k for k in keys_of(other) if k != key
+                        ) or None
+                term.linked_keys = "\n".join(keys_of(term) + [key])
+        item.terms_locked = True
+
+    back = request.referrer or ""
+    if not back.startswith(request.host_url):
+        back = url_for("details_page", order_id=order_id, line_item_id=line_item_id)
+    return redirect(back)
+
+
 @app.route("/orders/<int:order_id>/details/<int:line_item_id>/check", methods=["POST"])
 @login_required
 def details_check(order_id: int, line_item_id: int):

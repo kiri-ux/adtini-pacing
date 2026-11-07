@@ -435,3 +435,52 @@ def test_running_cpm_only_counts_the_window():
 def details_mod():
     import details
     return details
+
+
+def test_an_unmatched_line_links_to_a_strategy_and_unlinks(site):
+    import details
+    import db as db_module
+    from models import DailyDelivery, StrategyTerms
+
+    app_module, (order_id, li_id) = site
+    with db_module.session_scope() as session:
+        session.add(
+            DailyDelivery(
+                date=dt.date(2026, 10, 20), data_source="StackAdapt",
+                campaign_id="CMP-9", strategy_id="S-X",
+                client_name="Forrest Design Group", external_order_id="51200",
+                external_line_item_id="99001", product="Display Ads",
+                strategy_name="Forrest Site Visitors Pool",
+                impressions=3_000.0, clicks=1.0, cost=6.0,
+            )
+        )
+    client = app_module.app.test_client()
+    client.post(f"/orders/{order_id}/details/{li_id}/build")
+
+    with db_module.session_scope() as session:
+        d = details.details_view(session, order_id, li_id)
+        loose = next(e for e in d.elements if e.feed_key)
+        retarget = session.query(StrategyTerms).filter_by(
+            line_item_id=li_id, match_key="retargeting"
+        ).one().id
+    html = client.get(f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
+    assert "Link to" in html
+
+    client.post(
+        f"/orders/{order_id}/details/{li_id}/link",
+        data={"key": loose.feed_key, "term": str(retarget)},
+    )
+    with db_module.session_scope() as session:
+        d = details.details_view(session, order_id, li_id)
+        rows = {e.label: e for e in d.elements}
+        assert not any(e.feed_key for e in d.elements)
+        assert rows["D - Retargeting"].to_date == pytest.approx(3_000)
+        assert rows["D - Retargeting"].linked
+
+    client.post(
+        f"/orders/{order_id}/details/{li_id}/link",
+        data={"unlink": str(retarget), "key": loose.feed_key},
+    )
+    with db_module.session_scope() as session:
+        d = details.details_view(session, order_id, li_id)
+        assert any(e.feed_key for e in d.elements)

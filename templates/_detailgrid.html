@@ -102,7 +102,23 @@
               {%- if not e.ordered %} <span class="setupflag">not sold</span>{% endif -%}
               {%- if e.ordered and not e.running %} <span class="setupflag">not running</span>{% endif -%}
             </span>
+            {%- if e.feed_key and d.has_split %}
+            <form method="post" class="linkform" action="{{ url_for('strategy_link', order_id=d.order.id, line_item_id=d.item.id) }}">
+              <input type="hidden" name="key" value="{{ e.feed_key }}">
+              <select name="term" onchange="this.form.submit()" aria-label="Link to strategy">
+                <option value="">Link to&hellip;</option>
+                {% for s in d.elements if s.sold %}<option value="{{ s.strategy_id }}">{{ d.short_label(s.label) }}</option>{% endfor %}
+              </select>
+            </form>
             {%- endif -%}
+            {%- endif -%}
+            {%- for lk, l in e.linked %}
+            <form method="post" class="linkform" action="{{ url_for('strategy_link', order_id=d.order.id, line_item_id=d.item.id) }}">
+              <input type="hidden" name="unlink" value="{{ e.strategy_id }}">
+              <input type="hidden" name="key" value="{{ lk }}">
+              <span class="linkchip">+ {{ d.short_label(l) }} <button type="submit" title="Unlink">&times;</button></span>
+            </form>
+            {%- endfor -%}
             {%- if e.sold and not e.running %} <span class="setupflag">not running</span>{% endif -%}
             <span class="targettip{% if e.target_list %} has{% endif %}" tabindex="0">i
               <span class="tipbox"><b>{{ d.short_label(d.selected_option(e.label) or e.label) }}</b>
