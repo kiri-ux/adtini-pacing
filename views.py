@@ -2182,6 +2182,15 @@ def strategy_blocks(session, view: "OrderView") -> list[StrategyBlock]:
                 )
                 for date, value in sorted((series.by_date if series else {}).items())
             ]
+            # A row's total follows its monthly share of the product's total.
+            # Totals were drafted from the product as it stood that day; when
+            # the product's flight or total moved later, the stored totals
+            # kept the old length and every row read as far ahead.
+            total_target = term.total_target
+            p_monthly = (item.monthly_spend if money else item.monthly_impressions)
+            p_total = (item.total_spend if money else item.total_impressions)
+            if term.monthly_target and p_monthly and p_total:
+                total_target = term.monthly_target * p_total / p_monthly
             # A stand-in for the strategy: its own sold figures, its
             # product's flight and pacing type.
             ghost = LineItem(
@@ -2191,10 +2200,10 @@ def strategy_blocks(session, view: "OrderView") -> list[StrategyBlock]:
                 start_date=item.start_date,
                 end_date=item.end_date,
                 monthly_impressions=term.monthly_target,
-                total_impressions=term.total_target,
+                total_impressions=total_target,
                 goal_cpm=term.rate,
                 monthly_spend=term.monthly_target,
-                total_spend=term.total_target,
+                total_spend=total_target,
                 goal_cpc=term.rate,
             )
             row = compute_row(ghost, order, points, view.as_of)

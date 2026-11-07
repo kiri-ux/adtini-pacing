@@ -78,7 +78,7 @@
 {% set n = (d.elements|length or 1) + 4 + ((1 + d.elements|length) if money else 0) %}
 {% set p = d.product_pill %}
 {% macro prodcell() -%}
-  <th class="pin0 prodcell" rowspan="{{ n }}">
+  <th class="pin0 prodcell" rowspan="{{ d.elements|length or 1 }}">
     {%- if linked -%}<a class="pilllink" href="{{ url_for('details_page', order_id=d.order.id, line_item_id=d.item.id) }}" title="{{ d.item.product }} - {{ d.ext_id or d.item.id }}">{%- endif -%}
     {%- if p -%}<span class="pill-prod" style="background:{{ p.hex }};color:{{ p.text_hex }}" title="{{ d.item.product }}">{{ p.code }}</span>
     {%- else -%}{{ d.item.product or d.item.name }}{%- endif -%}
@@ -144,8 +144,8 @@
             data-mon="{{ r.monthly_target or '' }}" data-tot="{{ r.total_target or '' }}" data-money="{{ 1 if money else 0 }}"
             data-live="{{ '%.1f'|format(live[e.strategy_id]) if e.strategy_id in live else '' }}"
             value="{{ '%.1f'|format(mine / base * 100) if (mine and base) else '' }}"></td>
-          <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-monthly" value="{{ e.monthly|entry }}"></td>
-          <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-total" value="{{ e.total|entry }}"></td>
+          <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-monthly" value="{{ e.monthly|entry(not money) }}"></td>
+          <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-total" value="{{ e.total|entry(not money) }}"></td>
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-rate" value="{{ e.rate|entry }}"></td>
           {% else %}
           <td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">&mdash;</td>
@@ -170,6 +170,7 @@
       {% endfor %}
 
         <tr class="totalrow">
+          <th class="pin0 prodfill" rowspan="{{ n - (d.elements|length or 1) }}"></th>
           <th class="pin">Total</th>
           {% set sold_sum = d.elements|selectattr('sold')|map(attribute='monthly' if r.monthly_target else 'total')|map('default', 0, true)|sum %}
           {% set base = r.monthly_target or r.total_target %}

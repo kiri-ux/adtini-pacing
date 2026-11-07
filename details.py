@@ -119,9 +119,9 @@ def cpm_flag(run: float | None, setup: float | None,
     pace = to_date / on_pace
     drift = run / setup - 1.0
     if pace < 1.0 - PACE_BAND and drift > CPM_DRIFT:
-        return f"Behind: CPM ${run:.2f} vs ${setup:.2f}"
+        return f"High CPM: ${run:.2f} vs ${setup:.2f}"
     if pace > 1.0 + PACE_BAND and drift < -CPM_DRIFT:
-        return f"Ahead: CPM ${run:.2f} vs ${setup:.2f}"
+        return f"Low CPM: ${run:.2f} vs ${setup:.2f}"
     return None
 
 

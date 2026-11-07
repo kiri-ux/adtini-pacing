@@ -161,7 +161,7 @@ def pct_filter(value, places=2):
 
 
 @app.template_filter("entry")
-def entry_filter(value):
+def entry_filter(value, whole: bool = False):
     """A sold figure as it should sit in an input box.
 
     The engine works in floats, so 700000.0 comes back where a buyer typed
@@ -171,6 +171,8 @@ def entry_filter(value):
     value = _real(value)
     if not value:
         return ""
+    if whole:  # impressions: no fractions of one
+        return f"{round(value):,.0f}"
     return f"{value:,.0f}" if value == int(value) else f"{value:,.2f}"
 
 

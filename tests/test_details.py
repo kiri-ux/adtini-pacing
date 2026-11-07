@@ -498,8 +498,8 @@ def test_media_budget_after_a_cpm_change():
 def test_cpm_flag_says_ahead_or_behind_on_the_cpm():
     import details
 
-    assert details.cpm_flag(2.40, 2.00, 80, 100) == "Behind: CPM $2.40 vs $2.00"
-    assert details.cpm_flag(1.60, 2.00, 120, 100) == "Ahead: CPM $1.60 vs $2.00"
+    assert details.cpm_flag(2.40, 2.00, 80, 100) == "High CPM: $2.40 vs $2.00"
+    assert details.cpm_flag(1.60, 2.00, 120, 100) == "Low CPM: $1.60 vs $2.00"
     assert details.cpm_flag(2.40, 2.00, 100, 100) is None
     assert details.cpm_flag(1.60, 2.00, 80, 100) is None
 
@@ -604,3 +604,23 @@ def test_grid_names_the_dsp_lines_and_totals_the_rows(site):
         )
     html = client.get(f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
     assert "Display - Behavioral" in html
+
+
+def test_row_total_follows_the_product_total(site):
+    """A total drafted when the flight was shorter must not make the row
+    read as far ahead."""
+    import details
+    import db as db_module
+    from models import LineItem, StrategyTerms
+
+    app_module, (order_id, li_id) = site
+    app_module.app.test_client().post(f"/orders/{order_id}/details/{li_id}/build")
+    with db_module.session_scope() as session:
+        item = session.get(LineItem, li_id)
+        ratio = item.total_impressions / item.monthly_impressions
+        for t in session.query(StrategyTerms).filter_by(line_item_id=li_id):
+            t.total_target = t.monthly_target * ratio / 2  # stale, half length
+    with db_module.session_scope() as session:
+        d = details.details_view(session, order_id, li_id)
+        behavioral = next(e for e in d.elements if e.label == "D - Behavioral")
+        assert behavioral.total == pytest.approx(behavioral.monthly * ratio)
