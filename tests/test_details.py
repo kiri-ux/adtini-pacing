@@ -677,3 +677,11 @@ def test_unsplit_strategies_show_their_share_of_the_goal(site):
         assert ret.rate == r.unit_cost
         assert ret.remaining == ret.total
         assert beh.remaining == pytest.approx(beh.total - beh.to_date)
+
+
+def test_the_grid_shows_a_monthly_budget(site):
+    app_module, (order_id, li_id) = site
+    html = app_module.app.test_client().get(
+        f"/orders/{order_id}/details/{li_id}"
+    ).get_data(as_text=True)
+    assert "Mon. Budg." in html
