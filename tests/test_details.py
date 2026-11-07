@@ -135,7 +135,7 @@ def test_monthly_rows_start_again_on_the_first(site):
 
 
 def test_build_split_follows_the_setup_guide(site):
-    """Retargeting takes a flat 10K a month; the rest goes to the others."""
+    """Retargeting takes 5% of the monthly goal; the rest goes to the others."""
     import db as db_module
     from models import StrategyTerms
 
@@ -155,8 +155,8 @@ def test_build_split_follows_the_setup_guide(site):
             for t in session.query(StrategyTerms).filter_by(line_item_id=li_id)
         }
     assert set(terms) == {"D - Behavioral", "D - Retargeting"}
-    assert terms["D - Retargeting"].monthly_target == pytest.approx(10_000)
-    assert terms["D - Behavioral"].monthly_target == pytest.approx(440_000)
+    assert terms["D - Retargeting"].monthly_target == pytest.approx(22_500)
+    assert terms["D - Behavioral"].monthly_target == pytest.approx(427_500)
     assert terms["D - Behavioral"].rate == 2.04
 
     html = client.get(f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
@@ -177,8 +177,8 @@ def test_build_split_keeps_a_bought_strategy_that_is_not_running(site):
             for t in session.query(StrategyTerms).filter_by(line_item_id=li_id)
         }
     assert terms == {
-        "behavioral": pytest.approx(440_000),
-        "retargeting": pytest.approx(10_000),
+        "behavioral": pytest.approx(427_500),
+        "retargeting": pytest.approx(22_500),
     }
 
 
@@ -247,7 +247,8 @@ def test_ctv_and_video_splits_two_thirds_to_video():
     assert video == pytest.approx(60_000)
     assert ctv == pytest.approx(30_000)
     assert "CTV - Retargeting" not in plan
-    assert plan["V - Retargeting"].monthly == pytest.approx(10_000)
+    # 5% of the product's 90K, not of the video half's 60K.
+    assert plan["V - Retargeting"].monthly == pytest.approx(4_500)
     assert plan["CTV - Behavioral"].total == pytest.approx(90_000)
 
 
@@ -513,9 +514,40 @@ def test_the_grid_shows_media_cost(site):
     with db_module.session_scope() as session:
         d = details.details_view(session, order_id, li_id)
         behavioral = next(e for e in d.elements if e.label == "D - Behavioral")
-    # 14 days x $20.40 served; 440K - 140K left at $2.04.
+    # 14 days x $20.40 served; 427.5K - 140K left at $2.04.
     assert behavioral.media_spent == pytest.approx(14 * 20.4)
-    assert behavioral.media_budget == pytest.approx(14 * 20.4 + 300_000 * 2.04 / 1000)
+    assert behavioral.media_budget == pytest.approx(14 * 20.4 + 287_500 * 2.04 / 1000)
     assert d.media_spent == pytest.approx(14 * 20.4)
     html = client.get(f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
     assert "Media Budg." in html
+
+
+def test_the_morning_sweep_drafts_missing_splits(site):
+    """The cron drafts what the Data page's button would, after a load."""
+    import importlib.util
+    import logging
+    import pathlib
+
+    import db as db_module
+    from models import DailyDelivery, StrategyTerms
+
+    _, (order_id, li_id) = site
+    with db_module.session_scope() as session:
+        session.query(DailyDelivery).delete()
+    spec = importlib.util.spec_from_file_location(
+        "ingest_script", pathlib.Path("scripts/ingest.py")
+    )
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    script.draft_splits(logging.getLogger("test"))
+    script.draft_splits(logging.getLogger("test"))  # fills gaps only
+
+    with db_module.session_scope() as session:
+        terms = {
+            t.match_key: t.monthly_target
+            for t in session.query(StrategyTerms).filter_by(line_item_id=li_id)
+        }
+    assert terms == {
+        "behavioral": pytest.approx(427_500),
+        "retargeting": pytest.approx(22_500),
+    }

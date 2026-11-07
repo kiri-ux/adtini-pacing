@@ -23,6 +23,38 @@ from config import get_settings  # noqa: E402
 from db import session_scope  # noqa: E402
 from ingest import loader  # noqa: E402
 from orderbook import adopt_unmatched_delivery  # noqa: E402
+import views  # noqa: E402
+
+
+def draft_splits(log: logging.Logger) -> None:
+    """Give every running order without a split a drafted one.
+
+    Same as the Data page's button, so a new order has rows to pace by the
+    morning it lands. Only fills gaps; a split that exists is never touched.
+    """
+    import datetime as dt
+
+    from sqlalchemy import func, select
+
+    from models import IngestedFile
+
+    try:
+        with session_scope() as session:
+            result = views.draft_missing_splits(session)
+            log.info("splits: %s", result.summary())
+            if result.strategies_added:
+                # Cached pages are keyed on the newest load time; a page
+                # rendered between the load and this would otherwise keep
+                # showing those orders without a split.
+                newest = session.execute(
+                    select(IngestedFile)
+                    .order_by(IngestedFile.ingested_at.desc())
+                    .limit(1)
+                ).scalar_one_or_none()
+                if newest is not None:
+                    newest.ingested_at = dt.datetime.utcnow()
+    except Exception:  # a failed draft must not turn the sweep red
+        log.exception("drafting splits failed")
 
 
 def main() -> int:
@@ -76,6 +108,9 @@ def main() -> int:
     if result.rows_written:
         with session_scope() as session:
             log.info("order book: %s", adopt_unmatched_delivery(session).summary())
+
+    if result.files_loaded:
+        draft_splits(log)
 
     # Loading nothing is fine; failing to read the bucket is not, and the
     # cron run should go red so it is noticed.
