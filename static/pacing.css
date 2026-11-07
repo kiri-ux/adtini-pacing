@@ -952,3 +952,8 @@ table.overview.satable{min-width:0;width:100%}
 .linkform select{font-size:11px;padding:1px 4px;max-width:140px}
 .linkchip{display:inline-block;font-size:11px;background:#E6EEF7;color:#123A63;border-radius:9px;padding:1px 6px}
 .linkchip button{border:0;background:none;color:inherit;cursor:pointer;padding:0 0 0 2px;font-size:12px}
+
+/* Every note on the order in one list, newest first. */
+table.notestable td{vertical-align:top}
+table.notestable td.nowrap{white-space:nowrap}
+table.notestable td.notebody{white-space:pre-wrap;width:60%}
