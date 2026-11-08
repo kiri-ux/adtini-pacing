@@ -679,7 +679,7 @@ table.elements th.idhead,table.elements td.idcell{width:1%;white-space:nowrap;
 .sheethead small{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 .sheethead b{font-size:14px;color:var(--navy);font-weight:600}
 .detailcard .charthead{justify-content:space-between}
-table.detailgrid th.pin{min-width:260px;max-width:260px}
+table.daily.pinned.detailgrid th.pin{min-width:360px;max-width:360px}
 table.detailgrid th.pin input{width:100%;min-width:220px;background:var(--fill);
   border:1px solid transparent;border-radius:8px;padding:6px 8px;font:inherit;
   font-weight:500;color:var(--text)}
@@ -975,3 +975,5 @@ table.notestable td.notebody{white-space:pre-wrap;width:60%}
 .stratcell .feedmain span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px}
 table.detailgrid th.pin .stratcell select.strsel{display:none}
 table.detailgrid th.pin .stratcell.editing select.strsel{display:block;flex-basis:100%;order:4}
+table.detailgrid th.pin .stratcell.matched:not(.editing){flex-wrap:nowrap}
+.stratcell.matched .feedmain span{max-width:none}
