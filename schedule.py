@@ -110,6 +110,14 @@ def buyers(session) -> list[str]:
     )
 
 
+def all_markets(session) -> list[tuple[str, int, str]]:
+    """(partner, weekday, buyer) for every scheduled partner, A to Z."""
+    rows = session.execute(
+        select(ScheduleEntry.market, ScheduleEntry.weekday, ScheduleEntry.buyer)
+    ).all()
+    return sorted(((m, w, b) for m, w, b in rows), key=lambda r: (r[0].lower(), r[1]))
+
+
 def day_markets(session, buyer: str, weekday: int) -> list[str]:
     return list(
         session.execute(
