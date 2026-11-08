@@ -61,7 +61,7 @@
       {% for r in v.rows %}
         {% set ext = r.line_item.external_id if r.line_item and r.line_item.external_id and not r.line_item.external_id.startswith('name:') else none %}
         <tr data-state="{{ r.state }}">
-          <td class="orderid">{% if r.line_item_id %}<a class="detlink" href="{{ url_for('details_page', order_id=o.id, line_item_id=r.line_item_id) }}">{{ ext or 'Open' }}</a>{% else %}{{ ext or '—' }}{% endif %}</td>
+          <td class="orderid">{% if ext and ext.isdigit() %}<a class="detlink" href="https://www.reporting.zone/client/iotool/dist/#/items/viewLineItem/{{ ext }}" target="_blank" rel="noopener" title="Open in RZ">{{ ext }}</a>{% else %}{{ ext or '—' }}{% endif %}</td>
           <td>{{ r.status or r.state|capitalize }}{% if r.needs_setup %} <span class="setupflag">no goal set</span>{% endif %}</td>
           {% set pname = (r.line_item.product if r.line_item and r.line_item.product else r.label) %}
           <td class="clip" title="{{ r.label }}">{% if r.line_item_id %}<a class="detlink" href="{{ url_for('details_page', order_id=o.id, line_item_id=r.line_item_id) }}">{{ pname }}</a>{% else %}{{ pname }}{% endif %}</td>
