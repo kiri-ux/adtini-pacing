@@ -116,7 +116,7 @@
       {% for e in d.elements %}
         <tr class="{{ 'soldrow' if e.sold else 'unsoldrow' }}{% if loop.first %} prodstart{% endif %}">
           {% if loop.first %}{{ prodcell() }}{% endif %}<th class="pin">
-            <div class="stratcell">
+            <div class="stratcell{% if e.sold and e.feed_names %} matched{% endif %}">
             {%- if e.sold -%}
             {% set opts = d.strategy_options %}
             {% set picked = d.selected_option(e.label) %}
