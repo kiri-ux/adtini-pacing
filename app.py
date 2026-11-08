@@ -1411,18 +1411,33 @@ def home():
 
 
 MY_DAY_COOKIE = "my_day_buyer"
+MY_DAY_DAY_COOKIE = "my_day_day"
 
 
 @app.route("/my-day")
 @login_required
 def my_day():
     buyer = request.args.get("buyer")
-    if not buyer and request.cookies.get(MY_DAY_COOKIE):
-        return redirect(url_for("my_day", buyer=request.cookies[MY_DAY_COOKIE],
-                                **{k: v for k, v in request.args.items() if k != "buyer"}))
+    day = request.args.get("day")
+    # Coming back from an order: the buyer always, and the day picked
+    # earlier today. A day picked yesterday falls back to today.
+    remembered_day = None
+    stamp, _, saved = (request.cookies.get(MY_DAY_DAY_COOKIE) or "").partition(":")
+    if stamp == dt.date.today().isoformat() and saved.isdigit():
+        remembered_day = saved
+    if (not buyer and request.cookies.get(MY_DAY_COOKIE)) or (day is None and remembered_day):
+        args = {k: v for k, v in request.args.items()}
+        if not buyer and request.cookies.get(MY_DAY_COOKIE):
+            args["buyer"] = request.cookies[MY_DAY_COOKIE]
+        if day is None and remembered_day:
+            args["day"] = remembered_day
+        return redirect(url_for("my_day", **args))
     response = make_response(_my_day_page())
     if buyer:
         response.set_cookie(MY_DAY_COOKIE, buyer, max_age=60 * 60 * 24 * 365, samesite="Lax")
+    if day is not None and day.isdigit():
+        response.set_cookie(MY_DAY_DAY_COOKIE, f"{dt.date.today().isoformat()}:{day}",
+                            max_age=60 * 60 * 24, samesite="Lax")
     return response
 
 
