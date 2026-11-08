@@ -685,3 +685,13 @@ def test_the_grid_shows_a_monthly_budget(site):
         f"/orders/{order_id}/details/{li_id}"
     ).get_data(as_text=True)
     assert "Mon. Budg." in html
+
+
+def test_a_matched_row_leads_with_the_dsp_line_and_an_icon(site):
+    app_module, (order_id, li_id) = site
+    client = app_module.app.test_client()
+    client.post(f"/orders/{order_id}/details/{li_id}/build")
+    html = client.get(f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
+    assert 'class="stricon"' in html
+    assert '<span class="feedmain"><span title="Display - Behavioral">' in html
+    assert 'class="strsel"' in html
