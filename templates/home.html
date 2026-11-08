@@ -7,7 +7,7 @@
   <span class="crumbc">{{ as_of.strftime('%-d %b %Y') }}</span>{% endif %}</p>
 
 <div class="hometiles">
-  <a class="hometile" href="{{ url_for('my_day') }}"><b>My Day</b><span>Your partners for today</span></a>
+  <a class="hometile" href="{{ url_for('my_day', day=weekday) }}"><b>My Day</b><span>Your partners for today</span></a>
   <a class="hometile" href="{{ url_for('overview') }}"><b>Pacing</b><span>All orders</span></a>
   <a class="hometile" href="{{ url_for('data_page') }}"><b>Data</b><span>Files and schedule</span></a>
 </div>

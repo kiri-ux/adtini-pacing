@@ -192,3 +192,12 @@ def test_find_a_partner_jumps_to_its_buyer_and_day(site):
     body = site.app.test_client().get("/my-day?buyer=Mallory&day=1").get_data(as_text=True)
     assert "Find a partner" in body
     assert 'value="/my-day?buyer=Mallory&amp;day=4">LM Charleston, WV &middot; Fri &middot; Mallory' in body
+
+
+def test_my_day_remembers_the_day_picked_today(site):
+    client = site.app.test_client()
+    client.get("/my-day?buyer=Mallory&day=3")
+    response = client.get("/my-day")
+    assert response.status_code == 302
+    location = response.headers["Location"]
+    assert "buyer=Mallory" in location and "day=3" in location
