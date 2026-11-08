@@ -10,6 +10,13 @@
       <option value="{{ b }}" {% if b == buyer %}selected{% endif %}>{{ b }}</option>
     {% endfor %}
   </select>
+  <select class="filtersel partnersel" aria-label="Find a partner"
+          onchange="if (this.value) location.href = this.value">
+    <option value="">Find a partner</option>
+    {% for m, wd, b in markets_all %}
+      <option value="{{ url_for('my_day', buyer=b, day=wd) }}">{{ m }} &middot; {{ weekdays[wd][:3] }} &middot; {{ b }}</option>
+    {% endfor %}
+  </select>
   <span class="daytabs">
   {% for d in weekdays %}
     <a class="{{ 'on' if loop.index0 == weekday }}"

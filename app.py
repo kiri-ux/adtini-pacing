@@ -1441,6 +1441,7 @@ def _my_day_page():
     with session_scope() as db:
         schedule.seed_if_empty(db)
         buyers = schedule.buyers(db)
+        markets_all = schedule.all_markets(db)
         rows, partners, missing = [], [], []
         if buyer:
             # A buyer's day is the partners the sheet gives them that day,
@@ -1478,6 +1479,7 @@ def _my_day_page():
             nav="myday",
             buyer=buyer,
             buyers=buyers,
+            markets_all=markets_all,
             weekday=weekday,
             weekdays=schedule.WEEKDAYS,
             partners=partners,

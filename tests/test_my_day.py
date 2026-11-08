@@ -186,3 +186,9 @@ def test_the_warmer_builds_the_pilot_my_days(site):
     assert "/home" in paths
     assert "/my-day?buyer=Laura&day=0" in paths
     assert "/my-day?buyer=Mallory&day=4" in paths
+
+
+def test_find_a_partner_jumps_to_its_buyer_and_day(site):
+    body = site.app.test_client().get("/my-day?buyer=Mallory&day=1").get_data(as_text=True)
+    assert "Find a partner" in body
+    assert 'value="/my-day?buyer=Mallory&amp;day=4">LM Charleston, WV &middot; Fri &middot; Mallory' in body

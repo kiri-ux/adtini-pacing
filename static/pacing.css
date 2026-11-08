@@ -40,8 +40,11 @@ table.overview td.ordname{color:var(--muted);max-width:280px;overflow:hidden;
 /* `form select` in adtini.css is width:100%, which stacked these down the
    page instead of sitting beside the search box. */
 .controls .filtersel{flex:0 0 auto;width:auto;min-width:158px;
-  border:1px solid var(--line);border-radius:12px;background:var(--card);
-  font-family:inherit;font-size:13px;padding:12px 14px;color:var(--text)}
+  border:1px solid var(--line);border-radius:12px;background-color:var(--card);
+  font-family:inherit;font-size:13px;padding:12px 38px 12px 14px;color:var(--text);
+  -webkit-appearance:none;appearance:none;cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%236b7280' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 14px center;background-size:12px 8px}
 /* Same story: `form input[type=text]` wins over `.search input`, and took the
    room the magnifier sits in. */
 .controls .search input{padding-left:40px;min-height:0}
@@ -960,3 +963,4 @@ table.overview.satable{min-width:0;width:100%}
 table.notestable td{vertical-align:top}
 table.notestable td.nowrap{white-space:nowrap}
 table.notestable td.notebody{white-space:pre-wrap;width:60%}
+.controls .partnersel{max-width:230px;text-overflow:ellipsis}
