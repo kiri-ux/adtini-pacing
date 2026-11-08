@@ -341,6 +341,10 @@ class DetailsView:
             "text_hex": entry.text_hex if entry else "#FFFFFF",
         }
 
+    def strategy_key(self, label: str) -> str | None:
+        """The targeting a row is, for its icon."""
+        return sheets.match_key(self.selected_option(label) or label)
+
     def short_label(self, label: str) -> str:
         """A strategy label without the product code the pill already shows."""
         code = products.abbreviation(self.item.product)
