@@ -4,7 +4,7 @@
 {% set o = v.order %}
 {% set t = v.total %}
 {# The card describes the products running now, same as the table's default. #}
-{% set h = v.open_total if (v.open_total and v.open_total.total_target) else v.total %}
+{% set h = v.goal_total if (v.goal_total and v.goal_total.total_target) else v.total %}
 {% block title %} — {{ v.client.name }}{% endblock %}
 {% block heading %}Order Details - {{ o.external_order_id or o.id }} - {{ v.client.name }}{% endblock %}
 

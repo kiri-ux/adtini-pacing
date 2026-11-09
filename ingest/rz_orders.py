@@ -266,6 +266,17 @@ def sold_strategies(item: dict) -> str | None:
     return _clean(item.get("strategies"))
 
 
+def _product_field(item: dict, marker: str) -> float | None:
+    """A product's own copy of a goal (`mc_monthly_impressions`,
+    `meta_total_impressions`), for lines that leave the shared one blank."""
+    for key, value in item.items():
+        if marker in key.lower():
+            found = number(value)
+            if found:
+                return found
+    return None
+
+
 def rows_for(order: dict, order_name: str | None = None) -> list[dict]:
     """One normalized row per line item, shaped like `ingest.orders.normalize`."""
     rows = []
@@ -286,8 +297,8 @@ def rows_for(order: dict, order_name: str | None = None) -> list[dict]:
             "end_date": date(item.get("end_date")),
             "order_type": label(item.get("order_type_id")) or label(order.get("order_type_id")),
             "notes": None,
-            "monthly_impressions": number(item.get("mon_impr")),
-            "total_impressions": number(item.get("total_impr_goal")),
+            "monthly_impressions": number(item.get("mon_impr")) or _product_field(item, "monthly_imp"),
+            "total_impressions": number(item.get("total_impr_goal")) or _product_field(item, "total_imp"),
             "months_running": number(item.get("months_running")),
             "total_campaign_budget": number(item.get("total_budget")),
             "monthly_budget": number(item.get("monthly_billing_amt")),

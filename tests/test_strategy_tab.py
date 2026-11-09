@@ -1187,6 +1187,46 @@ def test_a_second_line_of_a_split_targeting_gets_its_own_row(site):
     assert {"FB - Categories 2", "FB - Categories 3"} <= set(labels)
 
 
+def test_a_second_line_linked_by_hand_before_the_split_gets_its_own_row(site):
+    """Linked onto the first Keyword row back when it had nowhere else to go,
+    the second line stayed merged into it."""
+    import datetime as dt
+
+    from models import DailyDelivery, LineItem, StrategyTerms
+
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        item = session.query(LineItem).filter_by(external_id="88001").one()
+        for term in session.query(StrategyTerms).filter_by(order_id=order_id):
+            term.line_item_id = item.id
+            if views.term_keys(term)[0] == "category":
+                term.linked_keys = "category#2"
+        session.flush()
+        for name in ("Meta - Nampa Categories", "Meta - Twin Falls Categories"):
+            for day in range(1, 6):
+                session.add(DailyDelivery(
+                    date=dt.date(2026, 8, day), data_source="Meta",
+                    campaign_id="CMP-1", strategy_id=f"{name}-{day}",
+                    client_name="Bud's Auto", external_order_id="44100",
+                    external_line_item_id="88001",
+                    product="Meta Display & Video Ads",
+                    strategy_name=name, strategy_type="Categories",
+                    impressions=500.0,
+                ))
+
+    with db_module.session_scope() as session:
+        added = views.add_extra_lines(session, as_of=dt.date(2026, 8, 10))
+    with db_module.session_scope() as session:
+        linked = [t.linked_keys for t in session.query(StrategyTerms)
+                  .filter_by(line_item_id=item.id) if t.linked_keys]
+
+    assert added == 2
+    assert linked == []
+
+
 def test_an_audience_list_with_no_targeting_word_is_category():
     import views
 
@@ -1219,3 +1259,14 @@ def test_a_lone_blank_row_takes_its_products_goals(site):
     with db_module.session_scope() as session:
         term = session.query(StrategyTerms).filter_by(label="PPC - Keyword").one()
         assert (term.monthly_target, term.total_target) == (3_000.0, 18_000.0)
+
+
+def test_cross_platform_is_not_a_mobile_conquesting_strategy():
+    import views
+    from models import LineItem
+
+    item = LineItem(product="Mobile Conquesting Display & Video Ads",
+                    sold_strategies="Geo-Fencing, Cross Platform, Retargeting")
+    assert views.sold_strategy_names(item) == ["Geo-Fencing", "Retargeting"]
+    item.product = "Meta Display & Video Ads"
+    assert "Cross Platform" in views.sold_strategy_names(item)

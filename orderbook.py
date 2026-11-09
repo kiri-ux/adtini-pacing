@@ -32,6 +32,7 @@ from models import (
     DailyDelivery,
     LineItem,
     Order,
+    StrategyTerms,
 )
 
 log = logging.getLogger(__name__)
@@ -131,6 +132,12 @@ def strip_client_prefix(name: str | None, client_name: str | None) -> str:
     return text
 
 
+def canonical_product(product: str | None) -> str | None:
+    """The registry's name for a product, else the name as given."""
+    entry = products.lookup(product) if product else None
+    return entry.name if entry else product
+
+
 def line_item_label(
     product: str | None,
     strategy_type: str | None = None,
@@ -223,6 +230,7 @@ class ImportResult:
     line_items_added: int = 0
     line_items_updated: int = 0
     locked_skipped: int = 0
+    split_rates_reset: int = 0
 
     def summary(self) -> str:
         parts = [
@@ -231,6 +239,8 @@ class ImportResult:
             f"{self.line_items_added} line items added",
             f"{self.line_items_updated} updated",
         ]
+        if self.split_rates_reset:
+            parts.append(f"{self.split_rates_reset} split row CPMs reset")
         if self.locked_skipped:
             parts.append(f"{self.locked_skipped} left alone (edited by hand)")
         return ", ".join(parts)
@@ -447,7 +457,9 @@ def import_orders(session, frame, cache: dict | None = None) -> ImportResult:
         elif not client.market and row.get("business_unit"):
             client.market = row.get("business_unit")
 
-        product = row.get("product")
+        # The RZ sync carries the short name ("META") where the export
+        # carries the full one, so the same product read as two names.
+        product = canonical_product(row.get("product"))
         pacing_type = pacing_type_for(product)
         if pacing_type == PACING_CLICK:
             cols = spend_columns(product) or ()
@@ -761,6 +773,11 @@ def recompute_terms(session) -> RecomputeResult:
             # exports' product names were matched properly. Left wrong, a
             # spend line reads as impression paced and its cost comes out as
             # impressions times a CPM it does not have, which is zero.
+            canonical = canonical_product(item.product)
+            if canonical != item.product:
+                if item.name == item.product:
+                    item.name = canonical
+                item.product = canonical
             kind = pacing_type_for(item.product)
             if kind == PACING_CLICK and sold_in_impressions(
                 item.product, (item.monthly_spend, item.total_spend),
@@ -806,4 +823,51 @@ def recompute_terms(session) -> RecomputeResult:
         session.flush()
         session.expunge_all()
 
+    result.split_rates_reset = _reset_old_split_rates(session)
     return result
+
+
+# The card's setup CPMs before it switched to Starting CPM. Split rows
+# drafted before then carry these, so a Meta row read 7 under a product
+# whose goal is now 3.50.
+OLD_SETUP_CPM = {
+    "Display": 2.0, "Native Display": 2.0, "Display B2B": 3.0,
+    "Native Display B2B": 3.0, "Display Restricted": 4.0,
+    "Native Display Restricted": 4.0, "Social Mirror": 1.5, "Native Video": 3.5,
+    "Social Mirror B2B": 4.5, "Native Video B2B": 4.0,
+    "Social Mirror Restricted": 5.0, "Native Video Restricted": 5.0,
+    "Video": 5.0, "Video B2B": 7.0, "Video Restricted": 8.0,
+    "Connected TV": 10.0, "Social Mirror CTV": 12.5, "Connected TV B2B": 15.0,
+    "Social Mirror CTV B2B": 15.0, "Connected TV Restricted": 16.0,
+    "Social Mirror CTV Restricted": 16.0, "Online Audio": 12.0,
+    "Online Audio B2B": 14.0, "Online Audio Restricted": 15.0,
+    "Mobile Conquesting": 4.5, "Mobile Conquesting Event": 7.0,
+    "Mobile Conquesting Political": 7.0, "Meta": 7.0, "Meta Lead": 20.0,
+    "Amazon Display": 5.0, "Amazon Video": 14.0, "Amazon OTT": 20.0,
+    "Amazon Prime OTT": 25.0, "Youtube+": 10.0, "YouTube TV (bids)": 5.0,
+    "YouTube TV (actual YT TV CPM)": 20.0, "TikTok": 8.0, "DOOH": 17.0,
+    "Dynamic": 3.5, "Dynamic B2B": 4.0, "IP Targeting Display": 10.0,
+    "IP Targeting Video": 20.0, "Geo-Framing": 9.0, "CTV + Video": 7.5,
+}
+
+
+def _reset_old_split_rates(session) -> int:
+    """Split rows still on the old card rate take their product's goal CPM."""
+    reset = 0
+    rows = session.execute(
+        select(StrategyTerms, LineItem)
+        .join(LineItem, StrategyTerms.line_item_id == LineItem.id)
+        .where(LineItem.goal_cpm_source == "rate card")
+        .where(LineItem.goal_cpm.is_not(None))
+    ).all()
+    for term, item in rows:
+        if item.terms_locked or term.rate is None or term.rate == item.goal_cpm:
+            continue
+        old = OLD_SETUP_CPM.get(
+            ratecard.rate_name(item.product, restricted=bool(item.restricted)) or ""
+        )
+        if old is not None and abs(term.rate - old) < 1e-9:
+            term.rate = item.goal_cpm
+            reset += 1
+    session.flush()
+    return reset

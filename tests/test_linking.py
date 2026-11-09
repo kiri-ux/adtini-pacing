@@ -419,3 +419,35 @@ def test_ops_verified_applies_to_every_campaign_picked(site):
         assert all(link.ops_verified for link in links)
         assert all(link.linked_by == "Kiri" for link in links)
     assert "Verified" in page
+
+
+def test_a_products_own_page_does_not_take_a_sibling_line_items_days(site):
+    """A campaign linked to one line item also carried days under another
+    line item's id. The order page gave them to their owner; the product's
+    own page, read alone, counted them as its own."""
+    from models import CampaignLink, DailyDelivery, LineItem
+
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    first = _line_item_id(app_module, order_id)
+    with db_module.session_scope() as session:
+        old = LineItem(order_id=order_id, external_id="OLD-1", name="Old",
+                       product="Meta Display & Video Ads", sort_order=1)
+        session.add(old)
+        session.add(CampaignLink(data_source="Meta", campaign_id="CMP-777",
+                                 line_item_id=first))
+        for row in session.query(DailyDelivery).filter_by(campaign_id="CMP-777"):
+            if row.date.day <= 4:
+                row.external_line_item_id = "OLD-1"
+
+    with db_module.session_scope() as session:
+        whole = views.order_view(session, order_id, as_of=dt.date(2026, 8, 10))
+        alone = views.order_view(session, order_id, as_of=dt.date(2026, 8, 10),
+                                 line_item_id=first)
+        on_order = next(r.to_date for r in whole.rows if r.line_item.id == first)
+        on_page = next(r.to_date for r in alone.rows if r.line_item.id == first)
+
+    assert on_order == 6_000
+    assert on_page == on_order

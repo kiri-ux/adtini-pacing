@@ -1002,3 +1002,8 @@ table.detailgrid td:has(> input) .clicksub{text-align:right}
    products table and the budgeting grid both. */
 .liveonly table.elements tbody tr[data-live="0"],
 .liveonly table.detailgrid tbody[data-live="0"]{display:none}
+.pausedflag{position:relative;display:inline-flex;vertical-align:-2px;margin-left:4px;cursor:help}
+.pausedflag .tipbox{display:none;position:absolute;left:18px;top:-4px;z-index:20;white-space:nowrap;
+  background:var(--navy);color:#fff;font-size:11.5px;font-weight:500;padding:5px 8px;border-radius:6px}
+.pausedflag:hover .tipbox,.pausedflag:focus .tipbox{display:block}
+td.lnk.clip:has(.pausedflag){overflow:visible}

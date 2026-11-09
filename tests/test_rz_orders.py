@@ -66,6 +66,17 @@ def test_ad_spend_fields_are_read_when_present():
     assert row["monthly_ppc_spend"] == 200
 
 
+def test_a_products_own_impression_goal_is_read_when_the_shared_one_is_blank():
+    order = {
+        "id": "1", "client_id": ["9", "Acme"], "lineItems": [{
+            "id": "2", "product_name": "META", "mon_impr": "",
+            "meta_monthly_impressions": "50,000", "meta_total_impressions": "300000",
+        }],
+    }
+    row = rz_orders.rows_for(order)[0]
+    assert (row["monthly_impressions"], row["total_impressions"]) == (50_000, 300_000)
+
+
 def test_labels_and_blanks():
     assert rz_orders.label(["2", "Insertion Order"]) == "Insertion Order"
     assert rz_orders.label([None]) is None
