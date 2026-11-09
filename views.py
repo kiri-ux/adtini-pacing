@@ -2018,15 +2018,28 @@ def group_by_targeting(
     named: dict[tuple[str, str], str] = {}
     per_base: dict[str, int] = defaultdict(int)
     by_label: dict[str, str] = {}
-    for series in running:
-        base = (
+    series_key: dict[int, str] = {}
+
+    def base_of(series) -> str:
+        return (
             COMBINED_KEY if combined
             else sheets.match_key(series.label) or series.label.lower()
         )
-        name = "" if combined else (
+
+    def name_of(series) -> str:
+        return "" if combined else (
             "|".join(sorted(n.lower() for n in series.names))
             or series.label.strip().lower()
         )
+
+    # Numbered by which line started first, then by name, so a line keeps
+    # its number (and the split row that claims it) when another overtakes it.
+    for series in sorted(
+        running,
+        key=lambda s: (not s.names, min(s.by_date) if s.by_date else dt.date.max,
+                       name_of(s)),
+    ):
+        base, name = base_of(series), name_of(series)
         key = named.get((base, name))
         if key is None and not series.names:
             # Unnamed delivery joins the first line it shares a label with.
@@ -2036,6 +2049,10 @@ def group_by_targeting(
             key = base if per_base[base] == 1 else f"{base}#{per_base[base]}"
             named[(base, name)] = key
         by_label.setdefault(series.label.strip().lower(), key)
+        series_key[id(series)] = key
+
+    for series in running:
+        key = series_key[id(series)]
         raw[key].append(series.label)
         existing = merged.get(key)
         if existing is None:

@@ -1129,3 +1129,21 @@ def test_same_strategy_type_under_two_names_is_two_rows():
     ])
     totals = {k: s.total for k, _, s, _ in grouped}
     assert totals == {"keyword": 105.0, "keyword#2": 50.0}
+
+
+def test_a_line_keeps_its_number_when_another_overtakes_it():
+    import views
+
+    def series(name, start, total):
+        return views.StrategySeries(
+            line_item_id=1, label="SM - Keyword", product="Social Mirror Ads",
+            by_date={start: total}, total=total,
+            impressions=total, clicks=0.0, cost=0.0, conversions=0.0, names={name},
+        )
+
+    grouped = views.group_by_targeting("Social Mirror Ads", [
+        series("Twin Falls Keyword", dt.date(2026, 9, 1), 900.0),
+        series("Nampa Keyword", dt.date(2026, 8, 1), 100.0),
+    ])
+    keys = {next(iter(s.names)): k for k, _, s, _ in grouped}
+    assert keys == {"Nampa Keyword": "keyword", "Twin Falls Keyword": "keyword#2"}
