@@ -1189,3 +1189,10 @@ def test_a_new_campaign_manager_takes_over_the_order():
     later = mline().replace("N A (n@x.com)", "Laura O (l@x.com)")
     item = _import(mcsv(later))
     assert item.order.buyer == "Laura O"
+
+
+def test_an_seo_line_does_not_set_the_orders_buyer():
+    seo = mline().replace("Connected TV Ads", "SEO").replace("126000", "126001") \
+        .replace("N A (n@x.com)", "Matt O (m@x.com)")
+    item = _import(mcsv(seo))
+    assert item.order.buyer == "N A"
