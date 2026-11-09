@@ -512,7 +512,7 @@ def details_view(
             daily_budget=day_budget(catch_up(monthly, total, {}, tomorrow), rate),
             total_budget=(row.total_budget * share) or None,
             remaining=total,
-            media_budget=None if money else media_budget(0.0, total, 0.0, rate),
+            media_budget=total if money else media_budget(0.0, total, 0.0, rate),
         )
 
     elements: list[GridRow] = []
@@ -541,17 +541,20 @@ def details_view(
         sold = bool(srow.total_target)
         spent = None if money else sum(per_day(series, 2).values())
         row_run_cpm = None if money else run_cpm(_series_points(series), as_of)
+        # A row with no CPM of its own is bought at the product's goal CPM
+        # (the rate card's). Ad spend rows have no card rate to fall back on.
+        rate = srow.unit_cost or (None if money else row.unit_cost) or None
         elements.append(
             GridRow(
                 label=srow.label,
                 monthly=srow.monthly_target or None,
                 total=srow.total_target or None,
                 daily=srow.daily_target if sold else None,
-                rate=srow.unit_cost or None,
+                rate=rate,
                 daily_budget=day_budget(
                     catch_up(srow.monthly_target, srow.total_target,
                              per_day(series, index), tomorrow),
-                    srow.unit_cost,
+                    rate,
                 ) if sold else None,
                 total_budget=srow.total_budget if sold else None,
                 to_date=srow.to_date,
@@ -563,11 +566,11 @@ def details_view(
                 impressions=sum(per_day(series, 0).values()),
                 clicks=sum(per_day(series, 1).values()),
                 run_cpm=row_run_cpm,
-                media_spent=spent,
-                media_budget=None if money else media_budget(
-                    spent, srow.total_target, srow.to_date, srow.unit_cost),
+                media_spent=(srow.to_date or None) if money else spent,
+                media_budget=(srow.total_target or None) if money else media_budget(
+                    spent, srow.total_target, srow.to_date, rate),
                 cpm_flag=None if money else cpm_flag(
-                    row_run_cpm, srow.unit_cost, srow.to_date, srow.on_pace),
+                    row_run_cpm, rate, srow.to_date, srow.on_pace),
                 strategy_id=srow.strategy_id,
                 targets=term.targets if term else None,
                 ordered=combined or key in ordered,
@@ -592,6 +595,7 @@ def details_view(
                 impressions=sum(per_day(series, 0).values()),
                 clicks=sum(per_day(series, 1).values()),
                 run_cpm=None if money else run_cpm(_series_points(series), as_of),
+                media_spent=(sum(by_date.values()) or None) if money else None,
                 ordered=combined or key in ordered,
                 feed_key=key,
                 feed_names=sorted(series.names),
@@ -710,7 +714,7 @@ def details_view(
     # DSP line is set to, so budgets from it never matched the rows above.
     priced = [e for e in elements if e.sold and e.rate]
     split_day_budget = (
-        sum(e.daily_budget or 0.0 for e in priced) if priced else None
+        sum(e.daily_budget or 0.0 for e in priced) if priced and not money else None
     )
     split_left = None
     if priced and not money:
@@ -742,8 +746,8 @@ def details_view(
         day_state=day_state,
         run_cpm=None if money else run_cpm(
             [(p.date, p.impressions, p.cost) for p in row.daily], as_of),
-        media_spent=None if money else product_spent,
-        media_budget=None if money else (
+        media_spent=(row.to_date or None) if money else product_spent,
+        media_budget=(row.total_target or None) if money else (
             product_spent + split_left if split_left is not None else media_budget(
                 product_spent, row.total_target, row.to_date, row.unit_cost)
         ),

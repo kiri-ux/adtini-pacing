@@ -786,3 +786,43 @@ def test_a_duplicate_row_shows_as_unmatched(site):
         d = details.details_view(session, order_id, li_id)
         dup = [e for e in d.elements if e.label.endswith(" 2")][0]
         assert dup.feed_names == []
+
+
+def test_a_row_with_no_rate_uses_the_products(site):
+    import details
+    import db as db_module
+    from sqlalchemy import select
+    from models import StrategyTerms
+
+    app_module, (order_id, li_id) = site
+    app_module.app.test_client().post(f"/orders/{order_id}/details/{li_id}/build")
+    with db_module.session_scope() as session:
+        for t in session.execute(
+            select(StrategyTerms).where(StrategyTerms.line_item_id == li_id)
+        ).scalars():
+            t.rate = None
+    with db_module.session_scope() as session:
+        d = details.details_view(session, order_id, li_id)
+        sold = [e for e in d.elements if e.sold]
+        assert sold and all(e.rate == d.row.unit_cost for e in sold)
+        assert all(e.daily_budget for e in sold if e.daily)
+
+
+def test_ad_spend_rows_show_their_budgets(site):
+    import details
+    import db as db_module
+    from models import LineItem, Order
+
+    app_module, (order_id, li_id) = site
+    with db_module.session_scope() as session:
+        item = session.get(LineItem, li_id)
+        item.pacing_type = "click"
+        item.monthly_spend, item.total_spend = 1000.0, 3000.0
+    with db_module.session_scope() as session:
+        d = details.details_view(session, order_id, li_id)
+        assert d.media_budget == d.row.total_target == 3000.0
+        assert d.media_spent == d.row.to_date
+        assert d.day_budget
+        for e in d.elements:
+            if e.total:
+                assert e.media_budget == e.total
