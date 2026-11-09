@@ -731,7 +731,7 @@ def order_view(
     total = total_row(rows, order.pacing_type)
     open_total = total_row([r for r in rows if r.is_open], order.pacing_type)
     # The header's figures: live, paused and completed, as My Day counts.
-    goal_total = total_row([r for r in rows if counts_toward_goal(r)], order.pacing_type)
+    goal_total = goal_total_row(rows, order.pacing_type)
     closed_total = total_row([r for r in rows if not r.is_open], order.pacing_type)
 
     # The daily grid runs the length of the flight, so a buyer can see which
@@ -901,6 +901,21 @@ def counts_toward_goal(row: PacingRow) -> bool:
     launch, and not a cancelled one."""
     status = (row.status or "").lower()
     return "pending" not in status and row.state != "cancelled"
+
+
+def goal_total_row(rows: list[PacingRow], pacing_type: str) -> PacingRow:
+    """Live, paused and completed lines over the flight; the month only
+    from lines still running. A line that finished in the spring is no part
+    of November's goal - counted, it read Chalfant's month as 3% of 993,750."""
+    total = total_row([r for r in rows if counts_toward_goal(r)], pacing_type)
+    month = total_row(
+        [r for r in rows if counts_toward_goal(r) and r.state == "running"], pacing_type
+    )
+    for attr in ("monthly_target", "month_daily_target", "month_to_date",
+                 "month_on_pace", "month_pacing_delta", "month_pacing_pct",
+                 "month_days"):
+        setattr(total, attr, getattr(month, attr))
+    return total
 
 
 def is_paused(row: PacingRow) -> bool:
@@ -1084,7 +1099,7 @@ def overview(
         # Live, paused and completed products, as the order page's header
         # does; pending approval or launch has not started (kiri, 11/9).
         total = total_row(rows, order.pacing_type)
-        open_total = total_row([r for r in rows if counts_toward_goal(r)], order.pacing_type)
+        open_total = goal_total_row(rows, order.pacing_type)
         if open_total.total_target:
             total = open_total
 

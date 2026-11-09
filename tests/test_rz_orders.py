@@ -92,6 +92,29 @@ def test_metas_own_spend_keys_are_read():
     assert row["monthly_impressions"] is None
 
 
+def test_a_line_sold_one_month_runs_the_month_it_ends_in():
+    order = {
+        "id": "52409", "client_id": ["9", "Audi Boise"], "lineItems": [{
+            "id": "139925", "product_name": "META",
+            "start_date": "2026-02-06", "end_date": "2026-11-30",
+            "meta_monthly_spend": "5000", "meta_total_spend": "5000",
+        }],
+    }
+    row = rz_orders.rows_for(order)[0]
+    assert (row["start_date"], row["end_date"]) == (dt.date(2026, 11, 1), dt.date(2026, 11, 30))
+
+
+def test_the_buyer_is_the_lines_own_manager():
+    """The order's manager (whoever has its SEO line) stood in for a line
+    that left its own blank."""
+    order = {
+        "id": "1", "client_id": ["9", "Acme"], "campaign_manager_name": "Matt Ogden",
+        "lineItems": [{"id": "2", "product_name": "Social Mirror Ads"}],
+    }
+    row = rz_orders.rows_for(order)[0]
+    assert row["buyer"] is None and row["order_buyer"] == "Matt Ogden"
+
+
 def test_labels_and_blanks():
     assert rz_orders.label(["2", "Insertion Order"]) == "Insertion Order"
     assert rz_orders.label([None]) is None

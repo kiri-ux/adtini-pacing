@@ -504,6 +504,8 @@ def import_orders(session, frame, cache: dict | None = None) -> ImportResult:
         # line on the same order is often someone else's.
         if row.get("buyer") and (products.is_paced(row.get("product")) or not order.buyer):
             order.buyer = row.get("buyer")
+        elif not order.buyer and row.get("order_buyer"):
+            order.buyer = row.get("order_buyer")
 
         if not order.terms_locked:
             # The order's own columns, and the line's only where an export
