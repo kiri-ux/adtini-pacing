@@ -284,3 +284,12 @@ def test_a_months_goal_is_what_was_sold_for_that_month(site):
     # and the June one is cancelled but its flight still covers September.
     assert sept.goal == 66_666 + 75_000
     assert 175_000 not in (sept.goal, sept.spend_goal), "the spring line is out"
+
+
+def test_the_headers_month_goal_leaves_out_lines_that_finished(site):
+    """Completed lines count toward the flight, not toward this month."""
+    _, order_id = site
+    view = _view(order_id)
+
+    assert view.goal_total.total_target == 525_000 + 333_330
+    assert view.goal_total.monthly_target == 66_666

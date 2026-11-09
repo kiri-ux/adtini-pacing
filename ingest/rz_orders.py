@@ -281,6 +281,21 @@ def _product_field(item: dict, marker: str) -> float | None:
     return None
 
 
+def _one_month_flight(row: dict) -> None:
+    """A line sold one month at a time (a Meta line renewed monthly) keeps
+    its first start date while its total is only this month's. Paced over
+    the whole span, $5,000 from February read as 15% in November. Its
+    flight is the month it ends in."""
+    start, end = row.get("start_date"), row.get("end_date")
+    if not start or not end or (end - start).days <= 31:
+        return
+    pairs = [(row.get("monthly_impressions"), row.get("total_impressions"))]
+    pairs += [(row.get(k), row.get("total_" + k[len("monthly_"):]))
+              for k in list(row) if k.startswith("monthly_") and k.endswith("_spend")]
+    if any(m and t and abs(m - t) < 0.01 for m, t in pairs):
+        row["start_date"] = end.replace(day=1)
+
+
 def rows_for(order: dict, order_name: str | None = None) -> list[dict]:
     """One normalized row per line item, shaped like `ingest.orders.normalize`."""
     rows = []
@@ -294,7 +309,10 @@ def rows_for(order: dict, order_name: str | None = None) -> list[dict]:
             "product": _clean(item.get("product_name")),
             "status": _clean(order.get("status_name")) or label(order.get("status_id")),
             "item_status": _clean(item.get("status_name")) or _clean(item.get("line_item_status")),
-            "buyer": buyer(item.get("campaign_manager_name") or order.get("campaign_manager_name")),
+            # The line's own manager only. The order's is whoever has its
+            # SEO line, and stood in for every line that left its own blank.
+            "buyer": buyer(item.get("campaign_manager_name")),
+            "order_buyer": buyer(order.get("campaign_manager_name")),
             "order_start_date": date(order.get("start_date")),
             "order_end_date": date(order.get("end_date")),
             "start_date": date(item.get("start_date")),
@@ -319,6 +337,7 @@ def rows_for(order: dict, order_name: str | None = None) -> list[dict]:
                 found = number(value)
                 if found or f"{period}_{product}_spend" not in row:
                     row[f"{period}_{product}_spend"] = found
+        _one_month_flight(row)
         if row["client_name"] and row["external_order_id"] and row["external_line_item_id"]:
             rows.append(row)
     return rows
