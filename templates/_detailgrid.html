@@ -76,7 +76,7 @@
 {% macro section(d, dates, pacecell, linked) -%}
 {% set r = d.row %}
 {% set money = d.is_money %}
-{% set n = (d.elements|length or 1) + 4 %}
+{% set n = (d.elements|length or 1) + 5 %}
 {% set p = d.product_pill %}
 {% macro prodcell() -%}
   <th class="pin0 prodcell" rowspan="{{ d.elements|length or 1 }}">
@@ -263,6 +263,18 @@
         <tr class="cumrow">
           <th class="pin">Total pacing</th><td colspan="12" class="sep"></td>
           {% for day in dates %}{{ pacecell(d, d.td_actual.get(day), d.td_target.get(day), day) }}{% endfor %}
+        </tr>
+        <tr class="cumrow perfrow">
+          {%- if d.by_events %}
+          {% set ev = d.events_by_date.values()|sum %}
+          <th class="pin">Events</th><td colspan="12" class="sep perftot">{{ ev|num if ev else '' }}</td>
+          {% for day in dates %}{% set x = d.events_by_date.get(day) %}<td class="num{% if day.day == 1 %} mstart{% endif %}">{{ x|num if x else ('—' if not d.is_future(day) else '') }}</td>{% endfor %}
+          {%- else %}
+          {% set ci = d.impressions_by_date.values()|sum %}{% set cc = d.clicks_by_date.values()|sum %}
+          <th class="pin">CTR</th><td colspan="12" class="sep perftot">{% if ci %}{{ '%.2f%%'|format(cc / ci * 100) }} <span class="clicksub">{{ cc|num }} clicks</span>{% endif %}</td>
+          {% for day in dates %}{% set i = d.impressions_by_date.get(day) %}{% set c = d.clicks_by_date.get(day) or 0 %}
+          <td class="num{% if day.day == 1 %} mstart{% endif %}">{% if i %}{{ '%.2f%%'|format(c / i * 100) }}<div class="clicksub">{{ c|num }}</div>{% elif not d.is_future(day) %}—{% endif %}</td>{% endfor %}
+          {%- endif %}
         </tr>
 
 {%- endmacro %}
