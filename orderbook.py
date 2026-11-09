@@ -466,7 +466,9 @@ def import_orders(session, frame, cache: dict | None = None) -> ImportResult:
         if order_status:
             order.status = order_status
             order.active = not never_ran(order_status)
-        if row.get("buyer") and not order.buyer:
+        # The campaign manager moves when an account changes hands; the
+        # latest file says who has it now.
+        if row.get("buyer"):
             order.buyer = row.get("buyer")
 
         if not order.terms_locked:

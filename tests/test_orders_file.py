@@ -1182,3 +1182,10 @@ def test_a_locked_line_keeps_what_it_paces_on():
     item.terms_locked = True
     import_orders(object_session(item), normalize(csv(mcsv(mline()))))
     assert item.pacing_type == "click"
+
+
+def test_a_new_campaign_manager_takes_over_the_order():
+    """The account changed hands; the order follows the latest file."""
+    later = mline().replace("N A (n@x.com)", "Laura O (l@x.com)")
+    item = _import(mcsv(later))
+    assert item.order.buyer == "Laura O"

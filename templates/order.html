@@ -259,6 +259,7 @@
     <table class="overview linktable">
       <thead><tr>
         <th>Match</th><th>Line Item ID</th><th>Product</th>
+        <th>Start</th><th>End</th>
         <th>Campaign</th>
         <th>Ops verified</th><th>Validated by</th><th></th>
       </tr></thead>
@@ -277,6 +278,8 @@
             <span class="pchip" style="background:{{ r.hex }};color:{{ r.text_hex }}">{{ r.code }}</span>
             <span class="clip" title="{{ r.label }}">{{ r.label }}</span>
           </td>
+          <td class="muted nowrap">{{ r.line_item.start_date.strftime('%-m/%-d/%y') if r.line_item.start_date else '—' }}</td>
+          <td class="muted nowrap">{{ r.line_item.end_date.strftime('%-m/%-d/%y') if r.line_item.end_date else '—' }}</td>
           <td class="campcell">
             {%- if r.links -%}
               <ul class="camplist">
@@ -302,6 +305,8 @@
             <button type="button" class="btn2 linkbtn"
               data-li="{{ r.line_item.id }}"
               data-label="{{ r.label }}"
+              data-start="{{ r.line_item.start_date.isoformat() if r.line_item.start_date else '' }}"
+              data-end="{{ r.line_item.end_date.isoformat() if r.line_item.end_date else '' }}"
               data-campaigns="{{ r.linked_keys }}"
               data-verified="{{ '1' if r.state == 'verified' else '' }}"
               data-by="{{ r.linked_by or '' }}">
@@ -340,7 +345,8 @@
           <th>Ran</th><th>Now on</th></tr></thead>
         <tbody>
         {% for c in linking.candidates %}
-          <tr data-hay="{{ (c.label ~ ' ' ~ c.campaign_id ~ ' ' ~ (c.product or ''))|lower }}">
+          <tr data-hay="{{ (c.label ~ ' ' ~ c.campaign_id ~ ' ' ~ (c.product or ''))|lower }}"
+            data-first="{{ c.first_date.isoformat() if c.first_date else '' }}">
             <td><input type="checkbox" name="campaign" value="{{ c.key }}"
               id="cand-{{ loop.index }}"></td>
             <td class="clip"><label for="cand-{{ loop.index }}"
@@ -352,7 +358,7 @@
               <span class="life">{{ c.impressions|num if c.impressions else c.cost|money }}</span>
             </td>
             <td class="muted nowrap">{{ c.first_date.strftime('%b %-d') if c.first_date else '—' }}
-              – {{ c.last_date.strftime('%b %-d') if c.last_date else '—' }}</td>
+              – {{ c.last_date.strftime('%b %-d') if c.last_date else '—' }}<span class="datematch">Dates match</span></td>
             <td class="muted">
               {%- if c.taken_by -%}
                 <span class="takenby" data-li="{{ c.taken_by }}">{{

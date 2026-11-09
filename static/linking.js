@@ -34,6 +34,27 @@
       span.closest("tr").classList.toggle("ismine", span.dataset.li === mine);
     });
 
+    // A campaign that started within a week of the line item's start date
+    // is marked and listed first: the likeliest match.
+    var start = btn.dataset.start ? Date.parse(btn.dataset.start) : NaN;
+    var body = dlg.querySelector(".dlgtable tbody");
+    if (body) {
+      var rows = Array.prototype.slice.call(body.rows);
+      rows.forEach(function (row, i) {
+        if (row.dataset.order === undefined) row.dataset.order = i;
+        var first = row.dataset.first ? Date.parse(row.dataset.first) : NaN;
+        var hit = !isNaN(start) && !isNaN(first) &&
+          Math.abs(first - start) <= 7 * 86400000;
+        row.classList.toggle("datehit", hit);
+      });
+      rows.sort(function (a, b) {
+        var ha = a.classList.contains("datehit") ? 0 : 1;
+        var hb = b.classList.contains("datehit") ? 0 : 1;
+        return ha - hb || a.dataset.order - b.dataset.order;
+      });
+      rows.forEach(function (row) { body.appendChild(row); });
+    }
+
     filter.value = "";
     apply("");
     if (typeof dlg.showModal === "function") dlg.showModal();
