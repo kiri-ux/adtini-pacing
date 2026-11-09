@@ -1087,3 +1087,23 @@ def test_visits_are_not_offered_because_the_feed_has_none(site):
     import views
 
     assert "visits" not in {key for key, _, _ in views.PERFORMANCE_METRICS}
+
+
+def test_two_lines_with_the_same_targeting_stay_separate_rows():
+    import views
+
+    def series(name, total):
+        return views.StrategySeries(
+            line_item_id=1, label=name, product="Search Ads",
+            by_date={dt.date(2026, 8, 1): total}, total=total,
+            impressions=total, clicks=0.0, cost=0.0, conversions=0.0,
+        )
+
+    grouped = views.group_by_targeting("Search Ads", [
+        series("SM - Keyword - Roofing", 100.0),
+        series("SM - Keyword - Siding", 50.0),
+        series("SM - Keyword - Roofing", 25.0),
+    ])
+    assert sorted(k for k, *_ in grouped) == ["keyword", "keyword#2"]
+    totals = {k: s.total for k, _, s, _ in grouped}
+    assert totals == {"keyword": 125.0, "keyword#2": 50.0}

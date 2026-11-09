@@ -799,6 +799,34 @@ def _label(product: str | None, name: str) -> str:
     return label
 
 
+def _generic(name: str) -> bool:
+    """Names a targeting and nothing else: "Behavioral", "Keyword Targeting"."""
+    text = name.lower().strip()
+    return text in sheets.TARGETING or text.removesuffix(" targeting") in sheets.TARGETING
+
+
+def _drop_generic_repeats(names: list[str]) -> list[str]:
+    """One row per strategy, not one per way RZ spelled it.
+
+    "Behavioral" next to "Behavioral - Home Improvement" is the same buy
+    written twice, and drafted twice it left a second behavioral row that
+    nothing serves to. A bare targeting name goes when another name has the
+    same targeting; two named strategies of one kind both stay.
+    """
+    keys = [sheets.match_key(n) for n in names]
+    kept: list[str] = []
+    kept_keys: set[str] = set()
+    for name, key in zip(names, keys):
+        if key and _generic(name):
+            others = [n for n, k in zip(names, keys) if k == key and n != name]
+            if any(not _generic(n) for n in others) or key in kept_keys:
+                continue
+        kept.append(name)
+        if key:
+            kept_keys.add(key)
+    return kept
+
+
 def plan_split(item: LineItem, money: bool) -> list[PlannedStrategy]:
     """Draft the split from what the order says was bought.
 
@@ -806,6 +834,7 @@ def plan_split(item: LineItem, money: bool) -> list[PlannedStrategy]:
     apportioning what is running.
     """
     names = views.sold_strategy_names(item)
+    names = _drop_generic_repeats(names)
     if not names:
         return []
     monthly = item.monthly_impressions or item.monthly_spend or item.client_monthly_budget

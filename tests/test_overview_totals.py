@@ -134,3 +134,21 @@ def test_the_two_paths_agree_on_the_whole_overview(session):
     assert len(rows) == 1
     assert rows[0].total.to_date == 40_000
     assert rows[0].total.impressions == 40_000
+
+
+def test_an_ended_product_drops_out_of_the_orders_goal(session):
+    """My Day's total is the running products, as the order page header is."""
+    days = [dt.date(2026, 8, 1) + dt.timedelta(days=n) for n in range(40)]
+    order, _ = _build(session, flight_end=dt.date(2026, 10, 31), delivery_days=days)
+    session.add(
+        LineItem(
+            order_id=order.id, external_id="7002", name="Search Ads",
+            product="Search Ads", monthly_impressions=500_000.0,
+            total_impressions=1_000_000.0, goal_cpm=5.0,
+            start_date=dt.date(2026, 8, 1), end_date=dt.date(2026, 8, 31),
+        )
+    )
+    session.flush()
+
+    rows = views.overview(session, as_of=AS_OF)
+    assert rows[0].total.total_target == 90_000
