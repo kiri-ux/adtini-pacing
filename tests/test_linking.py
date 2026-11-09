@@ -178,23 +178,27 @@ def test_linking_a_campaign_makes_its_delivery_count(site):
     assert "Kiri" in after
 
 
-def test_a_campaign_belongs_to_one_line_item(site):
-    """Linking a campaign that is already linked moves it, never copies it.
+def test_a_shared_campaign_is_split_by_each_line_items_dates(site):
+    """Older setups ran one campaign across several line items.
 
-    Two line items both reading one campaign would count its impressions
-    twice on the same order, which is worse than reading zero.
+    Linked to both, each day goes to the line item whose flight it is in,
+    so the order still counts it once.
     """
     from models import CampaignLink, LineItem
 
     import db as db_module
+    import views
 
     app_module, order_id = site
     client = app_module.app.test_client()
     first = _line_item_id(app_module, order_id)
 
     with db_module.session_scope() as session:
+        session.get(LineItem, first).start_date = dt.date(2026, 8, 1)
+        session.get(LineItem, first).end_date = dt.date(2026, 8, 4)
         second = LineItem(
-            order_id=order_id, name="Second", product="Display Ads", sort_order=1
+            order_id=order_id, name="Second", product="Meta Display & Video Ads",
+            sort_order=1, start_date=dt.date(2026, 8, 5), end_date=dt.date(2026, 10, 31),
         )
         session.add(second)
         session.flush()
@@ -208,9 +212,12 @@ def test_a_campaign_belongs_to_one_line_item(site):
         )
 
     with db_module.session_scope() as session:
-        links = session.query(CampaignLink).all()
-        assert len(links) == 1
-        assert links[0].line_item_id == second_id
+        assert session.query(CampaignLink).count() == 2
+        view = views.order_view(session, order_id, as_of=dt.date(2026, 8, 10))
+        by_item = {r.line_item.id: r.to_date for r in view.rows}
+    assert by_item[first] == 4_000
+    assert by_item[second_id] == 6_000
+    assert _served(order_id) == 10_000
 
 
 def test_unlinking_puts_the_delivery_back_out_of_reach(site):

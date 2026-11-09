@@ -189,13 +189,16 @@ class CampaignLink(Base):
     is rebuilt from the drops on every sweep and would wipe anything stored
     alongside it; the links are the team's own and outlive the data.
 
-    A campaign links to at most one line item, so linking can never
-    double-count a day of delivery across an order.
+    Older setups shared one DSP campaign across several line items. Linked to
+    more than one, each day of the campaign goes to the line item whose dates
+    it falls in, so no day is counted twice.
     """
 
     __tablename__ = "campaign_links"
     __table_args__ = (
-        UniqueConstraint("data_source", "campaign_id", name="uq_campaign_link"),
+        UniqueConstraint(
+            "data_source", "campaign_id", "line_item_id", name="uq_campaign_link"
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
