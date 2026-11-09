@@ -77,6 +77,21 @@ def test_a_products_own_impression_goal_is_read_when_the_shared_one_is_blank():
     assert (row["monthly_impressions"], row["total_impressions"]) == (50_000, 300_000)
 
 
+def test_metas_own_spend_keys_are_read():
+    """RZ keeps a Meta line's ad spend in meta_monthly_spend, not the
+    *_meta_ad_spend the sync read, so the line arrived with no goal."""
+    order = {
+        "id": "52409", "client_id": ["9", "Audi Boise"], "lineItems": [{
+            "id": "139925", "product_name": "META",
+            "meta_monthly_spend": "5000", "meta_total_spend": "5000",
+            "meta_monthly_mgmt": "2142.86", "social_monthly_impressions": "0",
+        }],
+    }
+    row = rz_orders.rows_for(order)[0]
+    assert (row["monthly_meta_spend"], row["total_meta_spend"]) == (5000, 5000)
+    assert row["monthly_impressions"] is None
+
+
 def test_labels_and_blanks():
     assert rz_orders.label(["2", "Insertion Order"]) == "Insertion Order"
     assert rz_orders.label([None]) is None
