@@ -1318,10 +1318,9 @@ def campaign_link(order_id: int):
     leads campaign is ordinary, and reading only one of them understates the
     line by whatever the other ran.
 
-    The other direction stays one-to-one. A campaign already on another line
-    item is moved here rather than shared, because two line items reading one
-    campaign would count its delivery twice on the same order - which is a
-    worse answer than the zero it started with.
+    A campaign already on another line item is shared, not moved: older
+    setups ran one campaign across several line items, and each day of it
+    goes to the line item whose dates it falls in, so nothing counts twice.
     """
     line_item_id = request.form.get("line_item_id", type=int)
     picked = [
@@ -1358,17 +1357,6 @@ def campaign_link(order_id: int):
                 link.ops_verified = verified
                 link.linked_by = who or link.linked_by
                 continue
-
-            # It may be on another line item. Move it rather than copy it.
-            claimed = db.execute(
-                select(CampaignLink).where(
-                    CampaignLink.data_source == source,
-                    CampaignLink.campaign_id == campaign_id,
-                )
-            ).scalar_one_or_none()
-            if claimed is not None:
-                db.delete(claimed)
-                db.flush()
 
             name = db.execute(
                 select(func.max(DailyDelivery.campaign_name)).where(

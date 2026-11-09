@@ -77,6 +77,11 @@ class _Join:
     by_id: dict[tuple[str | None, str | None], int]
     by_link: dict[tuple[str, str], int]
     order_ids: set[str | None]
+    # A campaign linked to several line items: each one's (id, start, end),
+    # including line items outside this view, so a day belonging to one of
+    # those is not handed to one in view.
+    shared: dict[tuple[str, str], list] = field(default_factory=dict)
+    in_view: set[int] = field(default_factory=set)
 
     def __bool__(self) -> bool:
         return bool(self.by_id or self.by_link)
@@ -109,14 +114,32 @@ class _Join:
         line_item_id: str | None,
         data_source: str | None = None,
         campaign_id: str | None = None,
+        date: dt.date | None = None,
     ) -> int | None:
         target = self.by_id.get((order_id, line_item_id))
         if target is None and order_id not in self.order_ids:
             # Adopted delivery, keyed on its line item id alone.
             target = self.by_id.get((None, line_item_id))
         if target is None and data_source is not None and campaign_id is not None:
-            target = self.by_link.get((data_source, campaign_id))
+            key = (data_source, campaign_id)
+            windows = self.shared.get(key)
+            if windows and date is not None:
+                target = _by_dates(windows, date)
+                return target if target in self.in_view else None
+            target = self.by_link.get(key)
         return target
+
+
+def _by_dates(windows: list, day: dt.date) -> int:
+    """The line item whose flight a day falls in, else the nearest one."""
+    def gap(window) -> int:
+        _, start, end = window
+        if start and day < start:
+            return (start - day).days
+        if end and day > end:
+            return (day - end).days
+        return 0
+    return min(windows, key=lambda w: (gap(w), w[1] or dt.date.min))[0]
 
 
 def _delivery_join(session, line_items: list[LineItem]) -> _Join:
@@ -136,10 +159,28 @@ def _delivery_join(session, line_items: list[LineItem]) -> _Join:
             ).where(CampaignLink.line_item_id.in_(ids))
         )
         by_link = {(source, campaign): li_id for source, campaign, li_id in rows}
+    shared: dict[tuple[str, str], list] = {}
+    if by_link:
+        links = session.execute(
+            select(
+                CampaignLink.data_source, CampaignLink.campaign_id,
+                LineItem.id, LineItem.start_date, LineItem.end_date,
+                Order.start_date, Order.end_date,
+            )
+            .join(LineItem, LineItem.id == CampaignLink.line_item_id)
+            .join(Order, Order.id == LineItem.order_id)
+            .where(tuple_(CampaignLink.data_source, CampaignLink.campaign_id).in_(list(by_link)))
+        ).all()
+        grouped: dict[tuple[str, str], list] = defaultdict(list)
+        for source, campaign, li_id, start, end, o_start, o_end in links:
+            grouped[(source, campaign)].append((li_id, start or o_start, end or o_end))
+        shared = {k: v for k, v in grouped.items() if len(v) > 1}
     return _Join(
         by_id=by_id,
         by_link=by_link,
         order_ids={li.order.external_order_id for li in line_items},
+        shared=shared,
+        in_view=set(ids),
     )
 
 
@@ -212,7 +253,7 @@ def _daily_by_line_item(
     for (
         order_id, li_id, source, campaign, date, impressions, clicks, cost, conversions
     ) in session.execute(stmt):
-        target = join.resolve(order_id, li_id, source, campaign)
+        target = join.resolve(order_id, li_id, source, campaign, date)
         if target is None:
             continue
         bucket = totals[target][date]
@@ -343,7 +384,7 @@ def strategy_series(
         strategy_type, product, date,
         impressions, clicks, cost, conversions,
     ) in session.execute(stmt):
-        target = join.resolve(order_id, li_id, source, campaign)
+        target = join.resolve(order_id, li_id, source, campaign, date)
         if target is None:
             continue
         metrics = {
@@ -1743,12 +1784,19 @@ def _totals_by_line_item(
     )
 
     gathered: dict[int, list] = {}
+    shared_items: set[int] = set()
     for (
         order_id, li_id, source, campaign,
         impressions, clicks, cost, conversions,
         m_impressions, m_clicks, m_cost, m_conversions,
         first, last,
     ) in session.execute(stmt):
+        if (source, campaign) in join.shared and join.resolve(order_id, li_id) is None:
+            # Shared campaign: split by day on the slow path.
+            shared_items.update(
+                w[0] for w in join.shared[(source, campaign)] if w[0] in join.in_view
+            )
+            continue
         target = join.resolve(order_id, li_id, source, campaign)
         if target is None:
             continue
@@ -1771,9 +1819,10 @@ def _totals_by_line_item(
     by_id = {li.id: li for li in line_items}
     out: dict[int, DeliveryTotals] = {}
     spilled: list[LineItem] = []
+    spilled.extend(by_id[i] for i in shared_items if i in by_id)
     for line_item_id, (every, month, first, last) in gathered.items():
         item = by_id.get(line_item_id)
-        if item is None:
+        if item is None or line_item_id in shared_items:
             continue
         order = item.order
         start = item.start_date or order.start_date
