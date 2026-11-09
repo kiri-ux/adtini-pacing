@@ -196,7 +196,11 @@ def _unwrap_order(data) -> dict:
 # ---------------------------------------------------------------------------
 # JSON -> normalized rows
 # ---------------------------------------------------------------------------
-SPEND_KEY = re.compile(r"^(total|monthly)_(ppc|linkedin|pm|meta)_ad_spend$")
+# Two spellings: `total_ppc_ad_spend`, and Meta's own `meta_monthly_spend`.
+SPEND_KEY = re.compile(
+    r"^(?:(?P<a>total|monthly)_(?P<p>ppc|linkedin|pm|meta)_ad_spend"
+    r"|(?P<q>ppc|linkedin|pm|meta)_(?P<b>total|monthly)_spend)$"
+)
 NUMBER = re.compile(r"[^0-9.\-]")
 
 
@@ -310,7 +314,11 @@ def rows_for(order: dict, order_name: str | None = None) -> list[dict]:
         for key, value in item.items():
             match = SPEND_KEY.match(key)
             if match:
-                row[f"{match.group(1)}_{match.group(2)}_spend"] = number(value)
+                period = match.group("a") or match.group("b")
+                product = match.group("p") or match.group("q")
+                found = number(value)
+                if found or f"{period}_{product}_spend" not in row:
+                    row[f"{period}_{product}_spend"] = found
         if row["client_name"] and row["external_order_id"] and row["external_line_item_id"]:
             rows.append(row)
     return rows
