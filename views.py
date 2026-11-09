@@ -2070,10 +2070,14 @@ def group_by_targeting(
     series_key: dict[int, str] = {}
 
     def base_of(series) -> str:
-        return (
-            COMBINED_KEY if combined
-            else sheets.match_key(series.label) or series.label.lower()
-        )
+        if combined:
+            return COMBINED_KEY
+        key = sheets.match_key(series.label)
+        if key is None and _does_category_targeting(product):
+            # Labelled category targeting (an audience list with no
+            # targeting word), so it pairs with the Category row too.
+            key = "category"
+        return key or series.label.lower()
 
     def name_of(series) -> str:
         return "" if combined else (

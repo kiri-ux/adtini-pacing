@@ -1185,3 +1185,17 @@ def test_a_second_line_of_a_split_targeting_gets_its_own_row(site):
     assert added == 2 and added_again == 0
     assert len(labels) == before + 2
     assert {"FB - Categories 2", "FB - Categories 3"} <= set(labels)
+
+
+def test_an_audience_list_with_no_targeting_word_is_category():
+    import views
+
+    s = views.StrategySeries(
+        line_item_id=1, label="MC - F25+/HHI $100K+/Beauty/Plastic Surgery",
+        product="Mobile Conquesting Display & Video Ads",
+        by_date={dt.date(2026, 8, 1): 10.0}, total=10.0,
+        impressions=10.0, clicks=0.0, cost=0.0, conversions=0.0,
+    )
+    (key, label, _, _), = views.group_by_targeting(
+        "Mobile Conquesting Display & Video Ads", [s])
+    assert (key, label) == ("category", "MC - Categories")
