@@ -39,8 +39,8 @@
         <th class="num sep">Pacing</th>
         {% for day in dates %}<th class="num{% if day.day == 1 %} mstart{% endif %}{% if g0.is_future(day) %} future{% endif %}">{{ day.strftime('%-d-%b') }}</th>{% endfor %}
       </tr></thead>
+      {% for d in gs %}<tbody data-live="{{ 1 if 'live' in (d.row.status or '')|lower else 0 }}">{{ section(d, dates, pacecell, linked) }}</tbody>{% endfor %}
       <tbody>
-      {% for d in gs %}{{ section(d, dates, pacecell, linked) }}{% endfor %}
         <tr class="cumrow first noterow">
           <th class="pin0"></th><th class="pin">Notes</th><td colspan="12" class="sep"></td>
           {% for day in dates %}

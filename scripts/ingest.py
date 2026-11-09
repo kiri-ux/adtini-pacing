@@ -42,7 +42,7 @@ def draft_splits(log: logging.Logger) -> None:
         with session_scope() as session:
             result = views.draft_missing_splits(session)
             log.info("splits: %s", result.summary())
-            extra = views.add_extra_lines(session)
+            extra = views.add_extra_lines(session) + views.fill_lone_rows(session)
             log.info("splits: %d second lines added", extra)
             result.strategies_added += extra
             if result.strategies_added:

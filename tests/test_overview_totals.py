@@ -136,8 +136,8 @@ def test_the_two_paths_agree_on_the_whole_overview(session):
     assert rows[0].total.impressions == 40_000
 
 
-def test_an_ended_product_drops_out_of_the_orders_goal(session):
-    """My Day's total is the running products, as the order page header is."""
+def test_a_completed_product_still_counts_toward_the_orders_goal(session):
+    """Live, paused and completed count (kiri 11/9); only pending is left out."""
     days = [dt.date(2026, 8, 1) + dt.timedelta(days=n) for n in range(40)]
     order, _ = _build(session, flight_end=dt.date(2026, 10, 31), delivery_days=days)
     session.add(
@@ -150,5 +150,20 @@ def test_an_ended_product_drops_out_of_the_orders_goal(session):
     )
     session.flush()
 
+    rows = views.overview(session, as_of=AS_OF)
+    assert rows[0].total.total_target == 1_090_000
+
+
+def test_a_pending_product_is_left_out_of_the_orders_goal(session):
+    days = [dt.date(2026, 8, 1) + dt.timedelta(days=n) for n in range(40)]
+    order, _ = _build(session, flight_end=dt.date(2026, 10, 31), delivery_days=days)
+    session.add(
+        LineItem(
+            order_id=order.id, external_id="7003", name="Meta", product="Meta Display & Video Ads",
+            status="IO Pending Launch: Element(s) Missing",
+            monthly_impressions=20_000.0, total_impressions=240_000.0, goal_cpm=3.5,
+        )
+    )
+    session.flush()
     rows = views.overview(session, as_of=AS_OF)
     assert rows[0].total.total_target == 90_000

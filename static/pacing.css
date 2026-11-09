@@ -856,7 +856,7 @@ table.daily.pinned th.pin0{position:sticky;left:0;z-index:2;background:var(--car
 table.daily.pinned thead th.pin0{z-index:3;background:var(--navy);color:#fff;vertical-align:middle}
 table.daily.pinned.detailgrid th.pin{left:84px}
 table.detailgrid tr.prodstart > *{border-top:2px solid var(--navy)}
-table.detailgrid tbody tr:first-child > *{border-top:0}
+table.detailgrid tbody:first-of-type tr:first-child > *{border-top:0}
 table.detailgrid th.prodcell .pilllink{text-decoration:none}
 table.detailgrid th.prodcell .buildbtn{display:block;margin-top:8px;font-size:11px;padding:3px 8px;white-space:nowrap}
 /* Strategy cell: dropdown plus an info dot that shows the targets. */
@@ -997,3 +997,13 @@ table.detailgrid td:has(> input) .clicksub{text-align:right}
 .dlgtable .datematch{display:none;margin-left:6px;border-radius:999px;font-size:10.5px;
   font-weight:600;padding:1px 7px;background:#E4F3EA;color:#1E7D46}
 .dlgtable tr.datehit .datematch{display:inline-block}
+
+/* Live only: products whose status is not IO Live are hidden, in the
+   products table and the budgeting grid both. */
+.liveonly table.elements tbody tr[data-live="0"],
+.liveonly table.detailgrid tbody[data-live="0"]{display:none}
+.pausedflag{position:relative;display:inline-flex;vertical-align:-2px;margin-left:4px;cursor:help}
+.pausedflag .tipbox{display:none;position:absolute;left:18px;top:-4px;z-index:20;white-space:nowrap;
+  background:var(--navy);color:#fff;font-size:11.5px;font-weight:500;padding:5px 8px;border-radius:6px}
+.pausedflag:hover .tipbox,.pausedflag:focus .tipbox{display:block}
+td.lnk.clip:has(.pausedflag){overflow:visible}

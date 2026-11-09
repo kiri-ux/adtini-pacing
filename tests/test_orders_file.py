@@ -815,6 +815,46 @@ def test_recompute_leaves_hand_edited_terms_alone():
     assert result.locked_skipped == 1
 
 
+def test_recompute_resets_a_split_row_left_on_the_old_card_rate():
+    """A Meta split row drafted on the old card read 7 under a 3.50 goal."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from models import Base, Client, LineItem, Order, StrategyTerms
+    from orderbook import recompute_terms
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        client = Client(name="X")
+        session.add(client)
+        session.flush()
+        order = Order(client_id=client.id, name="O", pacing_type="impression")
+        session.add(order)
+        session.flush()
+        item = LineItem(
+            order_id=order.id, name="Meta Ads", product="Meta Display & Video Ads",
+            monthly_impressions=100_000.0, goal_cpm=7.0,
+            goal_cpm_source="rate card",
+        )
+        session.add(item)
+        session.flush()
+        session.add_all([
+            StrategyTerms(order_id=order.id, line_item_id=item.id,
+                          label="Meta - Interest", rate=7.0),
+            StrategyTerms(order_id=order.id, line_item_id=item.id,
+                          label="Meta - Custom", rate=5.25),
+        ])
+        session.flush()
+
+        result = recompute_terms(session)
+        rates = {t.label: t.rate for t in session.query(StrategyTerms)}
+
+    assert rates["Meta - Interest"] == 3.5
+    assert rates["Meta - Custom"] == 5.25, "a typed rate stays"
+    assert result.split_rates_reset == 1
+
+
 def test_months_between_counts_both_ends():
     import datetime as dt
 
@@ -1213,3 +1253,29 @@ def test_meta_sold_in_impressions_paces_on_impressions():
     item = next(o for o in session.identity_map.values() if isinstance(o, LineItem))
     assert (item.pacing_type or item.order.pacing_type) == "impression"
     assert item.monthly_impressions == 100_000
+
+
+def test_recompute_gives_a_short_product_name_its_full_one():
+    """The RZ sync wrote "META" where the export says Meta Display & Video Ads."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from models import Base, Client, LineItem, Order
+    from orderbook import canonical_product, recompute_terms
+
+    assert canonical_product("META") == "Meta Display & Video Ads"
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        client = Client(name="X")
+        session.add(client)
+        session.flush()
+        order = Order(client_id=client.id, name="O", pacing_type="impression")
+        session.add(order)
+        session.flush()
+        session.add(LineItem(order_id=order.id, name="META", product="META"))
+        session.flush()
+        recompute_terms(session)
+        item = session.query(LineItem).one()
+
+    assert (item.name, item.product) == ("Meta Display & Video Ads",) * 2

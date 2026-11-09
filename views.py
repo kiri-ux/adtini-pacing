@@ -613,6 +613,7 @@ class OrderView:
     # long as its longest line, so a table of every line it ever carried
     # totals a flight nobody is still buying.
     open_total: PacingRow | None = None
+    goal_total: PacingRow | None = None
     closed_total: PacingRow | None = None
 
     @property
@@ -695,11 +696,11 @@ def order_view(
     # Website Visitor ID, Live Chat, SEO, reputation management and the
     # management-fee lines sit on orders but have no impressions or spend to
     # pace, so they never reach a pacing view.
-    line_items = [
+    paced = [
         li for li in sorted(order.line_items, key=lambda li: (li.sort_order, li.id))
         if products.is_paced(li.product)
-        and (line_item_id is None or li.id == line_item_id)
     ]
+    line_items = [li for li in paced if line_item_id is None or li.id == line_item_id]
     # One pass over the delivery, not two. The strategies under a line item
     # are the same rows as the line item's own days, so adding them up here
     # costs nothing and saves a second aggregate over the same table.
@@ -715,13 +716,22 @@ def order_view(
             ) == metric
         ]
         if wanted:
-            strategies.update(strategy_series(session, wanted, metric=metric))
+            # Read with the whole order in the join, so a campaign linked to
+            # this line item does not claim days whose ids belong to another
+            # line item on the order. Read alone, a product's page counted an
+            # old line item's 147k impressions as its own.
+            ids = {li.id for li in wanted}
+            others = [li for li in paced if li.id not in ids] if line_item_id else []
+            found = strategy_series(session, wanted + others, metric=metric)
+            strategies.update({k: v for k, v in found.items() if k in ids})
 
     daily = _daily_from_strategies(line_items, strategies)
 
     rows = [compute_row(li, order, daily.get(li.id, []), as_of) for li in line_items]
     total = total_row(rows, order.pacing_type)
     open_total = total_row([r for r in rows if r.is_open], order.pacing_type)
+    # The header's figures: live, paused and completed, as My Day counts.
+    goal_total = total_row([r for r in rows if counts_toward_goal(r)], order.pacing_type)
     closed_total = total_row([r for r in rows if not r.is_open], order.pacing_type)
 
     # The daily grid runs the length of the flight, so a buyer can see which
@@ -836,6 +846,7 @@ def order_view(
         rows=rows,
         total=total,
         open_total=open_total,
+        goal_total=goal_total,
         closed_total=closed_total,
         groups=groups,
         as_of=as_of,
@@ -885,6 +896,17 @@ class ProductChip:
         return health(1.0 - self.ratio)
 
 
+def counts_toward_goal(row: PacingRow) -> bool:
+    """Live, paused or completed: not a line still pending approval or
+    launch, and not a cancelled one."""
+    status = (row.status or "").lower()
+    return "pending" not in status and row.state != "cancelled"
+
+
+def is_paused(row: PacingRow) -> bool:
+    return "pause" in (row.status or "").lower()
+
+
 @dataclass
 class OverviewRow:
     order: Order
@@ -893,6 +915,8 @@ class OverviewRow:
     as_of: dt.date
     products: list[ProductChip] = field(default_factory=list)
     covers_from: dt.date | None = None
+    # Products on this order whose status is paused.
+    paused: list[str] = field(default_factory=list)
 
     @property
     def health(self) -> str:
@@ -1057,11 +1081,10 @@ def overview(
             )
             for li in line_items
         ]
-        # The products still running, as the order page's header does: an
-        # ended product's goal kept the monthly goal high with nothing to
-        # serve against it. All of them once none is running.
+        # Live, paused and completed products, as the order page's header
+        # does; pending approval or launch has not started (kiri, 11/9).
         total = total_row(rows, order.pacing_type)
-        open_total = total_row([r for r in rows if r.is_open], order.pacing_type)
+        open_total = total_row([r for r in rows if counts_toward_goal(r)], order.pacing_type)
         if open_total.total_target:
             total = open_total
 
@@ -1092,6 +1115,7 @@ def overview(
                 as_of=as_of,
                 products=sorted(chips.values(), key=lambda c: -c.goal),
                 covers_from=covers_from,
+                paused=[li.product or "Product" for li, r in zip(line_items, rows) if is_paused(r)],
             )
         )
 
@@ -1858,8 +1882,13 @@ def sold_strategy_names(item: LineItem) -> list[str]:
         return []
     parts = re.split(r"[;,\n|/]+", raw)
     seen: list[str] = []
+    # On Mobile Conquesting, Cross Platform is the audience it builds for
+    # other products to retarget, never a strategy that serves there.
+    mobile = "mobile conquesting" in (item.product or "").lower()
     for part in parts:
         name = part.strip(" -\t")
+        if mobile and sheets.match_key(name) == "cross platform":
+            continue
         if name and name.lower() not in {p.lower() for p in seen}:
             seen.append(name)
     return seen
@@ -2420,6 +2449,47 @@ class DraftResult:
 DRAFT_BATCH = 50
 
 
+def fill_lone_rows(session) -> int:
+    """A product with one split row and no goals on it gets the product's.
+
+    A row drafted before the product's goals loaded (a PPC line whose ad
+    spend arrived later) was written blank and stayed blank. One row is the
+    whole product, so its goals are not a guess. Returns rows filled.
+    """
+    counts = (
+        select(StrategyTerms.line_item_id)
+        .where(StrategyTerms.line_item_id.is_not(None))
+        .group_by(StrategyTerms.line_item_id)
+        .having(func.count() == 1)
+    )
+    filled = 0
+    for term in session.execute(
+        select(StrategyTerms).where(
+            StrategyTerms.line_item_id.in_(counts),
+            or_(StrategyTerms.monthly_target.is_(None), StrategyTerms.monthly_target == 0),
+            or_(StrategyTerms.total_target.is_(None), StrategyTerms.total_target == 0),
+        )
+    ).scalars():
+        item = session.get(LineItem, term.line_item_id)
+        if item is None:
+            continue
+        kind = item.pacing_type or (item.order.pacing_type if item.order else None) or "impression"
+        if kind == "impression":
+            monthly, total, rate = item.monthly_impressions, item.total_impressions, item.goal_cpm
+        elif kind == "click":
+            monthly, total, rate = item.monthly_spend, item.total_spend, item.goal_cpc
+        else:
+            monthly, total, rate = item.client_monthly_budget, item.client_total_budget, item.goal_cpe
+        if not (monthly or total):
+            continue
+        term.monthly_target, term.total_target = monthly, total
+        if term.rate is None:
+            term.rate = rate
+        filled += 1
+    session.flush()
+    return filled
+
+
 def add_extra_lines(session, as_of: dt.date | None = None) -> int:
     """Give a second DSP line of a targeting the split already has its own row.
 
@@ -2477,6 +2547,12 @@ def add_extra_lines(session, as_of: dt.date | None = None) -> int:
             ran = {k: s for k, _, s, _ in group_by_targeting(item.product, series.get(item.id, []))}
             claimed: set[str] = set()
             for term in terms:
+                # A second line of the row's own targeting linked by hand
+                # before it could have its own row gets one now.
+                own, *linked = term_keys(term)
+                keep = [k for k in linked if k.split("#")[0] != own]
+                if len(keep) != len(linked):
+                    term.linked_keys = "\n".join(keep) or None
                 _, keys = claim(term, ran, claimed)
                 claimed.update(keys)
                 # Linked by hand counts as placed, even with no serve today.

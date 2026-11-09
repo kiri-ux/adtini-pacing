@@ -30,7 +30,8 @@
         <td class="clip">{{ r.order.buyer or '—' }}</td>
         <td class="clip" title="{{ r.client.market or '' }}">{{ r.client.market or '—' }}</td>
         <td class="lnk clip" title="{{ r.client.name }}"><a
-          href="{{ url_for('order_detail', order_id=r.order.id) }}">{{ r.client.name }}</a></td>
+          href="{{ url_for('order_detail', order_id=r.order.id) }}">{{ r.client.name }}</a>
+          {%- if r.paused %} <span class="pausedflag" tabindex="0" aria-label="Paused: {{ r.paused|join(', ') }}"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="#F5C518"/><rect x="5.3" y="4.5" width="1.8" height="7" rx=".6" fill="#3A2E00"/><rect x="8.9" y="4.5" width="1.8" height="7" rx=".6" fill="#3A2E00"/></svg><span class="tipbox">Paused: {{ r.paused|join(', ') }}</span></span>{% endif %}</td>
         <td class="num orderid">{{ r.order.external_order_id or '—' }}</td>
         <td class="pills">
           {% for p in r.products[:5] %}

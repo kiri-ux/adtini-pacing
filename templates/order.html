@@ -4,7 +4,7 @@
 {% set o = v.order %}
 {% set t = v.total %}
 {# The card describes the products running now, same as the table's default. #}
-{% set h = v.open_total if (v.open_total and v.open_total.total_target) else v.total %}
+{% set h = v.goal_total if (v.goal_total and v.goal_total.total_target) else v.total %}
 {% block title %} — {{ v.client.name }}{% endblock %}
 {% block heading %}Order Details - {{ o.external_order_id or o.id }} - {{ v.client.name }}{% endblock %}
 
@@ -47,6 +47,7 @@
     <div class="scopetabs" id="scopetabs" role="tablist">
       <button type="button" class="scopetab{% if v.default_scope == 'open' %} on{% endif %}" data-scope="open">Current</button>
       <button type="button" class="scopetab{% if v.default_scope != 'open' %} on{% endif %}" data-scope="all">All</button>
+      <button type="button" class="scopetab" id="liveonly" aria-pressed="false" title="Only IO Live products, here and in Budgeting">Live only</button>
     </div>
   </div>
   <div class="scroller">
@@ -60,7 +61,7 @@
       <tbody>
       {% for r in v.rows %}
         {% set ext = r.line_item.external_id if r.line_item and r.line_item.external_id and not r.line_item.external_id.startswith('name:') else none %}
-        <tr data-state="{{ r.state }}">
+        <tr data-state="{{ r.state }}" data-live="{{ 1 if 'live' in (r.status or '')|lower else 0 }}">
           <td class="orderid">{% if ext and ext.isdigit() %}<a class="detlink" href="https://www.reporting.zone/client/iotool/dist/#/items/viewLineItem/{{ ext }}" target="_blank" rel="noopener" title="Open in RZ">{{ ext }}</a>{% else %}{{ ext or '—' }}{% endif %}</td>
           <td>{{ r.status or r.state|capitalize }}{% if r.needs_setup %} <span class="setupflag">no goal set</span>{% endif %}</td>
           {% set pname = (r.line_item.product if r.line_item and r.line_item.product else r.label) %}

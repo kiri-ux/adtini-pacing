@@ -1620,6 +1620,9 @@ def data_action():
             extra = views.add_extra_lines(db, as_of=_as_of())
             if extra:
                 message += f"; {extra} second lines added"
+            lone = views.fill_lone_rows(db)
+            if lone:
+                message += f"; {lone} single rows given their product's goals"
 
     if message:
         flash(message)
