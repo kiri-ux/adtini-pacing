@@ -982,3 +982,7 @@ table.detailgrid th.pin .stratcell.matched:not(.editing){flex-wrap:nowrap}
   background:#fff;color:#8A5300;border:1px solid #F1D9A6;border-radius:8px;padding:5px 9px;
   font-size:11.5px;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.12)}
 .cpmflag:hover .tipbox,.cpmflag:focus .tipbox{display:block}
+.stratcell .strdel{flex:0 0 auto;order:5;border:0;background:none;color:#8A94A6;font-size:16px;line-height:1;padding:0 2px;cursor:pointer}
+.stratcell .strdel:hover{color:#B3261E}
+.stratcell.matched:not(.editing) .strdel{display:none}
+.stratcell.editing .strdel{order:3}
