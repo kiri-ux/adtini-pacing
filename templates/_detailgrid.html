@@ -169,6 +169,7 @@
           <td class="num"><input class="pctin{% if e.pacing_pct|paceclass == 'under' %} under{% endif %}" type="text" inputmode="decimal" data-li="{{ d.item.id }}"
             data-mon="{{ r.monthly_target or '' }}" data-tot="{{ r.total_target or '' }}" data-money="{{ 1 if money else 0 }}"
             data-live="{{ '%.1f'|format(live[e.strategy_id]) if e.strategy_id in live else '' }}"
+            data-todate="{{ e.to_date or 0 }}" data-frac="{{ (e.on_pace / e.total) if (e.on_pace and e.total) else '' }}"
             value="{{ '%.1f'|format(mine / base * 100) if (mine and base) else '' }}"></td>
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-monthly" value="{{ e.monthly|entry(not money) }}"></td>
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-total" value="{{ e.total|entry(not money) }}"></td>

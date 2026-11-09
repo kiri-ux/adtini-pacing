@@ -35,6 +35,16 @@
     if (share === null) return;
     if (mon !== null && c.monthly) c.monthly.value = fmt(mon * share / 100, money);
     if (tot !== null && c.total) c.total.value = fmt(tot * share / 100, money);
+    flag(el, share);
+  }
+  // Re-colour the % as under pace against the new goal, with the
+  // server's rule: (on pace - to date) / on pace beyond 10%.
+  function flag(el, share) {
+    var tot = num(el.dataset.tot), frac = num(el.dataset.frac);
+    var done = num(el.dataset.todate) || 0;
+    if (tot === null || !frac) return;
+    var onPace = tot * share / 100 * frac;
+    el.classList.toggle("under", onPace > 0 && (onPace - done) / onPace > 0.10);
   }
   function sum(li) {
     var out = document.querySelector('.pctsum[data-li="' + li + '"]');
@@ -83,7 +93,10 @@
       // The % follows monthly when the product has a monthly goal.
       if (!isMonthly && num(pct.dataset.mon) !== null) return;
       var v = num(el.value);
-      if (base && v !== null) pct.value = (v / base * 100).toFixed(1);
+      if (base && v !== null) {
+        pct.value = (v / base * 100).toFixed(1);
+        flag(pct, num(pct.value));
+      }
       sum(pct.dataset.li);
     }
   });
