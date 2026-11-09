@@ -1017,6 +1017,15 @@ def strategy_add(order_id: int):
                 StrategyTerms.label == label,
             )
         ).scalar_one_or_none()
+        if clash is not None and request.form.get("split"):
+            # A second line of the same targeting: its own numbered row.
+            taken = set(db.execute(
+                select(StrategyTerms.label).where(StrategyTerms.line_item_id == item.id)
+            ).scalars())
+            n = 2
+            while f"{label} {n}" in taken:
+                n += 1
+            label, clash = f"{label} {n}", None
         if clash is not None:
             flash(f"{label} is already on this order.")
             return _back(order_id)

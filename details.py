@@ -162,6 +162,9 @@ class GridRow:
     ordered: bool = False
     # Running and on no row: the delivery group it is, for linking by hand.
     feed_key: str | None = None
+    # Another line of a targeting the split already has: one click makes it
+    # its own row.
+    addable: bool = False
     # Delivery linked to this row by hand: (group key, label).
     linked: list[tuple[str, str]] = field(default_factory=list)
     # The DSP strategy line names delivering to this row.
@@ -581,6 +584,9 @@ def details_view(
     for key, label, series, _ in grouped:
         if key in claimed:
             continue
+        extra = not combined and "#" in key and (
+            key.split("#")[0] in split_keys or key.split("#")[0] in ordered
+        )
         by_date = per_day(series, index)
         est = estimate(key)
         if est.get("total"):
@@ -596,9 +602,10 @@ def details_view(
                 clicks=sum(per_day(series, 1).values()),
                 run_cpm=None if money else run_cpm(_series_points(series), as_of),
                 media_spent=(sum(by_date.values()) or None) if money else None,
-                ordered=combined or key in ordered,
+                ordered=combined or key in ordered or extra,
                 feed_key=key,
                 feed_names=sorted(series.names),
+                addable=extra,
             )
         )
     if not combined:

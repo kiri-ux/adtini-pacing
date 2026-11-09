@@ -872,3 +872,20 @@ def test_a_bare_targeting_name_next_to_a_named_one_drafts_one_row():
 
     item.sold_strategies = "Keyword - Roofing, Keyword - Siding"
     assert len(details.plan_split(item, money=False)) == 2
+
+
+def test_add_to_split_numbers_a_second_row_of_one_targeting(site):
+    import db as db_module
+    from sqlalchemy import select
+    from models import StrategyTerms
+
+    app_module, (order_id, li_id) = site
+    client = app_module.app.test_client()
+    form = {"line_item_id": li_id, "label": "D - Keyword", "split": "1"}
+    client.post(f"/orders/{order_id}/strategies", data=form)
+    client.post(f"/orders/{order_id}/strategies", data=form)
+    with db_module.session_scope() as session:
+        labels = set(session.execute(
+            select(StrategyTerms.label).where(StrategyTerms.line_item_id == li_id)
+        ).scalars())
+    assert {"D - Keyword", "D - Keyword 2"} <= labels

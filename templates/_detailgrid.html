@@ -137,6 +137,15 @@
             <span class="stratname">{{ d.short_label(e.label) }}
               {%- if not e.ordered %} <span class="setupflag">not sold</span>{% endif -%}
             </span>
+            {%- if e.addable %}
+            <form method="post" class="linkform" action="{{ url_for('strategy_add', order_id=d.order.id) }}">
+              <input type="hidden" name="line_item_id" value="{{ d.item.id }}">
+              <input type="hidden" name="back_li" value="{{ d.item.id }}">
+              <input type="hidden" name="label" value="{{ e.label }}">
+              <input type="hidden" name="split" value="1">
+              <button type="submit" class="btn2 addsplit">&#43; Add to split</button>
+            </form>
+            {%- endif -%}
             {%- if e.feed_key and d.has_split %}
             <form method="post" class="linkform" action="{{ url_for('strategy_link', order_id=d.order.id, line_item_id=d.item.id) }}">
               <input type="hidden" name="key" value="{{ e.feed_key }}">
