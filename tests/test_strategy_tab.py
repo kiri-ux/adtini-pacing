@@ -1147,3 +1147,41 @@ def test_a_line_keeps_its_number_when_another_overtakes_it():
     ])
     keys = {next(iter(s.names)): k for k, _, s, _ in grouped}
     assert keys == {"Nampa Keyword": "keyword", "Twin Falls Keyword": "keyword#2"}
+
+
+def test_a_second_line_of_a_split_targeting_gets_its_own_row(site):
+    import datetime as dt
+
+    from models import DailyDelivery, LineItem, StrategyTerms
+
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        item = session.query(LineItem).filter_by(external_id="88001").one()
+        for term in session.query(StrategyTerms).filter_by(order_id=order_id):
+            term.line_item_id = item.id
+        session.flush()
+        before = session.query(StrategyTerms).filter_by(line_item_id=item.id).count()
+        for name in ("Meta - Nampa Categories", "Meta - Twin Falls Categories"):
+            for day in range(1, 6):
+                session.add(DailyDelivery(
+                    date=dt.date(2026, 8, day), data_source="Meta",
+                    campaign_id="CMP-1", strategy_id=f"{name}-{day}",
+                    client_name="Bud's Auto", external_order_id="44100",
+                    external_line_item_id="88001",
+                    product="Meta Display & Video Ads",
+                    strategy_name=name, strategy_type="Categories",
+                    impressions=500.0,
+                ))
+
+    with db_module.session_scope() as session:
+        added = views.add_extra_lines(session, as_of=dt.date(2026, 8, 10))
+    with db_module.session_scope() as session:
+        added_again = views.add_extra_lines(session, as_of=dt.date(2026, 8, 10))
+        labels = [t.label for t in session.query(StrategyTerms).filter_by(line_item_id=item.id)]
+
+    assert added == 2 and added_again == 0
+    assert len(labels) == before + 2
+    assert {"FB - Categories 2", "FB - Categories 3"} <= set(labels)

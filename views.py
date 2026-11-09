@@ -2367,6 +2367,94 @@ class DraftResult:
 DRAFT_BATCH = 50
 
 
+def add_extra_lines(session, as_of: dt.date | None = None) -> int:
+    """Give a second DSP line of a targeting the split already has its own row.
+
+    A Keyword line per market: the order lists Keyword once, the split has
+    one Keyword row, and the second line would otherwise sit outside the
+    split as "not sold". Rows are added with no goals for a buyer to fill;
+    nothing existing is changed. Returns how many rows were added.
+    """
+    as_of = as_of or latest_delivery_date(session) or dt.date.today()
+    order_ids = list(
+        session.execute(
+            select(Order.id)
+            .where(
+                func.lower(func.coalesce(Order.order_type, "")) == PACEABLE_ORDER_TYPE,
+                Order.active.is_(True),
+                or_(Order.end_date.is_(None), Order.end_date >= as_of),
+                Order.id.in_(select(StrategyTerms.order_id).distinct()),
+            )
+            .order_by(Order.id)
+        ).scalars()
+    )
+    added = 0
+    for start in range(0, len(order_ids), DRAFT_BATCH):
+        batch = order_ids[start : start + DRAFT_BATCH]
+        terms_by_item: dict[int, list[StrategyTerms]] = defaultdict(list)
+        for term in session.execute(
+            select(StrategyTerms)
+            .where(StrategyTerms.order_id.in_(batch))
+            .order_by(StrategyTerms.sort_order, StrategyTerms.id)
+        ).scalars():
+            if term.line_item_id:
+                terms_by_item[term.line_item_id].append(term)
+        items = list(
+            session.execute(
+                select(LineItem).where(LineItem.id.in_(list(terms_by_item)))
+            ).scalars()
+        )
+        items = [
+            li for li in items
+            if products.is_paced(li.product) and not combined_strategy(li.product)
+        ]
+        series: dict[int, list[StrategySeries]] = {}
+        for metric in ("impressions", "cost"):
+            wanted = [
+                li for li in items
+                if ("impressions" if (li.pacing_type or li.order.pacing_type
+                                      or "impression") == "impression" else "cost")
+                == metric
+            ]
+            if wanted:
+                series.update(strategy_series(session, wanted, metric=metric))
+
+        for item in items:
+            terms = terms_by_item[item.id]
+            ran = {k: s for k, _, s, _ in group_by_targeting(item.product, series.get(item.id, []))}
+            claimed: set[str] = set()
+            for term in terms:
+                _, keys = claim(term, ran, claimed)
+                claimed.update(keys)
+                # Linked by hand counts as placed, even with no serve today.
+                claimed.update(term_keys(term)[1:])
+            owners = {term_keys(t)[0]: t for t in reversed(terms)}
+            labels = {t.label for t in terms}
+            next_sort = max((t.sort_order or 0) for t in terms) + 1
+            for key in sorted(ran):
+                if key in claimed or "#" not in key:
+                    continue
+                owner = owners.get(key.split("#")[0])
+                if owner is None or not sheets.match_key(owner.label):
+                    continue
+                n = 2
+                while f"{owner.label} {n}" in labels:
+                    n += 1
+                label = f"{owner.label} {n}"
+                labels.add(label)
+                session.add(StrategyTerms(
+                    order_id=item.order_id, line_item_id=item.id, label=label,
+                    match_key=owner.match_key, sort_order=next_sort,
+                    source="second line",
+                ))
+                next_sort += 1
+                claimed.add(key)
+                added += 1
+        session.flush()
+        session.expunge_all()
+    return added
+
+
 def draft_missing_splits(session, as_of: dt.date | None = None) -> DraftResult:
     """Draft a sold split for every product that has none.
 
