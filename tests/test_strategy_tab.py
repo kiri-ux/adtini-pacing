@@ -1107,3 +1107,25 @@ def test_two_lines_with_the_same_targeting_stay_separate_rows():
     assert sorted(k for k, *_ in grouped) == ["keyword", "keyword#2"]
     totals = {k: s.total for k, _, s, _ in grouped}
     assert totals == {"keyword": 125.0, "keyword#2": 50.0}
+
+
+def test_same_strategy_type_under_two_names_is_two_rows():
+    """The feed labels both "SM - Keyword" from the strategy type; the
+    strategy names are what tell the markets apart."""
+    import views
+
+    def series(name, total):
+        return views.StrategySeries(
+            line_item_id=1, label="SM - Keyword", product="Social Mirror Ads",
+            by_date={dt.date(2026, 8, 1): total}, total=total,
+            impressions=total, clicks=0.0, cost=0.0, conversions=0.0,
+            names={name} if name else set(),
+        )
+
+    grouped = views.group_by_targeting("Social Mirror Ads", [
+        series("Lava - Nampa + Utah Keyword Search", 100.0),
+        series("Lava - Twin Falls Keyword Search", 50.0),
+        series(None, 5.0),
+    ])
+    totals = {k: s.total for k, _, s, _ in grouped}
+    assert totals == {"keyword": 105.0, "keyword#2": 50.0}

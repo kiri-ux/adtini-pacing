@@ -336,8 +336,8 @@ def strategy_series(
         )
     )
 
-    collected: dict[tuple[int, str], StrategySeries] = {}
-    seen_ids: dict[tuple[int, str], set[str]] = defaultdict(set)
+    collected: dict[tuple[int, str, str], StrategySeries] = {}
+    seen_ids: dict[tuple[int, str, str], set[str]] = defaultdict(set)
     for (
         order_id, li_id, source, campaign, strategy_id, strategy_name,
         strategy_type, product, date,
@@ -357,7 +357,9 @@ def strategy_series(
             (li.order.client.name for li in line_items if li.id == target), None
         )
         label = line_item_label(product, strategy_type, strategy_name, client)
-        key = (target, label)
+        # The same targeting under two names is two lines (a Keyword line per
+        # market); the same name re-flighted under new ids is one.
+        key = (target, label, (strategy_name or "").strip().lower())
         seen_ids[key].add(strategy_id)
 
         series = collected.get(key)
@@ -2015,17 +2017,25 @@ def group_by_targeting(
     # merges, by its name.
     named: dict[tuple[str, str], str] = {}
     per_base: dict[str, int] = defaultdict(int)
+    by_label: dict[str, str] = {}
     for series in running:
         base = (
             COMBINED_KEY if combined
             else sheets.match_key(series.label) or series.label.lower()
         )
-        name = "" if combined else series.label.strip().lower()
+        name = "" if combined else (
+            "|".join(sorted(n.lower() for n in series.names))
+            or series.label.strip().lower()
+        )
         key = named.get((base, name))
+        if key is None and not series.names:
+            # Unnamed delivery joins the first line it shares a label with.
+            key = by_label.get(series.label.strip().lower())
         if key is None:
             per_base[base] += 1
             key = base if per_base[base] == 1 else f"{base}#{per_base[base]}"
             named[(base, name)] = key
+        by_label.setdefault(series.label.strip().lower(), key)
         raw[key].append(series.label)
         existing = merged.get(key)
         if existing is None:
