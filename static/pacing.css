@@ -1007,3 +1007,10 @@ table.detailgrid td:has(> input) .clicksub{text-align:right}
   background:var(--navy);color:#fff;font-size:11.5px;font-weight:500;padding:5px 8px;border-radius:6px}
 .pausedflag:hover .tipbox,.pausedflag:focus .tipbox{display:block}
 td.lnk.clip:has(.pausedflag){overflow:visible}
+/* The unsold row's Link to: a small control, so the row stays one line high. */
+table.detailgrid th.pin .stratcell .linkform{margin:0}
+table.detailgrid th.pin .stratcell .linkform select{flex:none;width:auto;min-width:0;max-width:150px;
+  height:24px;min-height:0;padding:0 24px 0 8px;font-size:11px;line-height:22px;border-radius:6px;
+  background-position:right 6px center}
+table.detailgrid tr.unsoldrow th.pin .feednames{margin-top:2px}
+table.daily.pinned.detailgrid tr.noterow th.pin0{border-top-color:transparent}

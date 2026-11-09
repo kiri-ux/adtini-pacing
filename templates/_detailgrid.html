@@ -152,6 +152,10 @@
               <select name="term" onchange="this.form.submit()" aria-label="Link to strategy">
                 <option value="">Link to&hellip;</option>
                 {% for s in d.elements if s.sold %}<option value="{{ s.strategy_id }}">{{ d.short_label(s.label) }}</option>{% endfor %}
+                {%- set have = d.elements|selectattr('sold')|map(attribute='label')|map('lower')|list %}
+                <optgroup label="New row">
+                {% for opt in d.strategy_options if opt|lower not in have %}<option value="new:{{ opt }}">{{ d.short_label(opt) }}</option>{% endfor %}
+                </optgroup>
               </select>
             </form>
             {%- endif -%}

@@ -1240,7 +1240,22 @@ def strategy_link(order_id: int, line_item_id: int):
                 ) or None
         else:
             key = (form.get("key") or "").strip()
-            term = next((t for t in terms if str(t.id) == form.get("term")), None)
+            wanted = form.get("term") or ""
+            term = next((t for t in terms if str(t.id) == wanted), None)
+            label = wanted[4:].strip() if wanted.startswith("new:") else ""
+            if key and term is None and label:
+                # Any strategy, not only the sold ones: a row for it, then
+                # the link.
+                term = next((t for t in terms if t.label.lower() == label.lower()), None)
+                if term is None:
+                    term = StrategyTerms(
+                        order_id=order_id, line_item_id=item.id, label=label,
+                        match_key=sheets.match_key(label),
+                        sort_order=max((t.sort_order or 0 for t in terms), default=-1) + 1,
+                        source="linked by hand", added_by_hand=True,
+                    )
+                    db.add(term)
+                    terms.append(term)
             if key and term is not None:
                 for other in terms:
                     if key in keys_of(other):

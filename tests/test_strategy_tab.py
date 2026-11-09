@@ -1270,3 +1270,23 @@ def test_cross_platform_is_not_a_mobile_conquesting_strategy():
     assert views.sold_strategy_names(item) == ["Geo-Fencing", "Retargeting"]
     item.product = "Meta Display & Video Ads"
     assert "Cross Platform" in views.sold_strategy_names(item)
+
+
+def test_an_unsold_line_can_be_linked_to_a_strategy_with_no_row_yet(site):
+    from models import LineItem, StrategyTerms
+
+    import db as db_module
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        item = session.query(LineItem).filter_by(external_id="88001").one()
+        item_id = item.id
+
+    app_module.app.test_client().post(
+        f"/orders/{order_id}/details/{item_id}/link",
+        data={"key": "retargeting", "term": "new:FB - Retargeting"},
+    )
+    with db_module.session_scope() as session:
+        term = session.query(StrategyTerms).filter_by(
+            line_item_id=item_id, label="FB - Retargeting").one()
+        assert term.linked_keys == "retargeting"
