@@ -241,11 +241,11 @@ def test_pacing_uses_the_setup_cpm_not_the_retail_one():
     """
     from orderbook import resolve_goal_cpm
 
-    # Display budgets at its AL Starting Max of $2.00; the retail rate here
+    # Display budgets at its Starting CPM of $1.00; the retail rate here
     # works out to $8.
     cpm, source = resolve_goal_cpm("Display", False, total_budget=8_000,
                                    total_impressions=1_000_000)
-    assert cpm == 2.00
+    assert cpm == 1.00
     assert source == "rate card"
 
 
@@ -294,7 +294,7 @@ def test_a_product_is_priced_whichever_export_names_it():
     assert ratecard.setup_cpm("YouTube Video Ads") == ratecard.setup_cpm("YouTube+")
     assert ratecard.setup_cpm(
         "Mobile Conquesting EVENT or POLITICAL CATEGORY TARGETING Display & Video Ads"
-    ) == 7.00
+    ) == 5.00
 
 
 def test_products_bought_on_spend_have_no_cpm_at_all():
@@ -308,26 +308,17 @@ def test_products_bought_on_spend_have_no_cpm_at_all():
 def test_restricted_categories_take_their_own_higher_rate():
     import ratecard
 
-    assert ratecard.setup_cpm("Display") == 2.00
-    # The restricted rows carry no AL rate of their own, so they still budget
-    # off their own Max - which is the higher number, as intended.
-    assert ratecard.setup_cpm("Display", restricted=True) == 4.00
+    assert ratecard.setup_cpm("Display") == 1.00
+    assert ratecard.setup_cpm("Display", restricted=True) == 2.00
 
 
-def test_budgeting_uses_the_al_starting_max_where_the_card_has_one():
-    """The buying team budgets off AL Starting Max, and the 50% margin target
-    is set against it.
-
-    Max is a ceiling a campaign may reach, not the rate it is planned at.
-    Budgeting on the ceiling reads a campaign as cheaper than it was bought
-    and quietly spends the margin.
-    """
+def test_goal_cpm_is_the_cards_starting_cpm():
+    """Starting CPM is the goal; Max is the ceiling the grid flags."""
     import ratecard
 
-    assert ratecard.setup_cpm("Display") == 2.00      # Max is 2.50
-    assert ratecard.setup_cpm("CTV") == 10.00         # Max is 14.00
-    # No AL rate on the card, so Max still stands.
-    assert ratecard.setup_cpm("Meta") == 7.00
+    assert ratecard.setup_cpm("Display") == 1.00
+    assert ratecard.setup_cpm("CTV") == 9.00
+    assert ratecard.setup_cpm("Meta") == 3.50
 
 
 def test_the_al_rate_hits_the_fifty_percent_margin_target():
@@ -504,24 +495,24 @@ def test_a_merged_cpm_product_prices_each_half_at_its_own_rate():
     lines run at the video rate and the CTV lines at the CTV rate."""
     import ratecard
 
-    assert ratecard.setup_cpm("CTV + Video Ads") == 7.50       # what it sold at
-    assert ratecard.merged_strategy_cpm("CTV + Video Ads", "CTV - Retargeting") == 10.00
-    assert ratecard.merged_strategy_cpm("CTV + Video Ads", "Video - Behavioral") == 5.00
+    assert ratecard.setup_cpm("CTV + Video Ads") == 5.50
+    assert ratecard.merged_strategy_cpm("CTV + Video Ads", "CTV - Retargeting") == 9.00
+    assert ratecard.merged_strategy_cpm("CTV + Video Ads", "Video - Behavioral") == 3.50
 
 
 def test_amazon_video_and_ctv_splits_the_same_way():
     import ratecard
 
     product = "Amazon Premium Video (with Twitch) & OTT Ads"
-    assert ratecard.merged_strategy_cpm(product, "AMZ OTT") == 20.00
-    assert ratecard.merged_strategy_cpm(product, "Amazon Video Retargeting") == 14.00
+    assert ratecard.merged_strategy_cpm(product, "AMZ OTT") == 15.00
+    assert ratecard.merged_strategy_cpm(product, "Amazon Video Retargeting") == 6.00
 
 
 def test_a_name_carrying_both_words_is_the_ctv_half():
     """A CTV line described as video is still bought as CTV."""
     import ratecard
 
-    assert ratecard.merged_strategy_cpm("CTV + Video Ads", "OTT Video") == 10.00
+    assert ratecard.merged_strategy_cpm("CTV + Video Ads", "OTT Video") == 9.00
 
 
 def test_a_strategy_naming_neither_half_keeps_the_lines_own_rate():

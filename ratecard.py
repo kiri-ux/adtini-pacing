@@ -250,28 +250,23 @@ def merged_strategy_cpm(product: str | None, strategy: str | None) -> float | No
 
 
 def _pick(rate: Rate) -> float | None:
-    """AL Starting Max first, then the ceiling, then the middle."""
+    """Starting CPM: what a campaign opens at (kiri, 11/9). Max is the
+    ceiling, flagged in the grid when a line runs over it."""
     return (
-        rate.al_starting_max_cpm
-        or rate.max_cpm
+        rate.starting_cpm
+        or rate.al_starting_max_cpm
         or rate.average_cpm
-        or rate.starting_cpm
+        or rate.max_cpm
     )
 
 
 def setup_cpm(product: str | None, restricted: bool = False, b2b: bool = False) -> float | None:
     """The rate to pace against when nothing more specific is known.
 
-    The card's Max is what the sheet's own CPM column matches - a Display line
-    on the hand-kept sheet reads $2.50, which is Display's Max, not its
-    Starting $1.00. Starting is where a buyer opens; Max is what the campaign
-    ends up set up at.
+    The card's Starting CPM; Max is the ceiling a line should not run over.
     """
     rate = lookup(product, restricted=restricted, b2b=b2b)
     if rate is None:
         return None
-    # AL Starting Max first: it is what the buying team budgets from, and
-    # the margin target of 50% is set against it. Max is the ceiling a
-    # campaign may reach, not the rate it is planned at, and pacing on the
-    # ceiling reads a campaign as cheaper than it was bought.
     return _pick(rate)
+

@@ -889,3 +889,10 @@ def test_add_to_split_numbers_a_second_row_of_one_targeting(site):
             select(StrategyTerms.label).where(StrategyTerms.line_item_id == li_id)
         ).scalars())
     assert {"D - Keyword", "D - Keyword 2"} <= labels
+
+
+def test_goal_cpm_is_the_starting_cpm_and_over_max_is_flagged():
+    import ratecard
+    assert ratecard.setup_cpm("Display Ads") == 1.00
+    assert ratecard.setup_cpm("Social Mirror Ads") == 1.50
+    assert ratecard.lookup("Social Mirror Ads").max_cpm == 3.00

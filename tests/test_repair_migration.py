@@ -88,8 +88,8 @@ def test_the_repair_rebuilds_totals_and_fills_cpms(url):
     rows = _rows(url)
 
     # Six months of the monthly figure, from the flight's own dates.
-    assert rows[1] == (600_000, 2.0, "rate card")
-    assert rows[2] == (300_000, 10.0, "rate card")
+    assert rows[1] == (600_000, 1.0, "rate card")
+    assert rows[2] == (300_000, 9.0, "rate card")
     # A total that was already larger than one month of itself is left alone.
     assert rows[4] == (60_000, 1.5, "rate card")
 
@@ -104,7 +104,7 @@ def test_a_total_with_nothing_to_rebuild_from_is_cleared(url):
     _alembic(url, "head")
     total, cpm, _ = _rows(url)[5]
     assert total is None
-    assert cpm == 2.0, "the CPM needs no dates, so it is still filled"
+    assert cpm == 1.0, "the CPM needs no dates, so it is still filled"
 
 
 def test_running_the_repair_twice_changes_nothing(url):
