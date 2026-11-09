@@ -1624,6 +1624,9 @@ def data_action():
     elif action == "draft-splits":
         with session_scope() as db:
             message = views.draft_missing_splits(db, as_of=_as_of()).summary()
+            extra = views.add_extra_lines(db, as_of=_as_of())
+            if extra:
+                message += f"; {extra} second lines added"
 
     if message:
         flash(message)

@@ -42,6 +42,9 @@ def draft_splits(log: logging.Logger) -> None:
         with session_scope() as session:
             result = views.draft_missing_splits(session)
             log.info("splits: %s", result.summary())
+            extra = views.add_extra_lines(session)
+            log.info("splits: %d second lines added", extra)
+            result.strategies_added += extra
             if result.strategies_added:
                 # Cached pages are keyed on the newest load time; a page
                 # rendered between the load and this would otherwise keep
