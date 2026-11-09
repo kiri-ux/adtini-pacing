@@ -695,3 +695,46 @@ def test_a_matched_row_leads_with_the_dsp_line_and_an_icon(site):
     assert 'class="stricon"' in html
     assert '<span class="feedmain"><span title="Display - Behavioral">' in html
     assert 'class="strsel"' in html
+
+
+def test_rows_on_an_order_with_no_strategies_share_the_goal_by_serve(site):
+    import details
+    import db as db_module
+    from models import LineItem
+
+    app_module, (order_id, li_id) = site
+    with db_module.session_scope() as session:
+        session.get(LineItem, li_id).sold_strategies = None
+    with db_module.session_scope() as session:
+        d = details.details_view(session, order_id, li_id)
+        served = [e for e in d.elements if e.to_date]
+        assert served
+        assert sum(e.monthly for e in served) == pytest.approx(d.row.monthly_target)
+        whole = sum(e.to_date for e in served)
+        for e in served:
+            assert e.total == pytest.approx(d.row.total_target * e.to_date / whole)
+
+
+def test_two_rows_with_the_same_targeting_do_not_both_count_the_serve(site):
+    import details
+    import db as db_module
+    from sqlalchemy import select
+    from models import StrategyTerms
+
+    app_module, (order_id, li_id) = site
+    app_module.app.test_client().post(f"/orders/{order_id}/details/{li_id}/build")
+    with db_module.session_scope() as session:
+        first = session.execute(
+            select(StrategyTerms).where(StrategyTerms.line_item_id == li_id)
+            .order_by(StrategyTerms.sort_order)
+        ).scalars().first()
+        session.add(StrategyTerms(
+            order_id=first.order_id, line_item_id=li_id, label=first.label + " 2",
+            targets=first.targets, match_key=first.match_key,
+            monthly_target=first.monthly_target, total_target=first.total_target,
+            rate=first.rate, sort_order=99,
+        ))
+    with db_module.session_scope() as session:
+        d = details.details_view(session, order_id, li_id)
+        sold = [e for e in d.elements if e.sold]
+        assert sum(e.to_date for e in sold) == pytest.approx(d.row.to_date)

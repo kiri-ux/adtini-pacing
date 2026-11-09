@@ -488,6 +488,14 @@ def details_view(
         [ordered[k] for k in keys_in_order], row.monthly_target or None, money,
         row.monthly_target or None,
     ))) if unsplit else {}
+    # An order that lists no strategies (Meta, PPC) still shows each running
+    # row's share of the goal, by what it has served.
+    if not combined and not (block and block.rows) and not ordered:
+        served = {key: sum(per_day(series, index).values())
+                  for key, _, series, _ in grouped}
+        whole = sum(served.values())
+        if whole:
+            shares = {k: v / whole for k, v in served.items() if v}
 
     def estimate(key: str) -> dict:
         if key not in shares:
@@ -518,7 +526,7 @@ def details_view(
             series = ran.get(key)
             keys = [key] if series is not None else []
         elif term is not None:
-            series, keys = views.claim(term, ran)
+            series, keys = views.claim(term, ran, claimed)
             key = views.term_keys(term)[0]
         else:
             key = srow.label.lower()

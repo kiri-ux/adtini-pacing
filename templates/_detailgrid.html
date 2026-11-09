@@ -157,7 +157,7 @@
                 <ul>{% for t in e.target_list %}<li>{{ t }}</li>{% endfor %}</ul>
                 {%- else -%}<em>No targets</em>{%- endif -%}
               </span></span>
-            {%- if e.cpm_flag %} <span class="cpmflag" tabindex="0" aria-label="{{ e.cpm_flag }}"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M10 5.9c-.4-.6-1.1-.9-2-.9-1.1 0-1.9.6-1.9 1.4 0 1.9 4 1 4 3 0 .8-.8 1.5-2 1.5-.9 0-1.7-.4-2.1-1M8 3.9V5M8 11v1.1"/></svg><span class="tipbox">{{ e.cpm_flag }}</span></span>{% endif -%}
+            {%- if e.cpm_flag %} <span class="cpmflag" tabindex="0" aria-label="{{ e.cpm_flag }}"><svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M8 1.6 15.2 14.2H.8Z" fill="#F5C518" stroke="#C99A00" stroke-width="1" stroke-linejoin="round"/><path d="M8 6v4" stroke="#3A2E00" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="12.1" r=".9" fill="#3A2E00"/></svg><span class="tipbox">{{ e.cpm_flag }}</span></span>{% endif -%}
             {%- if e.sold or e.ordered %}{{ servegap(e) }}{% endif -%}
             </div>
             {%- if e.feed_names and not e.sold %}<div class="feednames">{% for n in e.feed_names %}<div title="{{ n }}">{{ n }}</div>{% endfor %}</div>{% endif -%}
@@ -169,6 +169,7 @@
           <td class="num"><input class="pctin{% if e.pacing_pct|paceclass == 'under' %} under{% endif %}" type="text" inputmode="decimal" data-li="{{ d.item.id }}"
             data-mon="{{ r.monthly_target or '' }}" data-tot="{{ r.total_target or '' }}" data-money="{{ 1 if money else 0 }}"
             data-live="{{ '%.1f'|format(live[e.strategy_id]) if e.strategy_id in live else '' }}"
+            data-todate="{{ e.to_date or 0 }}" data-frac="{{ (e.on_pace / e.total) if (e.on_pace and e.total) else '' }}"
             value="{{ '%.1f'|format(mine / base * 100) if (mine and base) else '' }}"></td>
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-monthly" value="{{ e.monthly|entry(not money) }}"></td>
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-total" value="{{ e.total|entry(not money) }}"></td>
