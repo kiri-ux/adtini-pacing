@@ -236,6 +236,20 @@ class ImportResult:
         return ", ".join(parts)
 
 
+def _given(value) -> bool:
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return False
+    return bool(value)
+
+
+def sold_in_impressions(product: str | None, spend: tuple, impressions: tuple) -> bool:
+    """A spend product (Meta) sold on impressions instead: impression goals
+    and no ad spend. Paced like any impression line."""
+    if "meta" not in (product or "").lower():
+        return False
+    return not any(_given(v) for v in spend) and any(_given(v) for v in impressions)
+
+
 def _keep(item: LineItem, field: str, value) -> None:
     """Set a sold term, unless that would replace a figure with a blank.
 
@@ -435,6 +449,13 @@ def import_orders(session, frame, cache: dict | None = None) -> ImportResult:
 
         product = row.get("product")
         pacing_type = pacing_type_for(product)
+        if pacing_type == PACING_CLICK:
+            cols = spend_columns(product) or ()
+            if sold_in_impressions(
+                product, tuple(row.get(c) for c in cols),
+                (row.get("monthly_impressions"), row.get("total_impressions")),
+            ):
+                pacing_type = PACING_IMPRESSION
 
         order = orders.get(external_order_id)
         if order is None:
@@ -741,6 +762,11 @@ def recompute_terms(session) -> RecomputeResult:
             # spend line reads as impression paced and its cost comes out as
             # impressions times a CPM it does not have, which is zero.
             kind = pacing_type_for(item.product)
+            if kind == PACING_CLICK and sold_in_impressions(
+                item.product, (item.monthly_spend, item.total_spend),
+                (item.monthly_impressions, item.total_impressions),
+            ):
+                kind = PACING_IMPRESSION
             order_kind = item.order.pacing_type if item.order else None
             wanted = kind if kind != order_kind else None
             if wanted != item.pacing_type:
