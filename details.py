@@ -572,7 +572,7 @@ def details_view(
                 targets=term.targets if term else None,
                 ordered=combined or key in ordered,
                 linked=linked,
-                feed_names=sorted(ran[key].names) if key in ran else [],
+                feed_names=sorted(series.names) if series is not None else [],
             )
         )
     for key, label, series, _ in grouped:

@@ -762,3 +762,27 @@ def test_a_split_row_can_be_removed_from_the_grid(site):
             select(StrategyTerms.id).where(StrategyTerms.line_item_id == li_id)
         ).scalars().all()
     assert ids[0] not in left and len(left) == len(ids) - 1
+
+
+def test_a_duplicate_row_shows_as_unmatched(site):
+    import details
+    import db as db_module
+    from sqlalchemy import select
+    from models import StrategyTerms
+
+    app_module, (order_id, li_id) = site
+    app_module.app.test_client().post(f"/orders/{order_id}/details/{li_id}/build")
+    with db_module.session_scope() as session:
+        first = session.execute(
+            select(StrategyTerms).where(StrategyTerms.line_item_id == li_id)
+            .order_by(StrategyTerms.sort_order)
+        ).scalars().first()
+        session.add(StrategyTerms(
+            order_id=first.order_id, line_item_id=li_id, label=first.label + " 2",
+            targets=first.targets, match_key=first.match_key, sort_order=99,
+            monthly_target=1.0, total_target=1.0,
+        ))
+    with db_module.session_scope() as session:
+        d = details.details_view(session, order_id, li_id)
+        dup = [e for e in d.elements if e.label.endswith(" 2")][0]
+        assert dup.feed_names == []
