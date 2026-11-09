@@ -526,7 +526,7 @@ def details_view(
             series = ran.get(key)
             keys = [key] if series is not None else []
         elif term is not None:
-            series, keys = views.claim(term, ran)
+            series, keys = views.claim(term, ran, claimed)
             key = views.term_keys(term)[0]
         else:
             key = srow.label.lower()

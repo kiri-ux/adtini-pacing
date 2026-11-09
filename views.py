@@ -1932,9 +1932,14 @@ def term_keys(term: StrategyTerms) -> list[str]:
     return [own] + [k for k in linked if k != own]
 
 
-def claim(term: StrategyTerms, ran: dict[str, "StrategySeries"]):
-    """(the delivery a row claims merged into one series or None, keys used)."""
-    keys = [k for k in term_keys(term) if k in ran]
+def claim(term: StrategyTerms, ran: dict[str, "StrategySeries"],
+          taken: set[str] | frozenset = frozenset()):
+    """(the delivery a row claims merged into one series or None, keys used).
+
+    Delivery an earlier row already claimed (`taken`) is left out, so two
+    rows with the same targeting don't both count the same serve.
+    """
+    keys = [k for k in term_keys(term) if k in ran and k not in taken]
     if not keys:
         return None, []
     if len(keys) == 1:
@@ -2172,7 +2177,7 @@ def strategy_blocks(session, view: "OrderView") -> list[StrategyBlock]:
         ran = {key: series for key, _, series, _ in grouped}
         claimed: set[str] = set()
         for term in block.terms:
-            series, keys = claim(term, ran)
+            series, keys = claim(term, ran, claimed)
             claimed.update(keys)
             points = [
                 DailyPoint(
