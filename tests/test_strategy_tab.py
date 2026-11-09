@@ -1199,3 +1199,23 @@ def test_an_audience_list_with_no_targeting_word_is_category():
     (key, label, _, _), = views.group_by_targeting(
         "Mobile Conquesting Display & Video Ads", [s])
     assert (key, label) == ("category", "MC - Categories")
+
+
+def test_a_lone_blank_row_takes_its_products_goals(site):
+    from models import LineItem, StrategyTerms
+
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        ppc = session.query(LineItem).filter_by(external_id="88002").one()
+        session.add(StrategyTerms(
+            order_id=order_id, line_item_id=ppc.id, label="PPC - Keyword",
+            match_key="keyword", sort_order=5,
+        ))
+    with db_module.session_scope() as session:
+        assert views.fill_lone_rows(session) == 1
+    with db_module.session_scope() as session:
+        term = session.query(StrategyTerms).filter_by(label="PPC - Keyword").one()
+        assert (term.monthly_target, term.total_target) == (3_000.0, 18_000.0)

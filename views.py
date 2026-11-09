@@ -2420,6 +2420,47 @@ class DraftResult:
 DRAFT_BATCH = 50
 
 
+def fill_lone_rows(session) -> int:
+    """A product with one split row and no goals on it gets the product's.
+
+    A row drafted before the product's goals loaded (a PPC line whose ad
+    spend arrived later) was written blank and stayed blank. One row is the
+    whole product, so its goals are not a guess. Returns rows filled.
+    """
+    counts = (
+        select(StrategyTerms.line_item_id)
+        .where(StrategyTerms.line_item_id.is_not(None))
+        .group_by(StrategyTerms.line_item_id)
+        .having(func.count() == 1)
+    )
+    filled = 0
+    for term in session.execute(
+        select(StrategyTerms).where(
+            StrategyTerms.line_item_id.in_(counts),
+            or_(StrategyTerms.monthly_target.is_(None), StrategyTerms.monthly_target == 0),
+            or_(StrategyTerms.total_target.is_(None), StrategyTerms.total_target == 0),
+        )
+    ).scalars():
+        item = session.get(LineItem, term.line_item_id)
+        if item is None:
+            continue
+        kind = item.pacing_type or (item.order.pacing_type if item.order else None) or "impression"
+        if kind == "impression":
+            monthly, total, rate = item.monthly_impressions, item.total_impressions, item.goal_cpm
+        elif kind == "click":
+            monthly, total, rate = item.monthly_spend, item.total_spend, item.goal_cpc
+        else:
+            monthly, total, rate = item.client_monthly_budget, item.client_total_budget, item.goal_cpe
+        if not (monthly or total):
+            continue
+        term.monthly_target, term.total_target = monthly, total
+        if term.rate is None:
+            term.rate = rate
+        filled += 1
+    session.flush()
+    return filled
+
+
 def add_extra_lines(session, as_of: dt.date | None = None) -> int:
     """Give a second DSP line of a targeting the split already has its own row.
 
