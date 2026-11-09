@@ -588,6 +588,14 @@ PACING_CHOICES = (
 )
 
 
+# The goal boxes on the order page for each pacing type: monthly, total, rate.
+GOAL_FIELDS = {
+    "impression": ("monthly_impressions", "total_impressions", "goal_cpm"),
+    "click": ("monthly_spend", "total_spend", "goal_cpc"),
+    "event": ("client_monthly_budget", "client_total_budget", "goal_cpe"),
+}
+
+
 def _chosen_pacing_type(chosen: str, current: str | None) -> str | None:
     """Map the two choices onto the three the engine works in."""
     if chosen == "impression":
@@ -741,6 +749,10 @@ def order_save(order_id: int):
             item.pacing_type = kind if kind and kind != order.pacing_type else None
             item.start_date = as_date(prefix + "start_date")
             item.end_date = as_date(prefix + "end_date")
+            # Only what the form carries. The goal boxes are named for the
+            # pacing type the page was drawn with, so the fields of every
+            # other type are absent - and setting them from the form blanked
+            # them. Switching a line to Ad spend wiped its sold spend.
             for field_name in (
                 "monthly_impressions", "total_impressions", "goal_cpm",
                 "monthly_spend", "total_spend", "goal_cpc",
@@ -748,7 +760,19 @@ def order_save(order_id: int):
                 "google_monthly_spend", "google_total_spend", "goal_cpe",
                 "monthly_events", "total_events",
             ):
-                setattr(item, field_name, as_float(prefix + field_name))
+                if prefix + field_name in form:
+                    setattr(item, field_name, as_float(prefix + field_name))
+            # Switched type in the same save: what was typed in the goal boxes
+            # is the new type's goal. A blank box leaves the stored goal alone.
+            wanted = GOAL_FIELDS.get(kind or order.pacing_type or "impression")
+            drawn = next(
+                (f for f in GOAL_FIELDS.values() if prefix + f[0] in form), None
+            )
+            if wanted and drawn and drawn != wanted:
+                for src, dst in zip(drawn[:2], wanted[:2]):
+                    value = as_float(prefix + src)
+                    if value is not None:
+                        setattr(item, dst, value)
             item.terms_locked = True
 
     flash("Saved.")

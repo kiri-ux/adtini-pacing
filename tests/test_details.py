@@ -826,3 +826,32 @@ def test_ad_spend_rows_show_their_budgets(site):
         for e in d.elements:
             if e.total:
                 assert e.media_budget == e.total
+
+
+def test_switching_a_line_to_ad_spend_keeps_and_moves_its_goal(site):
+    import db as db_module
+    from models import LineItem
+
+    app_module, (order_id, li_id) = site
+    with db_module.session_scope() as session:
+        item = session.get(LineItem, li_id)
+        item.monthly_spend, item.total_spend = 5000.0, 45000.0
+    client = app_module.app.test_client()
+    p = f"li-{li_id}-"
+    # Drawn as impressions with blank boxes, switched to Ad spend.
+    client.post(f"/orders/{order_id}/save", data={
+        p + "name": "Meta", p + "pacing_type": "click",
+        p + "monthly_impressions": "", p + "total_impressions": "", p + "goal_cpm": "",
+    })
+    with db_module.session_scope() as session:
+        item = session.get(LineItem, li_id)
+        assert (item.monthly_spend, item.total_spend) == (5000.0, 45000.0)
+    # Typed into the impression boxes while switching: lands on spend.
+    client.post(f"/orders/{order_id}/save", data={
+        p + "name": "Meta", p + "pacing_type": "click",
+        p + "monthly_impressions": "6,000", p + "total_impressions": "54,000",
+    })
+    with db_module.session_scope() as session:
+        item = session.get(LineItem, li_id)
+        assert (item.monthly_spend, item.total_spend) == (6000.0, 54000.0)
+        assert item.pacing_type == "click"
