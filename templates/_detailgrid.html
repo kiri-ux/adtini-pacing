@@ -76,7 +76,7 @@
 {% macro section(d, dates, pacecell, linked) -%}
 {% set r = d.row %}
 {% set money = d.is_money %}
-{% set n = (d.elements|length or 1) + 4 + ((1 + d.elements|length) if money else 0) %}
+{% set n = (d.elements|length or 1) + 4 %}
 {% set p = d.product_pill %}
 {% macro prodcell() -%}
   <th class="pin0 prodcell" rowspan="{{ d.elements|length or 1 }}">
