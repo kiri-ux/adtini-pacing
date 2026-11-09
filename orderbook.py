@@ -44,7 +44,10 @@ log = logging.getLogger(__name__)
 # spelling meant every one of these imported from an orders file was paced
 # on impressions - which a Pay-Per-Click line does not have and was never
 # sold any - so its sold spend was never even read.
-CLICK_PRODUCTS = {"ppc", "linkedin", "payperclickads", "linkedinads"}
+CLICK_PRODUCTS = {
+    "ppc", "linkedin", "payperclickads", "linkedinads",
+    "metadisplayvideoads", "metaleaddisplayvideoads",
+}
 EVENT_PRODUCTS = {"pmax", "performancemax", "performancemaxads"}
 
 CLICK_SOURCES = {"Google Ads Search", "LinkedIn Targeting"}
@@ -516,7 +519,10 @@ def import_orders(session, frame, cache: dict | None = None) -> ImportResult:
         if row.get("sold_strategies"):
             item.sold_strategies = row.get("sold_strategies")
         # A product that paces differently from its order says so on itself.
-        item.pacing_type = pacing_type if pacing_type != order.pacing_type else None
+        # Not on a line edited by hand: the buyer's choice of what it paces
+        # on stays, like the rest of its terms.
+        if not item.terms_locked:
+            item.pacing_type = pacing_type if pacing_type != order.pacing_type else None
         if item.terms_locked:
             result.locked_skipped += 1
         else:

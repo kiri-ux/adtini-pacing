@@ -937,11 +937,12 @@ def test_both_exports_spell_the_same_product_differently():
     """
     from orderbook import pacing_type_for
 
-    for name in ("PPC", "Pay-Per-Click Ads", "LinkedIn", "Linkedin Ads"):
+    for name in ("PPC", "Pay-Per-Click Ads", "LinkedIn", "Linkedin Ads",
+                 "Meta Display & Video Ads"):
         assert pacing_type_for(name) == "click", name
     for name in ("PMax", "Performance Max Ads"):
         assert pacing_type_for(name) == "event", name
-    for name in ("Display Ads", "Connected TV Ads", "Meta Display & Video Ads"):
+    for name in ("Display Ads", "Connected TV Ads"):
         assert pacing_type_for(name) == "impression", name
 
 
@@ -1168,3 +1169,16 @@ def test_cached_pages_say_how_they_were_served(tmp_path, monkeypatch):
 
     response = app_module._timed(app_module.Response("x"), "miss", 1.234)
     assert response.headers["Server-Timing"] == 'page;desc="miss";dur=1234'
+
+
+def test_a_locked_line_keeps_what_it_paces_on():
+    """A buyer switched a line to ad spend; the next import flipped it back."""
+    from sqlalchemy.orm import object_session
+
+    from orderbook import import_orders
+
+    item = _import()
+    item.pacing_type = "click"
+    item.terms_locked = True
+    import_orders(object_session(item), normalize(csv(mcsv(mline()))))
+    assert item.pacing_type == "click"
