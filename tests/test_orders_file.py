@@ -1196,3 +1196,20 @@ def test_an_seo_line_does_not_set_the_orders_buyer():
         .replace("N A (n@x.com)", "Matt O (m@x.com)")
     item = _import(mcsv(seo))
     assert item.order.buyer == "N A"
+
+
+def test_meta_sold_in_impressions_paces_on_impressions():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from models import Base, LineItem
+    from orderbook import import_orders
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    session = Session(engine)
+    import_orders(session, normalize(csv(mcsv(
+        mline().replace("Connected TV Ads", "Meta Display & Video Ads")))))
+    item = next(o for o in session.identity_map.values() if isinstance(o, LineItem))
+    assert (item.pacing_type or item.order.pacing_type) == "impression"
+    assert item.monthly_impressions == 100_000
