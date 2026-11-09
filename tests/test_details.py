@@ -855,3 +855,20 @@ def test_switching_a_line_to_ad_spend_keeps_and_moves_its_goal(site):
         item = session.get(LineItem, li_id)
         assert (item.monthly_spend, item.total_spend) == (6000.0, 54000.0)
         assert item.pacing_type == "click"
+
+
+def test_a_bare_targeting_name_next_to_a_named_one_drafts_one_row():
+    import details
+    from models import LineItem
+
+    item = LineItem(
+        name="Display", product="Display Ads",
+        monthly_impressions=100_000.0, total_impressions=300_000.0, goal_cpm=7.0,
+        sold_strategies="Behavioral, Behavioral - Home Improvement, Retargeting",
+    )
+    labels = [p.label for p in details.plan_split(item, money=False)]
+    assert len(labels) == 2
+    assert sum("Behavioral" in label for label in labels) == 1
+
+    item.sold_strategies = "Keyword - Roofing, Keyword - Siding"
+    assert len(details.plan_split(item, money=False)) == 2

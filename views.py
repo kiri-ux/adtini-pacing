@@ -1014,7 +1014,13 @@ def overview(
             )
             for li in line_items
         ]
+        # The products still running, as the order page's header does: an
+        # ended product's goal kept the monthly goal high with nothing to
+        # serve against it. All of them once none is running.
         total = total_row(rows, order.pacing_type)
+        open_total = total_row([r for r in rows if r.is_open], order.pacing_type)
+        if open_total.total_target:
+            total = open_total
 
         # One pill per product, summing the line items that share it.
         chips: dict[str, ProductChip] = {}
@@ -1939,7 +1945,22 @@ def claim(term: StrategyTerms, ran: dict[str, "StrategySeries"],
     Delivery an earlier row already claimed (`taken`) is left out, so two
     rows with the same targeting don't both count the same serve.
     """
-    keys = [k for k in term_keys(term) if k in ran and k not in taken]
+    own, *linked = term_keys(term)
+    keys = []
+    # Its targeting's first DSP line still free: "keyword", else "keyword#2".
+    n = 1
+    while True:
+        k = own if n == 1 else f"{own}#{n}"
+        if k not in ran:
+            if n > 1:
+                break
+        elif k not in taken:
+            keys.append(k)
+            break
+        n += 1
+        if n > 50:
+            break
+    keys += [k for k in linked if k in ran and k not in taken and k not in keys]
     if not keys:
         return None, []
     if len(keys) == 1:
@@ -1988,11 +2009,23 @@ def group_by_targeting(
     merged: dict[str, StrategySeries] = {}
     raw: dict[str, list[str]] = defaultdict(list)
     combined = combined_strategy(product)
+    # Two DSP lines with the same targeting (a Keyword line per market) are
+    # two rows, not one: the first keeps the targeting's key, the next get
+    # "<key>#2", "#3". The same line reported under more than one id still
+    # merges, by its name.
+    named: dict[tuple[str, str], str] = {}
+    per_base: dict[str, int] = defaultdict(int)
     for series in running:
-        key = (
+        base = (
             COMBINED_KEY if combined
             else sheets.match_key(series.label) or series.label.lower()
         )
+        name = "" if combined else series.label.strip().lower()
+        key = named.get((base, name))
+        if key is None:
+            per_base[base] += 1
+            key = base if per_base[base] == 1 else f"{base}#{per_base[base]}"
+            named[(base, name)] = key
         raw[key].append(series.label)
         existing = merged.get(key)
         if existing is None:
@@ -2026,7 +2059,7 @@ def group_by_targeting(
         existing.conversions += series.conversions
 
     return [
-        (key, strategy_label(product, key, series.label), series,
+        (key, strategy_label(product, key.split("#")[0], series.label), series,
          sorted(set(raw[key])))
         for key, series in merged.items()
     ]
@@ -2459,8 +2492,11 @@ def _draft_item(
 
     added = 0
     for label, entry in sorted(grouped, key=lambda pair: -pair[1].total):
-        if label in taken:
-            continue
+        # A second line with the same targeting gets its own row.
+        base, n = label, 1
+        while label in taken:
+            n += 1
+            label = f"{base} {n}"
         share = entry.total / total_run
         session.add(
             StrategyTerms(
