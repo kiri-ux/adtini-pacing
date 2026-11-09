@@ -20,7 +20,7 @@
         <th class="pin0"></th><th class="pin"></th><th colspan="12" class="sep"></th>
         {% for day in dates %}<th class="dayadd"><button type="button" class="dayplus" data-day="{{ day.isoformat() }}" data-label="{{ day.strftime('%-d %b %Y') }}" title="Add a check or note for {{ day.strftime('%-d %b') }}">+</button></th>{% endfor %}
       </tr><tr>
-        <th class="pin0">Product</th><th class="pin">Campaign Elements</th>
+        <th class="pin0">Product</th><th class="pin colsize">Campaign Elements<span class="colgrip" title="Drag to resize"></span></th>
         <th class="num">%</th>
         {% if mixed %}
         <th class="num">Mon. Goal</th><th class="num">Tot. Goal</th><th class="num">CPM/CPC</th>
