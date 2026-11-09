@@ -357,8 +357,8 @@
               <span class="mtd">{{ c.month_impressions|num if c.month_impressions else c.month_cost|money }}</span>
               <span class="life">{{ c.impressions|num if c.impressions else c.cost|money }}</span>
             </td>
-            <td class="muted nowrap">{{ c.first_date.strftime('%b %-d') if c.first_date else '—' }}
-              – {{ c.last_date.strftime('%b %-d') if c.last_date else '—' }}<span class="datematch">Dates match</span></td>
+            <td class="muted nowrap">{{ c.first_date.strftime('%-m/%-d/%y') if c.first_date else '—' }}
+              – {{ c.last_date.strftime('%-m/%-d/%y') if c.last_date else '—' }}<span class="datematch">Dates match</span></td>
             <td class="muted">
               {%- if c.taken_by -%}
                 <span class="takenby" data-li="{{ c.taken_by }}">{{

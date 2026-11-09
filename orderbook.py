@@ -467,8 +467,9 @@ def import_orders(session, frame, cache: dict | None = None) -> ImportResult:
             order.status = order_status
             order.active = not never_ran(order_status)
         # The campaign manager moves when an account changes hands; the
-        # latest file says who has it now.
-        if row.get("buyer"):
+        # latest file says who has it now. Only from a paced product: an SEO
+        # line on the same order is often someone else's.
+        if row.get("buyer") and (products.is_paced(row.get("product")) or not order.buyer):
             order.buyer = row.get("buyer")
 
         if not order.terms_locked:
