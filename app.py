@@ -12,6 +12,7 @@ import io
 import logging
 import math
 import os
+import threading
 import tempfile
 import time
 from pathlib import Path
@@ -1308,6 +1309,10 @@ def details_check_delete(order_id: int, line_item_id: int, check_id: int):
 # --------------------------------------------------------------------------
 # Campaign linking
 # --------------------------------------------------------------------------
+# One link save at a time: a double click sent two, and both inserted.
+_link_lock = threading.Lock()
+
+
 @app.route("/orders/<int:order_id>/link", methods=["POST"])
 @login_required
 def campaign_link(order_id: int):
@@ -1329,7 +1334,7 @@ def campaign_link(order_id: int):
     verified = request.form.get("ops_verified") == "on"
     who = (request.form.get("linked_by") or "").strip() or None
 
-    with session_scope() as db:
+    with _link_lock, session_scope() as db:
         item = db.get(LineItem, line_item_id) if line_item_id else None
         if item is None or item.order_id != order_id:
             abort(404)
