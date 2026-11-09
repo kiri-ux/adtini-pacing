@@ -130,6 +130,9 @@
               {% if not picked %}<option value="{{ e.label }}" selected>{{ d.short_label(e.label) }}</option>{% endif %}
               {% for opt in opts %}<option value="{{ opt }}"{% if opt == picked %} selected{% endif %}>{{ d.short_label(opt) }}</option>{% endfor %}
             </select>
+            <button type="submit" form="splitform" class="strdel" title="Remove row" aria-label="Remove row"
+              formaction="{{ url_for('strategy_delete', order_id=d.order.id, strategy_id=e.strategy_id) }}"
+              onclick="return confirm('Remove this row?')">&times;</button>
             {%- else -%}
             <span class="stratname">{{ d.short_label(e.label) }}
               {%- if not e.ordered %} <span class="setupflag">not sold</span>{% endif -%}

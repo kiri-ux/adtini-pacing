@@ -738,3 +738,27 @@ def test_two_rows_with_the_same_targeting_do_not_both_count_the_serve(site):
         d = details.details_view(session, order_id, li_id)
         sold = [e for e in d.elements if e.sold]
         assert sum(e.to_date for e in sold) == pytest.approx(d.row.to_date)
+
+
+def test_a_split_row_can_be_removed_from_the_grid(site):
+    import db as db_module
+    from sqlalchemy import select
+    from models import StrategyTerms
+
+    app_module, (order_id, li_id) = site
+    client = app_module.app.test_client()
+    client.post(f"/orders/{order_id}/details/{li_id}/build")
+    html = client.get(f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
+    assert 'class="strdel"' in html
+    with db_module.session_scope() as session:
+        ids = session.execute(
+            select(StrategyTerms.id).where(StrategyTerms.line_item_id == li_id)
+        ).scalars().all()
+    resp = client.post(f"/orders/{order_id}/strategies/{ids[0]}/delete",
+                       data={"back_li": li_id})
+    assert resp.status_code == 302 and f"/details/{li_id}" in resp.headers["Location"]
+    with db_module.session_scope() as session:
+        left = session.execute(
+            select(StrategyTerms.id).where(StrategyTerms.line_item_id == li_id)
+        ).scalars().all()
+    assert ids[0] not in left and len(left) == len(ids) - 1
