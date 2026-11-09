@@ -158,6 +158,8 @@ class GridRow:
     media_spent: float | None = None
     media_budget: float | None = None
     cpm_flag: str | None = None
+    # Running over the rate card's Max CPM.
+    cpm_over: str | None = None
     # The order lists this targeting for the product.
     ordered: bool = False
     # Running and on no row: the delivery group it is, for linking by hand.
@@ -518,6 +520,14 @@ def details_view(
             media_budget=total if money else media_budget(0.0, total, 0.0, rate),
         )
 
+    card = None if money else ratecard.lookup(item.product, restricted=bool(item.restricted))
+    ceiling = card.max_cpm if card else None
+
+    def over_max(run: float | None) -> str | None:
+        if run and ceiling and run > ceiling:
+            return f"Over max CPM: ${run:.2f} vs ${ceiling:.2f}"
+        return None
+
     elements: list[GridRow] = []
     claimed: set[str] = set()
     split_keys: set[str] = set()
@@ -574,6 +584,7 @@ def details_view(
                     spent, srow.total_target, srow.to_date, rate),
                 cpm_flag=None if money else cpm_flag(
                     row_run_cpm, rate, srow.to_date, srow.on_pace),
+                cpm_over=over_max(row_run_cpm),
                 strategy_id=srow.strategy_id,
                 targets=term.targets if term else None,
                 ordered=combined or key in ordered,
@@ -588,6 +599,7 @@ def details_view(
             key.split("#")[0] in split_keys or key.split("#")[0] in ordered
         )
         by_date = per_day(series, index)
+        feed_cpm = None if money else run_cpm(_series_points(series), as_of)
         est = estimate(key)
         if est.get("total"):
             est["remaining"] = max(est["total"] - sum(by_date.values()), 0.0)
@@ -600,7 +612,8 @@ def details_view(
                 clicks_by_date=per_day(series, 1),
                 impressions=sum(per_day(series, 0).values()),
                 clicks=sum(per_day(series, 1).values()),
-                run_cpm=None if money else run_cpm(_series_points(series), as_of),
+                run_cpm=feed_cpm,
+                cpm_over=over_max(feed_cpm),
                 media_spent=(sum(by_date.values()) or None) if money else None,
                 ordered=combined or key in ordered or extra,
                 feed_key=key,
