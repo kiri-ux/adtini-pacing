@@ -1290,3 +1290,25 @@ def test_an_unsold_line_can_be_linked_to_a_strategy_with_no_row_yet(site):
         term = session.query(StrategyTerms).filter_by(
             line_item_id=item_id, label="FB - Retargeting").one()
         assert term.linked_keys == "retargeting"
+
+
+def test_the_same_strategy_on_two_dsps_is_two_lines():
+    """An AdLib campaign and a StackAdapt test, both named the same: two
+    lines to compare, not one total."""
+    import views
+
+    def s(source, campaign, first):
+        return views.StrategySeries(
+            line_item_id=1, label="SM - Behavioral", product="Social Mirror Ads",
+            by_date={dt.date(2026, 10, first): 10.0}, total=10.0,
+            names={"Forrest - Behavioral Social Mirror"},
+            campaigns={(source, campaign)},
+        )
+
+    grouped = views.group_by_targeting(
+        "Social Mirror Ads", [s("StackAdapt", "506515", 13), s("Adlib Database", "246", 1)])
+    keys = {key: series.campaigns for key, _, series, _ in grouped}
+    assert keys == {
+        "behavioral": {("Adlib Database", "246")},
+        "behavioral#2": {("StackAdapt", "506515")},
+    }
