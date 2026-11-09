@@ -401,6 +401,11 @@ class DetailsView:
         return [d for d in self.dates if d.replace(day=1) == month]
 
 
+def _source_label(source: str) -> str:
+    """The DSP's short name: "Adlib Database" reads as AdLib."""
+    return "AdLib" if source.lower().startswith("adlib") else source
+
+
 def details_view(
     session, order_id: int, line_item_id: int, as_of: dt.date | None = None
 ) -> DetailsView | None:
@@ -422,6 +427,16 @@ def details_view(
         None,
     )
     grouped = views.group_by_targeting(item.product, view.strategies.get(item.id, []))
+    # Where a product runs on more than one DSP, each name says which.
+    sources = {a for _, _, s, _ in grouped for a, _ in s.campaigns if a}
+
+    def names_of(series) -> list[str]:
+        if series is None:
+            return []
+        if len(sources) < 2:
+            return sorted(series.names)
+        where = ", ".join(sorted({_source_label(a) for a, _ in series.campaigns if a}))
+        return [f"{n} · {where}" if where else n for n in sorted(series.names)]
     ran = {key: series for key, _, series, _ in grouped}
     labels = {key: label for key, label, _, _ in grouped}
 
@@ -589,7 +604,7 @@ def details_view(
                 targets=term.targets if term else None,
                 ordered=combined or key in ordered,
                 linked=linked,
-                feed_names=sorted(series.names) if series is not None else [],
+                feed_names=names_of(series),
             )
         )
     for key, label, series, _ in grouped:
@@ -617,7 +632,7 @@ def details_view(
                 media_spent=(sum(by_date.values()) or None) if money else None,
                 ordered=combined or key in ordered or extra,
                 feed_key=key,
-                feed_names=sorted(series.names),
+                feed_names=names_of(series),
                 addable=extra,
             )
         )

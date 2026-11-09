@@ -333,6 +333,10 @@ class StrategySeries:
     metrics_by_date: dict[dt.date, list[float]] = field(default_factory=dict)
     # The DSP's own strategy line names behind it, as the feed has them.
     names: set[str] = field(default_factory=set)
+    # The DSP campaigns (data source, campaign id) it ran under. Each one is
+    # its own line: an AdLib campaign and a StackAdapt test of the same
+    # strategy are two things to compare, not one total.
+    campaigns: set[tuple[str, str]] = field(default_factory=set)
 
     @property
     def ctr(self) -> float | None:
@@ -377,8 +381,8 @@ def strategy_series(
         )
     )
 
-    collected: dict[tuple[int, str, str], StrategySeries] = {}
-    seen_ids: dict[tuple[int, str, str], set[str]] = defaultdict(set)
+    collected: dict[tuple, StrategySeries] = {}
+    seen_ids: dict[tuple, set[str]] = defaultdict(set)
     for (
         order_id, li_id, source, campaign, strategy_id, strategy_name,
         strategy_type, product, date,
@@ -400,7 +404,7 @@ def strategy_series(
         label = line_item_label(product, strategy_type, strategy_name, client)
         # The same targeting under two names is two lines (a Keyword line per
         # market); the same name re-flighted under new ids is one.
-        key = (target, label, (strategy_name or "").strip().lower())
+        key = (target, label, (strategy_name or "").strip().lower(), source, campaign)
         seen_ids[key].add(strategy_id)
 
         series = collected.get(key)
@@ -411,6 +415,7 @@ def strategy_series(
             collected[key] = series
         if strategy_name and strategy_name.strip():
             series.names.add(strategy_name.strip())
+        series.campaigns.add((source or "", campaign or ""))
         amount = metrics[metric]
         series.by_date[date] = series.by_date.get(date, 0.0) + amount
         series.total += amount
@@ -2085,6 +2090,7 @@ def _merge(parts: list["StrategySeries"]) -> "StrategySeries":
         out.cost += series.cost
         out.conversions += series.conversions
         out.names |= series.names
+        out.campaigns |= series.campaigns
     return out
 
 
@@ -2124,10 +2130,14 @@ def group_by_targeting(
         return key or series.label.lower()
 
     def name_of(series) -> str:
-        return "" if combined else (
+        if combined:
+            return ""
+        name = (
             "|".join(sorted(n.lower() for n in series.names))
             or series.label.strip().lower()
         )
+        where = "|".join(sorted(f"{a}:{b}" for a, b in series.campaigns))
+        return f"{name}@{where}" if where else name
 
     # Numbered by which line started first, then by name, so a line keeps
     # its number (and the split row that claims it) when another overtakes it.
@@ -2167,9 +2177,11 @@ def group_by_targeting(
                     date: list(values) for date, values in series.metrics_by_date.items()
                 },
                 names=set(series.names),
+                campaigns=set(series.campaigns),
             )
             continue
         existing.names |= series.names
+        existing.campaigns |= series.campaigns
         for date, value in series.by_date.items():
             existing.by_date[date] = existing.by_date.get(date, 0.0) + value
         for date, values in series.metrics_by_date.items():
