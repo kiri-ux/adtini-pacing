@@ -128,7 +128,7 @@
       <tr><th>Campaign Elements:</th><th class="idhead">Item ID</th>
         <th class="pacehead">Paces on</th>
         <th class="num">Serve</th><th class="num">Tot. Serve</th>
-        <th class="num">Day Serve</th><th class="num cpmhead">CPM</th>
+        <th class="num">Day Serve</th><th class="num cpmhead">CPM/CPC</th>
         <th class="num">Day Budg.</th><th class="num">Tot Budg.</th>
         <th class="num">TD Serve</th><th class="num">Serve Left</th>
         <th class="num">On Pace</th><th class="num">Pacing</th><th></th></tr>
@@ -155,7 +155,7 @@
         <td class="num"><input type="text" name="li-{{ li }}-{{ goal[0] }}" value="{{ r.monthly_target|entry }}"></td>
         <td class="num"><input type="text" name="li-{{ li }}-{{ goal[1] }}" value="{{ r.total_target|entry }}"></td>
         <td class="num ro">{{ r.daily_target|metric(r) }}</td>
-        <td class="num cpmcell"><input type="text" name="li-{{ li }}-{{ goal[2] }}" value="{{ r.unit_cost|entry }}"></td>
+        <td class="num cpmcell"><input type="text" name="li-{{ li }}-{{ goal[2] }}" value="{{ r.unit_cost|entry }}"{% if r.pacing_type != 'impression' %} placeholder="CPC"{% endif %}></td>
         <td class="num ro">{{ r.daily_budget|money }}</td>
         <td class="num ro">{{ r.total_budget|money }}</td>
         <td class="num ro">{{ r.to_date|metric(r) }}</td>

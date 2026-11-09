@@ -695,3 +695,21 @@ def test_a_matched_row_leads_with_the_dsp_line_and_an_icon(site):
     assert 'class="stricon"' in html
     assert '<span class="feedmain"><span title="Display - Behavioral">' in html
     assert 'class="strsel"' in html
+
+
+def test_rows_on_an_order_with_no_strategies_share_the_goal_by_serve(site):
+    import details
+    import db as db_module
+    from models import LineItem
+
+    app_module, (order_id, li_id) = site
+    with db_module.session_scope() as session:
+        session.get(LineItem, li_id).sold_strategies = None
+    with db_module.session_scope() as session:
+        d = details.details_view(session, order_id, li_id)
+        served = [e for e in d.elements if e.to_date]
+        assert served
+        assert sum(e.monthly for e in served) == pytest.approx(d.row.monthly_target)
+        whole = sum(e.to_date for e in served)
+        for e in served:
+            assert e.total == pytest.approx(d.row.total_target * e.to_date / whole)
