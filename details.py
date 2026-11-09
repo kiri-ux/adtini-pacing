@@ -228,6 +228,11 @@ class DetailsView:
     # What the product needs to serve tomorrow to land its goal; the Day
     # Budg. column on the Total row.
     day_budget: float | None = None
+    # The performance row: CTR with its clicks under it, or for a product
+    # the platform runs as one campaign (Performance Max), its events.
+    impressions_by_date: dict[dt.date, float] = field(default_factory=dict)
+    events_by_date: dict[dt.date, float] = field(default_factory=dict)
+    by_events: bool = False
     # The whole product's running CPM, same window as GridRow.run_cpm.
     run_cpm: float | None = None
     media_spent: float | None = None
@@ -659,11 +664,15 @@ def details_view(
     product_spent = sum(p.cost for p in row.daily if in_flight(p.date))
     total_by_date: dict[dt.date, float] = {}
     clicks_by_date: dict[dt.date, float] = {}
+    impressions_by_date: dict[dt.date, float] = {}
+    events_by_date: dict[dt.date, float] = {}
     attr = "cost" if money else "impressions"
     for point in row.daily:
         if in_flight(point.date):
             total_by_date[point.date] = getattr(point, attr)
             clicks_by_date[point.date] = point.clicks
+            impressions_by_date[point.date] = point.impressions
+            events_by_date[point.date] = point.conversions
 
     td_actual: dict[dt.date, float] = {}
     td_target: dict[dt.date, float] = {}
@@ -766,6 +775,9 @@ def details_view(
         elements=elements,
         total_by_date=total_by_date,
         clicks_by_date=clicks_by_date,
+        impressions_by_date=impressions_by_date,
+        events_by_date=events_by_date,
+        by_events=combined,
         td_actual=td_actual,
         td_target=td_target,
         month_actual=month_actual,

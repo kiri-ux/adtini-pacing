@@ -1014,3 +1014,4 @@ table.detailgrid th.pin .stratcell .linkform select{flex:none;width:auto;min-wid
   background-position:right 6px center}
 table.detailgrid tr.unsoldrow th.pin .feednames{margin-top:2px}
 table.daily.pinned.detailgrid tr.noterow th.pin0{border-top-color:transparent}
+table.detailgrid td.perftot{text-align:right;font-weight:600;font-size:12px}
