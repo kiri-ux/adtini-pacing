@@ -49,6 +49,11 @@ def test_strategies_fall_back_to_the_plain_text():
     assert rz_orders.sold_strategies({"display_strategies": []}) is None
 
 
+def test_meta_strategy_is_read():
+    item = {"meta_strategy": [["1", "Category Targeting"], ["2", "Website Retargeting"]]}
+    assert rz_orders.sold_strategies(item) == "Category Targeting, Website Retargeting"
+
+
 def test_ad_spend_fields_are_read_when_present():
     order = {
         "id": "1", "client_id": ["9", "Acme"], "lineItems": [{

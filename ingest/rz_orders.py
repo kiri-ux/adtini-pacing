@@ -255,9 +255,11 @@ def buyer(value) -> str | None:
 
 def sold_strategies(item: dict) -> str | None:
     """The strategies sold on a line: the product's `<prefix>_strategies`
-    answer, else the plain `strategies` text."""
+    (or `<prefix>_strategy`, as Meta has it) answer, else the plain
+    `strategies` text."""
     for key, value in item.items():
-        if key.endswith("_strategies") and isinstance(value, list) and value:
+        if (key.endswith("_strategies") or key.endswith("_strategy")) \
+                and isinstance(value, list) and value:
             names = label(value)
             if names:
                 return names
