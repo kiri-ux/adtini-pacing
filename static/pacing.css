@@ -977,3 +977,8 @@ table.detailgrid th.pin .stratcell select.strsel{display:none}
 table.detailgrid th.pin .stratcell.editing select.strsel{display:block;flex-basis:100%;order:4}
 table.detailgrid th.pin .stratcell.matched:not(.editing){flex-wrap:nowrap}
 .stratcell.matched .feedmain span{max-width:none}
+.cpmflag{position:relative;flex:0 0 auto;display:inline-flex;color:#B26A00;cursor:help}
+.cpmflag .tipbox{display:none;position:absolute;left:20px;top:-4px;z-index:20;white-space:nowrap;
+  background:#fff;color:#8A5300;border:1px solid #F1D9A6;border-radius:8px;padding:5px 9px;
+  font-size:11.5px;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.12)}
+.cpmflag:hover .tipbox,.cpmflag:focus .tipbox{display:block}

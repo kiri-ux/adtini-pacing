@@ -151,13 +151,13 @@
               <span class="linkchip">+ {{ d.short_label(l) }} <button type="submit" title="Unlink">&times;</button></span>
             </form>
             {%- endfor -%}
-            {%- if e.cpm_flag %} <span class="setupflag">{{ e.cpm_flag }}</span>{% endif -%}
             <span class="targettip{% if e.target_list %} has{% endif %}" tabindex="0">i
               <span class="tipbox"><b>{{ d.short_label(d.selected_option(e.label) or e.label) }}</b>
                 {%- if e.target_list -%}
                 <ul>{% for t in e.target_list %}<li>{{ t }}</li>{% endfor %}</ul>
                 {%- else -%}<em>No targets</em>{%- endif -%}
               </span></span>
+            {%- if e.cpm_flag %} <span class="cpmflag" tabindex="0" aria-label="{{ e.cpm_flag }}"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M10 5.9c-.4-.6-1.1-.9-2-.9-1.1 0-1.9.6-1.9 1.4 0 1.9 4 1 4 3 0 .8-.8 1.5-2 1.5-.9 0-1.7-.4-2.1-1M8 3.9V5M8 11v1.1"/></svg><span class="tipbox">{{ e.cpm_flag }}</span></span>{% endif -%}
             {%- if e.sold or e.ordered %}{{ servegap(e) }}{% endif -%}
             </div>
             {%- if e.feed_names and not e.sold %}<div class="feednames">{% for n in e.feed_names %}<div title="{{ n }}">{{ n }}</div>{% endfor %}</div>{% endif -%}
