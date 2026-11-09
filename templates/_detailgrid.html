@@ -176,16 +176,16 @@
             value="{{ '%.1f'|format(mine / base * 100) if (mine and base) else '' }}"></td>
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-monthly" value="{{ e.monthly|entry(not money) }}"></td>
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-total" value="{{ e.total|entry(not money) }}"></td>
-          <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-rate" value="{{ e.rate|entry }}"></td>
+          <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-rate" value="{{ e.rate|entry }}">{% if money %}<div class="clicksub" title="CPC">{{ (e.to_date / e.clicks)|money if e.clicks else '—' }} CPC</div>{% endif %}</td>
           {% elif e.ordered and (e.monthly or e.total) %}
           {% set base = r.monthly_target or r.total_target %}
           {% set mine = e.monthly if r.monthly_target else e.total %}
           <td class="num">{{ '%.1f'|format(mine / base * 100) if (mine and base) else '—' }}</td>
           <td class="num">{{ val(d, e.monthly) }}</td>
           <td class="num">{{ val(d, e.total) }}</td>
-          <td class="num">{{ e.rate|money if e.rate else '—' }}</td>
+          <td class="num">{{ e.rate|money if e.rate else '—' }}{% if money %}<div class="clicksub" title="CPC">{{ (e.to_date / e.clicks)|money if e.clicks else '—' }} CPC</div>{% endif %}</td>
           {% else %}
-          <td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">&mdash;</td>
+          <td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">&mdash;{% if money %}<div class="clicksub" title="CPC">{{ (e.to_date / e.clicks)|money if e.clicks else '—' }} CPC</div>{% endif %}</td>
           {% endif %}
           {{ runcpm(d, e.run_cpm) }}
           <td class="num" title="Total budget {{ e.total_budget|money if e.total_budget is not none else '—' }}">{{ e.daily_budget|money if e.daily_budget is not none else '—' }}</td>
@@ -193,13 +193,14 @@
           <td class="num">{{ mb|money if mb else '—' }}</td>
           <td class="num">{{ e.media_spent|money if e.media_spent else '—' }}</td>
           <td class="num">{{ e.media_budget|money if e.media_budget else '—' }}</td>
-          <td class="num">{{ val(d, e.to_date) }}</td>
+          <td class="num">{{ val(d, e.to_date) }}{% if money %}<div class="clicksub">{{ e.clicks|num }} clicks</div>{% endif %}</td>
           <td class="num">{{ val(d, e.remaining) }}</td>
           <td class="num sep"><span class="pace {{ e.pacing_pct|paceclass }}" title="{{ val(d, e.to_date) }} of {{ val(d, e.on_pace) }}">{{ (e.to_date / e.on_pace)|pct if e.on_pace else '—' }}</span></td>
           {% for day in dates %}
             {% set x = e.by_date.get(day) %}
             <td class="num{% if day.day == 1 %} mstart{% endif %}{% if d.is_future(day) %} future{% elif not x %} zero{% endif %}">
-              {%- if d.is_future(day) -%}{%- elif x -%}{{ val(d, x) }}{%- else -%}&mdash;{%- endif -%}</td>
+              {%- if d.is_future(day) -%}{%- elif x -%}{{ val(d, x) }}{%- else -%}&mdash;{%- endif -%}
+              {%- if money and not d.is_future(day) %}{% set c = e.clicks_by_date.get(day) %}<div class="clicksub">{{ c|num if c else '—' }}</div>{% endif -%}</td>
           {% endfor %}
         </tr>
       {% else %}
@@ -250,28 +251,6 @@
           {% for day in dates %}{{ pacecell(d, d.td_actual.get(day), d.td_target.get(day), day) }}{% endfor %}
         </tr>
 
-        {% if money %}
-        <tr class="cumrow first clickhead"><th class="pin">Clicks</th><td colspan="12" class="sep"></td>
-          {% for day in dates %}<td class="{% if day.day == 1 %}mstart{% endif %}"></td>{% endfor %}</tr>
-        {% for e in d.elements %}
-        <tr class="clickrow">
-          <th class="pin">{{ d.short_label(e.label) }}</th>
-          <td colspan="3"></td>
-          <td class="num">{{ (e.to_date / e.clicks)|money if e.clicks else '—' }}</td>
-          <td></td>
-          <td></td>
-          <td></td>
-          <td></td><td></td>
-          <td class="num">{{ e.clicks|num }}</td>
-          <td></td><td class="sep"></td>
-          {% for day in dates %}
-            {% set x = e.clicks_by_date.get(day) %}
-            <td class="num{% if day.day == 1 %} mstart{% endif %}{% if d.is_future(day) %} future{% elif not x %} zero{% endif %}">
-              {%- if d.is_future(day) -%}{%- elif x -%}{{ x|num }}{%- else -%}&mdash;{%- endif -%}</td>
-          {% endfor %}
-        </tr>
-        {% endfor %}
-        {% endif %}
 {%- endmacro %}
 
 {# Targets typed in by hand, one strategy per box, until the adtini forms
