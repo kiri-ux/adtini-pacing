@@ -17,6 +17,7 @@ import datetime as dt
 
 from sqlalchemy import (
     Boolean,
+    false,
     Date,
     DateTime,
     Float,
@@ -214,6 +215,10 @@ class CampaignLink(Base):
     # its numbers now land somewhere.
     ops_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     linked_by: Mapped[str | None] = mapped_column(String(120))
+    # Unticked: a campaign that matches this line item on its id but is not
+    # what it bought - an AdLib campaign beside the StackAdapt test of the
+    # same line. Its days are left out.
+    excluded: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     linked_at: Mapped[dt.datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )

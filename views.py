@@ -82,6 +82,9 @@ class _Join:
     # those is not handed to one in view.
     shared: dict[tuple[str, str], list] = field(default_factory=dict)
     in_view: set[int] = field(default_factory=set)
+    # (data source, campaign, line item) a buyer unticked: matched on its id
+    # but not what that line item bought.
+    excluded: set[tuple[str, str, int]] = field(default_factory=set)
 
     def __bool__(self) -> bool:
         return bool(self.by_id or self.by_link)
@@ -116,6 +119,13 @@ class _Join:
         campaign_id: str | None = None,
         date: dt.date | None = None,
     ) -> int | None:
+        target = self._resolve(order_id, line_item_id, data_source, campaign_id, date)
+        if target is not None and data_source is not None and \
+                (data_source, campaign_id, target) in self.excluded:
+            return None
+        return target
+
+    def _resolve(self, order_id, line_item_id, data_source, campaign_id, date):
         target = self.by_id.get((order_id, line_item_id))
         if target is None and order_id not in self.order_ids:
             # Adopted delivery, keyed on its line item id alone.
@@ -156,9 +166,19 @@ def _delivery_join(session, line_items: list[LineItem]) -> _Join:
                 CampaignLink.data_source,
                 CampaignLink.campaign_id,
                 CampaignLink.line_item_id,
-            ).where(CampaignLink.line_item_id.in_(ids))
+            ).where(CampaignLink.line_item_id.in_(ids), CampaignLink.excluded.is_(False))
         )
         by_link = {(source, campaign): li_id for source, campaign, li_id in rows}
+        excluded = set(
+            session.execute(
+                select(
+                    CampaignLink.data_source, CampaignLink.campaign_id,
+                    CampaignLink.line_item_id,
+                ).where(CampaignLink.line_item_id.in_(ids), CampaignLink.excluded.is_(True))
+            ).tuples()
+        )
+    else:
+        excluded = set()
     shared: dict[tuple[str, str], list] = {}
     if by_link:
         links = session.execute(
@@ -170,6 +190,7 @@ def _delivery_join(session, line_items: list[LineItem]) -> _Join:
             .join(LineItem, LineItem.id == CampaignLink.line_item_id)
             .join(Order, Order.id == LineItem.order_id)
             .where(tuple_(CampaignLink.data_source, CampaignLink.campaign_id).in_(list(by_link)))
+            .where(CampaignLink.excluded.is_(False))
         ).all()
         grouped: dict[tuple[str, str], list] = defaultdict(list)
         for source, campaign, li_id, start, end, o_start, o_end in links:
@@ -181,6 +202,7 @@ def _delivery_join(session, line_items: list[LineItem]) -> _Join:
         order_ids={li.order.external_order_id for li in line_items},
         shared=shared,
         in_view=set(ids),
+        excluded=excluded,
     )
 
 
@@ -1510,6 +1532,7 @@ class LinkRow:
     # campaign belongs to one line item, or its delivery counts twice.
     links: list[CampaignLink] = field(default_factory=list)
     matched_campaigns: list[CampaignCandidate] = field(default_factory=list)
+    excluded: set[tuple[str, str]] = field(default_factory=set)
     served: float = 0.0
     is_money: bool = False
 
@@ -1539,10 +1562,13 @@ class LinkRow:
 
     @property
     def linked_keys(self) -> str:
-        """The campaigns on this row, for the dialog to tick on open."""
-        return ",".join(
-            f"{link.data_source}\u241f{link.campaign_id}" for link in self.links
-        )
+        """The campaigns on this row, for the dialog to tick on open: the
+        ones linked by hand and the ones matching on its id, less any a
+        buyer unticked."""
+        keys = [f"{link.data_source}\u241f{link.campaign_id}" for link in self.links]
+        keys += [c.key for c in self.matched_campaigns
+                 if (c.data_source, c.campaign_id) not in self.excluded]
+        return ",".join(dict.fromkeys(keys))
 
 
 @dataclass
@@ -1641,6 +1667,14 @@ def campaign_candidates(
             )
             conditions.append(named)
             reasons.append(("named", named))
+    ids = [i for i in join.external_ids if i]
+    if ids:
+        # Delivery that reaches a line item on its id alone, under another
+        # client and order (a StackAdapt test beside the AdLib original):
+        # listed so each campaign can be kept or left out.
+        clause = DailyDelivery.external_line_item_id.in_(ids)
+        conditions.append(clause)
+        reasons.append(("line item id", clause))
     if not conditions:
         return []
 
@@ -1669,6 +1703,7 @@ def campaign_candidates(
             func.sum(month_impressions),
             func.sum(month_cost),
             func.max(DailyDelivery.client_name),
+            func.max(DailyDelivery.external_order_id),
         )
         .where(or_(*conditions))
         .group_by(DailyDelivery.data_source, DailyDelivery.campaign_id)
@@ -1677,7 +1712,7 @@ def campaign_candidates(
     out: list[CampaignCandidate] = []
     for (
         source, campaign, name, product, li_id, impressions, cost, first, last,
-        month_impr, month_spend, client_name,
+        month_impr, month_spend, client_name, delivery_order,
     ) in session.execute(stmt):
         candidate = CampaignCandidate(
             data_source=source,
@@ -1691,7 +1726,7 @@ def campaign_candidates(
             cost=float(cost or 0),
             first_date=first,
             last_date=last,
-            found_by=_found_by(order, client_name, li_id, name),
+            found_by=_found_by(order, client_name, li_id, name, delivery_order),
         )
         by_id = join.resolve(order.external_order_id, li_id)
         if by_id is not None:
@@ -1737,12 +1772,16 @@ def linking_view(
         daily = _daily_by_line_item(session, line_items)
 
     links: dict[int, list[CampaignLink]] = defaultdict(list)
+    excluded: dict[int, set[tuple[str, str]]] = defaultdict(set)
     for link in session.execute(
         select(CampaignLink)
         .where(CampaignLink.line_item_id.in_([li.id for li in line_items] or [0]))
         .order_by(CampaignLink.campaign_name, CampaignLink.campaign_id)
     ).scalars():
-        links[link.line_item_id].append(link)
+        if link.excluded:
+            excluded[link.line_item_id].add((link.data_source, link.campaign_id))
+        else:
+            links[link.line_item_id].append(link)
 
     is_money = order.pacing_type != "impression"
     rows: list[LinkRow] = []
@@ -1761,6 +1800,7 @@ def linking_view(
                     c for c in candidates
                     if c.taken_by == item.id and c.taken_how == "id"
                 ],
+                excluded=excluded.get(item.id, set()),
                 served=sum(p.cost if is_money else p.impressions for p in points),
                 is_money=is_money,
             )
@@ -2201,7 +2241,8 @@ def group_by_targeting(
     ]
 
 
-def _found_by(order: Order, client_name, line_item_id, campaign_name) -> str:
+def _found_by(order: Order, client_name, line_item_id, campaign_name,
+              delivery_order=None) -> str:
     """Why this campaign is on the list."""
     reasons = []
     if order.client and client_name == order.client.name:
@@ -2210,7 +2251,9 @@ def _found_by(order: Order, client_name, line_item_id, campaign_name) -> str:
     if order_id and campaign_name and order_id in str(campaign_name):
         reasons.append("named for this order")
     if not reasons:
-        reasons.append("order id")
+        reasons.append(
+            "order id" if delivery_order is None or delivery_order == order_id
+            else "line item id")
     return " · ".join(reasons)
 
 
