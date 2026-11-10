@@ -25,6 +25,7 @@ import queue
 import re
 import threading
 import time
+import zlib
 from collections import OrderedDict
 
 from sqlalchemy import func, select
@@ -105,6 +106,7 @@ def edited(order_id: int | None = None) -> None:
             _edits += 1
             _pages.clear()
             _latest.clear()
+            _drop_snapshots(None)
             return
         _order_edits[order_id] = _order_edits.get(order_id, 0) + 1
         _shared_edits += 1
@@ -114,6 +116,7 @@ def edited(order_id: int | None = None) -> None:
                 owner = _order_of(path)
                 if owner is None or owner == order_id:
                     del store[k]
+    _drop_snapshots(order_id)
 
 
 def edit_count() -> int:
@@ -146,18 +149,98 @@ def put(page_key: tuple, body: bytes) -> None:
         _latest.move_to_end(page_key[0])
         while len(_latest) > MAX_PAGES:
             _latest.popitem(last=False)
+    if persist_enabled:
+        _to_save.put((page_key[0], body))
 
 
 def stale(path: str) -> bytes | None:
-    """The last copy of this page built from older data, if there is one."""
+    """The last copy of this page built from older data, if there is one.
+    After a deploy memory is empty, so the copy saved in the database."""
     with _lock:
-        return _latest.get(path)
+        body = _latest.get(path)
+    if body is not None or not persist_enabled:
+        return body
+    return _load_snapshot(path)
 
 
 def clear() -> None:
     with _lock:
         _pages.clear()
         _latest.clear()
+
+
+# --- copies kept across deploys ---------------------------------------------
+# Off until the warmer starts (never under tests).
+persist_enabled = False
+SNAPSHOTS_KEPT = 400
+_to_save: queue.Queue[tuple[str, bytes]] = queue.Queue()
+
+
+def _load_snapshot(path: str) -> bytes | None:
+    from db import session_scope
+    from models import PageSnapshot
+
+    try:
+        with session_scope() as session:
+            row = session.get(PageSnapshot, path)
+            return zlib.decompress(row.body) if row is not None else None
+    except Exception:
+        log.exception("reading snapshot %s", path)
+        return None
+
+
+def _drop_snapshots(order_id: int | None) -> None:
+    """An edit makes the saved copies of its pages wrong too: the order's
+    own and every shared page. None drops them all."""
+    if not persist_enabled:
+        return
+    from sqlalchemy import delete, not_, or_
+    from db import session_scope
+    from models import PageSnapshot
+
+    try:
+        with session_scope() as session:
+            stmt = delete(PageSnapshot)
+            if order_id is not None:
+                stmt = stmt.where(or_(
+                    not_(PageSnapshot.path.like("/orders/%")),
+                    PageSnapshot.path.like(f"/orders/{order_id}/%"),
+                    PageSnapshot.path.like(f"/orders/{order_id}?%"),
+                    PageSnapshot.path == f"/orders/{order_id}",
+                ))
+            session.execute(stmt)
+    except Exception:
+        log.exception("dropping snapshots")
+
+
+def _save_snapshots() -> None:
+    from sqlalchemy import select as _select
+    from db import session_scope
+    from models import PageSnapshot
+
+    saved = 0
+    while True:
+        path, body = _to_save.get()
+        try:
+            with session_scope() as session:
+                packed = zlib.compress(body, 6)
+                row = session.get(PageSnapshot, path)
+                now = dt.datetime.utcnow()
+                if row is None:
+                    session.add(PageSnapshot(path=path, body=packed, built_at=now))
+                else:
+                    row.body, row.built_at = packed, now
+                saved += 1
+                if saved % 50 == 0:
+                    old = session.execute(
+                        _select(PageSnapshot.path)
+                        .order_by(PageSnapshot.built_at.desc())
+                        .offset(SNAPSHOTS_KEPT)
+                    ).scalars().all()
+                    for p in old:
+                        session.delete(session.get(PageSnapshot, p))
+        except Exception:
+            log.exception("saving snapshot %s", path)
 
 
 _wanted: queue.Queue[str] = queue.Queue()
@@ -223,5 +306,8 @@ def start_warmer(app, paths=("/",), every: float = 60.0) -> None:
             except Exception:
                 log.exception("prefetch %s", path)
 
+    global persist_enabled
+    persist_enabled = True
+    threading.Thread(target=_save_snapshots, name="page-snapshots", daemon=True).start()
     threading.Thread(target=loop, name="page-warmer", daemon=True).start()
     threading.Thread(target=fetch, name="page-prefetch", daemon=True).start()
