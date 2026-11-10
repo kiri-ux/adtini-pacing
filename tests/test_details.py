@@ -120,10 +120,10 @@ def test_monthly_rows_start_again_on_the_first(site):
     assert d.td_actual[dt.date(2026, 10, 26)] == 140_000
     # The to-date target reaches the sold total on the last day.
     assert d.td_target[dt.date(2026, 11, 11)] == pytest.approx(450_000)
-    # Sold one month over 13 Oct to 11 Nov, so the goal is spread over the
-    # 30 days of the flight: November owes its 11 days of it, not the
-    # whole month's goal.
-    assert d.month_target[dt.date(2026, 11, 1)] == pytest.approx(450_000 / 30)
+    # Sold one month over 13 Oct to 11 Nov: its month is the flight, so the
+    # month rows run on through 1 Nov like the to-date ones.
+    assert d.month_target[dt.date(2026, 11, 1)] == pytest.approx(d.td_target[dt.date(2026, 11, 1)])
+    assert d.month_actual[dt.date(2026, 10, 26)] == d.td_actual[dt.date(2026, 10, 26)]
     # The daily goal is what is left over the days left in the flight.
     assert d.day_target[dt.date(2026, 10, 13)] == pytest.approx(450_000 / 30)
     assert d.day_target[dt.date(2026, 10, 27)] == pytest.approx(
@@ -902,3 +902,27 @@ def test_ctr_sits_under_each_strategy_row(site):
     assert '<th class="pin">CTR</th>' not in html
     assert " CTR</div>" in html
     assert 'clicks">' in html
+
+
+def test_picking_ctv_plus_video_prices_each_row_at_its_half(site):
+    import db as db_module
+    import ratecard
+    from models import LineItem, StrategyTerms
+
+    app_module, (order_id, li_id) = site
+    client = app_module.app.test_client()
+    with db_module.session_scope() as session:
+        session.add(StrategyTerms(order_id=order_id, line_item_id=li_id, label="Retargeting CTV", rate=5.0))
+        session.add(StrategyTerms(order_id=order_id, line_item_id=li_id, label="Geo-Fencing Video", rate=5.0))
+        cpm = session.get(LineItem, li_id).goal_cpm
+    client.post(f"/orders/{order_id}/save", data={
+        f"li-{li_id}-name": "Video", f"li-{li_id}-product": "CTV + Video Ads",
+        f"li-{li_id}-goal_cpm": cpm or "",
+    })
+    with db_module.session_scope() as session:
+        item = session.get(LineItem, li_id)
+        assert item.product == "CTV + Video Ads"
+        assert item.goal_cpm == ratecard.setup_cpm("CTV + Video Ads")
+        rates = {t.label: t.rate for t in session.query(StrategyTerms).filter_by(line_item_id=li_id)}
+    assert rates["Retargeting CTV"] == ratecard.setup_cpm("Connected TV Ads")
+    assert rates["Geo-Fencing Video"] == ratecard.setup_cpm("Video Ads")

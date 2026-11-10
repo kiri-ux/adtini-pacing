@@ -83,6 +83,9 @@ class PacingRow:
     month_goal: float = 0.0
     months_running: float | None = None
     prorated: bool = False
+    # Sold as one month: its month is the flight, so monthly and total read
+    # the same.
+    single_month: bool = False
     month_to_date: float = 0.0
     month_on_pace: float = 0.0
     month_pacing_delta: float = 0.0
@@ -427,6 +430,7 @@ def compute_row(
     row.flight_days = inclusive_days(start, end)
     row.daily_target = row.total_target / row.flight_days if row.flight_days else 0.0
     row.prorated = is_prorated(row)
+    row.single_month = row.prorated and (sold_months(row) or 0) <= 1
 
     if pacing_type == PACING_IMPRESSION:
         row.daily_budget = row.daily_target * row.unit_cost / 1000.0
@@ -457,6 +461,15 @@ def compute_row(
         row.month_pacing_delta = row.month_to_date - row.month_on_pace
         row.month_pacing_pct = _pct(row.month_on_pace, row.month_to_date)
 
+    if row.single_month:
+        row.month_goal = row.total_target
+        row.month_days = row.flight_days
+        row.month_daily_target = row.daily_target
+        row.month_to_date = row.to_date
+        row.month_on_pace = row.on_pace
+        row.month_pacing_delta = row.pacing_delta
+        row.month_pacing_pct = row.pacing_pct
+
     _attach_effective_cost(row)
     _attach_rate_card(row, line_item)
     return row
@@ -472,19 +485,27 @@ def is_prorated(row: PacingRow) -> bool:
     """
     if not (row.start_date and row.end_date and row.total_target):
         return False
-    months = row.months_running
-    if not months and row.monthly_target:
-        # Only a whole number of months says how long it was sold for.
-        ratio = row.total_target / row.monthly_target
-        months = round(ratio) if abs(ratio - round(ratio)) < 0.01 else None
+    months = sold_months(row)
     if not months:
         return False
     return months_between(row.start_date, row.end_date) > months + 0.01
 
 
+def sold_months(row: PacingRow) -> float | None:
+    """`months_running`, else total over monthly when a whole number."""
+    if row.months_running:
+        return row.months_running
+    if row.monthly_target and row.total_target:
+        ratio = row.total_target / row.monthly_target
+        return round(ratio) if abs(ratio - round(ratio)) < 0.01 else None
+    return None
+
+
 def goal_in_window(row: PacingRow, first: dt.date, last: dt.date) -> float:
     """What the line should serve between `first` and `last`, two days of
     the same month inside its flight."""
+    if row.single_month:
+        return row.total_target
     if row.prorated:
         return row.daily_target * inclusive_days(first, last)
     return row.monthly_target

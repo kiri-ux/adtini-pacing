@@ -97,6 +97,55 @@
   draw();
 })();
 </script>
+<div id="tip" class="tip" role="tooltip" hidden></div>
+<script>
+/* Instant tooltips for [data-tip]. The browser's own title tooltip waits a
+   second or two before it shows. */
+(function () {
+  var tip = document.getElementById('tip'), cur = null;
+  function show(el) {
+    cur = el; tip.textContent = el.dataset.tip; tip.hidden = false;
+    var r = el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+    var left = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), window.innerWidth - w - 8);
+    var top = r.bottom + 6;
+    if (top + h > window.innerHeight - 8) top = r.top - h - 6;
+    tip.style.left = left + 'px'; tip.style.top = top + 'px';
+  }
+  function hide() { cur = null; tip.hidden = true; }
+  function find(t) { return t && t.closest ? t.closest('[data-tip]') : null; }
+  document.addEventListener('mouseover', function (e) { var el = find(e.target); if (el && el !== cur) show(el); else if (!el && cur) hide(); });
+  document.addEventListener('focusin', function (e) { var el = find(e.target); if (el) show(el); });
+  document.addEventListener('focusout', hide);
+  window.addEventListener('scroll', hide, true);
+})();
+</script>
+<dialog id="cpmnote" class="cpmnote">
+  <p id="cpmnotetext"></p>
+  <form method="dialog"><button class="btn preview" type="submit">OK</button></form>
+</dialog>
+<script>
+/* Changing a CPM: what has gone at the old one, and the budget the rest
+   needs at the new one. */
+(function () {
+  var dlg = document.getElementById('cpmnote'), text = document.getElementById('cpmnotetext');
+  function num(v) { return parseFloat(String(v || '').replace(/[$,]/g, '')); }
+  function money(v) { return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  document.addEventListener('change', function (e) {
+    var el = e.target;
+    if (!el.matches || !el.matches('input[data-cpm-old]')) return;
+    var oldCpm = num(el.dataset.cpmOld), newCpm = num(el.value);
+    var served = num(el.dataset.served) || 0, total = num(el.dataset.total);
+    if (!oldCpm || !newCpm || !total || oldCpm === newCpm) return;
+    var spent = served * oldCpm / 1000;
+    var left = Math.max(total - served, 0);
+    var budget = spent + left * newCpm / 1000;
+    text.innerHTML = 'You have spent <b>' + money(spent) + '</b> at your current CPM of ' + money(oldCpm) +
+      '. By editing your CPM to ' + money(newCpm) + ', your new budget should be <b>' + money(budget) +
+      '</b> (' + Math.round(left).toLocaleString('en-US') + ' impressions left at ' + money(newCpm) + ').';
+    if (dlg.showModal) dlg.showModal(); else alert(text.textContent);
+  });
+})();
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

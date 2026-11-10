@@ -145,6 +145,11 @@
                      'event': ('client_monthly_budget', 'client_total_budget', 'goal_cpe')}[r.pacing_type] %}
       <tr data-state="{{ r.state }}" class="{% if r.needs_setup %}needssetup{% endif %}">
         <td class="elname"><input type="text" name="li-{{ li }}-name" value="{{ r.label }}">
+          <select class="prodpick" name="li-{{ li }}-product" title="Product">
+            {% set cur = r.line_item.product if r.line_item else none %}
+            {% if cur and cur not in product_names %}<option value="{{ cur }}" selected>{{ cur }}</option>{% endif %}
+            {% for p in product_names %}<option value="{{ p }}"{% if p == cur %} selected{% endif %}>{{ p }}</option>{% endfor %}
+          </select>
           {% if r.state != 'running' %}<span class="statepill {{ r.state }}">{{ r.status or r.state }}</span>{% endif %}
           {% if r.needs_setup %}<span class="setupflag"
             title="No sold total or no dates, so there is nothing to pace against">no goal set</span>{% endif %}</td>
@@ -161,7 +166,7 @@
         <td class="num ro">{{ r.daily_target|metric(r) }}</td>
         <td class="num moncell"><input type="text" name="li-{{ li }}-months_running" value="{{ r.months_running|entry }}"
           {%- if r.prorated %} class="prorated" title="Spread over the flight"{% endif %}></td>
-        <td class="num cpmcell"><input type="text" name="li-{{ li }}-{{ goal[2] }}" value="{{ r.unit_cost|entry }}"{% if r.pacing_type != 'impression' %} placeholder="CPC"{% endif %}></td>
+        <td class="num cpmcell"><input type="text" name="li-{{ li }}-{{ goal[2] }}" value="{{ r.unit_cost|entry }}"{% if r.pacing_type == 'impression' %} data-cpm-old="{{ r.unit_cost or '' }}" data-served="{{ r.to_date or 0 }}" data-total="{{ r.total_target or '' }}"{% endif %}{% if r.pacing_type != 'impression' %} placeholder="CPC"{% endif %}></td>
         <td class="num ro">{{ r.daily_budget|money }}</td>
         <td class="num ro">{{ r.total_budget|money }}</td>
         <td class="num ro">{{ r.to_date|metric(r) }}</td>

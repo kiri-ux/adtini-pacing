@@ -536,9 +536,11 @@ def test_a_one_month_line_over_two_months_is_spread_over_its_flight():
         total_impressions=449_550, goal_cpm=2.50,
     )
     row = compute_row(item, order, [], dt.date(2026, 11, 9))
-    assert row.prorated
-    assert round(row.month_goal) == round(449_550 / 31 * 12)
-    assert round(row.month_daily_target) == round(449_550 / 31)
+    assert row.prorated and row.single_month
+    # Sold as one month, its month is the flight: monthly reads as total.
+    assert row.month_goal == 449_550
+    assert row.month_on_pace == row.on_pace
+    assert row.month_pacing_pct == row.pacing_pct
     assert row.monthly_target == 449_550
 
 
