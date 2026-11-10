@@ -562,6 +562,12 @@ def total_row(rows: Sequence[PacingRow], pacing_type: str) -> PacingRow:
     # up, and an order can now carry both - a Display line sold in
     # impressions beside a PPC line sold in spend. Summing them would make a
     # number that means nothing and looks like it means something.
+    # An order marked impressions whose only product is Meta ad spend
+    # totals in spend: otherwise it read 0 / 0 beside a paced product.
+    if not any(r.pacing_type == pacing_type for r in rows):
+        kinds = [r.pacing_type for r in rows]
+        pacing_type = max(set(kinds), key=kinds.count)
+        total.pacing_type = pacing_type
     mixed = [r for r in rows if r.pacing_type != pacing_type]
     total.mixed_types = sorted({r.pacing_type for r in mixed})
     rows = [r for r in rows if r.pacing_type == pacing_type]

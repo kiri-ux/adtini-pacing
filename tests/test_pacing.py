@@ -558,3 +558,15 @@ def test_months_running_on_the_line_wins():
     row = compute_row(item, order, [], dt.date(2026, 11, 9))
     assert not row.prorated
     assert row.month_goal == 100_000
+
+
+def test_an_order_whose_only_product_paces_in_spend_totals_in_spend():
+    """Audi Boise: an impressions order with one Meta ad spend line."""
+    order = Order(id=11, client_id=1, name="Audi", pacing_type="impression",
+                  start_date=dt.date(2026, 2, 6), end_date=dt.date(2026, 11, 30))
+    item = LineItem(id=11, order_id=11, name="Meta", pacing_type="click",
+                    monthly_spend=5_000, total_spend=5_000)
+    row = compute_row(item, order, [], dt.date(2026, 11, 9))
+    total = total_row([row], "impression")
+    assert total.pacing_type == "click"
+    assert total.total_target == 5_000
