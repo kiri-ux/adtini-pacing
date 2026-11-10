@@ -120,10 +120,10 @@ def test_monthly_rows_start_again_on_the_first(site):
     assert d.td_actual[dt.date(2026, 10, 26)] == 140_000
     # The to-date target reaches the sold total on the last day.
     assert d.td_target[dt.date(2026, 11, 11)] == pytest.approx(450_000)
-    # Sold one month over 13 Oct to 11 Nov, so the goal is spread over the
-    # 30 days of the flight: November owes its 11 days of it, not the
-    # whole month's goal.
-    assert d.month_target[dt.date(2026, 11, 1)] == pytest.approx(450_000 / 30)
+    # Sold one month over 13 Oct to 11 Nov: its month is the flight, so the
+    # month rows run on through 1 Nov like the to-date ones.
+    assert d.month_target[dt.date(2026, 11, 1)] == pytest.approx(d.td_target[dt.date(2026, 11, 1)])
+    assert d.month_actual[dt.date(2026, 10, 26)] == d.td_actual[dt.date(2026, 10, 26)]
     # The daily goal is what is left over the days left in the flight.
     assert d.day_target[dt.date(2026, 10, 13)] == pytest.approx(450_000 / 30)
     assert d.day_target[dt.date(2026, 10, 27)] == pytest.approx(

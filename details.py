@@ -690,7 +690,7 @@ def details_view(
         # The monthly rows start again on the 1st - the step the guide says
         # to check by hand ("make sure the first of the month has been
         # zeroed out").
-        if day.day == 1:
+        if day.day == 1 and not row.single_month:
             month_running = month_running_target = 0.0
         if start and end and row.prorated:
             month_daily = row.daily_target if start <= day <= end else 0.0
