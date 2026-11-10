@@ -166,7 +166,7 @@
         <td class="num ro">{{ r.daily_target|metric(r) }}</td>
         <td class="num moncell"><input type="text" name="li-{{ li }}-months_running" value="{{ r.months_running|entry }}"
           {%- if r.prorated %} class="prorated" title="Spread over the flight"{% endif %}></td>
-        <td class="num cpmcell"><input type="text" name="li-{{ li }}-{{ goal[2] }}" value="{{ r.unit_cost|entry }}"{% if r.pacing_type != 'impression' %} placeholder="CPC"{% endif %}></td>
+        <td class="num cpmcell"><input type="text" name="li-{{ li }}-{{ goal[2] }}" value="{{ r.unit_cost|entry }}"{% if r.pacing_type == 'impression' %} data-cpm-old="{{ r.unit_cost or '' }}" data-served="{{ r.to_date or 0 }}" data-total="{{ r.total_target or '' }}"{% endif %}{% if r.pacing_type != 'impression' %} placeholder="CPC"{% endif %}></td>
         <td class="num ro">{{ r.daily_budget|money }}</td>
         <td class="num ro">{{ r.total_budget|money }}</td>
         <td class="num ro">{{ r.to_date|metric(r) }}</td>

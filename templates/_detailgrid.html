@@ -190,7 +190,8 @@
             value="{{ '%.1f'|format(mine / base * 100) if (mine and base) else '' }}"></td>
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-monthly" value="{{ e.monthly|entry(not money) }}"></td>
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-total" value="{{ e.total|entry(not money) }}"></td>
-          <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-rate" value="{{ e.rate|entry }}">{% if money %}<div class="clicksub" title="CPC">{{ (e.to_date / e.clicks)|money if e.clicks else '—' }} CPC</div>{% endif %}</td>
+          <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-rate" value="{{ e.rate|entry }}"
+            {%- if not money %} data-cpm-old="{{ e.rate or '' }}" data-served="{{ e.to_date or 0 }}" data-total="{{ e.total or '' }}"{% endif %}>{% if money %}<div class="clicksub" title="CPC">{{ (e.to_date / e.clicks)|money if e.clicks else '—' }} CPC</div>{% endif %}</td>
           {% elif e.ordered and (e.monthly or e.total) %}
           {% set base = r.monthly_target or r.total_target %}
           {% set mine = e.monthly if r.monthly_target else e.total %}

@@ -119,6 +119,33 @@
   window.addEventListener('scroll', hide, true);
 })();
 </script>
+<dialog id="cpmnote" class="cpmnote">
+  <p id="cpmnotetext"></p>
+  <form method="dialog"><button class="btn preview" type="submit">OK</button></form>
+</dialog>
+<script>
+/* Changing a CPM: what has gone at the old one, and the budget the rest
+   needs at the new one. */
+(function () {
+  var dlg = document.getElementById('cpmnote'), text = document.getElementById('cpmnotetext');
+  function num(v) { return parseFloat(String(v || '').replace(/[$,]/g, '')); }
+  function money(v) { return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  document.addEventListener('change', function (e) {
+    var el = e.target;
+    if (!el.matches || !el.matches('input[data-cpm-old]')) return;
+    var oldCpm = num(el.dataset.cpmOld), newCpm = num(el.value);
+    var served = num(el.dataset.served) || 0, total = num(el.dataset.total);
+    if (!oldCpm || !newCpm || !total || oldCpm === newCpm) return;
+    var spent = served * oldCpm / 1000;
+    var left = Math.max(total - served, 0);
+    var budget = spent + left * newCpm / 1000;
+    text.innerHTML = 'You have spent <b>' + money(spent) + '</b> at your current CPM of ' + money(oldCpm) +
+      '. By editing your CPM to ' + money(newCpm) + ', your new budget should be <b>' + money(budget) +
+      '</b> (' + Math.round(left).toLocaleString('en-US') + ' impressions left at ' + money(newCpm) + ').';
+    if (dlg.showModal) dlg.showModal(); else alert(text.textContent);
+  });
+})();
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>
