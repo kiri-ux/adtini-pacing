@@ -1122,6 +1122,9 @@ def overview(
             li for li in sorted(order.line_items, key=lambda li: (li.sort_order, li.id))
             if products.is_paced(li.product)
         ]
+        # Nothing on it is paced (an SEO or reputation order): not a row.
+        if not line_items:
+            continue
         rows = [
             compute_row(
                 li, order, daily.get(li.id, []), as_of, totals=totals.get(li.id)
