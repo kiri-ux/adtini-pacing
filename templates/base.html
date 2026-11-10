@@ -27,6 +27,12 @@
     <ellipse cx="12" cy="6" rx="8" ry="3" fill="none" stroke="currentColor" stroke-width="2"/>
     <path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6" fill="none" stroke="currentColor" stroke-width="2"/>
     <path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" fill="none" stroke="currentColor" stroke-width="2"/></svg></a>
+  <div class="railnew" id="pinwrap">
+    <button type="button" class="railbtn" id="pinbtn" title="Pinned orders" aria-label="Pinned orders"
+      aria-haspopup="true" aria-expanded="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 3 6.5 7 .9-5.2 4.8 1.4 7L12 17.8 5.8 21.2l1.4-7L2 9.4l7-.9z"/></svg></button>
+    <div class="newmenu railmenu pinmenu" id="pinmenu" hidden></div>
+  </div>
 </nav>
 
 <div class="pagehead">
@@ -45,6 +51,52 @@
   {% block body %}{% endblock %}
 </div>
 
+<script>
+/* Pinned orders, kept in this browser. Drawn here rather than by the server
+   so the cached pages stay the same for everyone. */
+(function () {
+  var KEY = 'pinnedOrders';
+  function load() { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch (e) { return []; } }
+  function save(list) { try { localStorage.setItem(KEY, JSON.stringify(list)); } catch (e) {} }
+  var btn = document.getElementById('pinbtn'), menu = document.getElementById('pinmenu');
+  function esc(t) { var d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+  function draw() {
+    var list = load();
+    btn.classList.toggle('haspins', list.length > 0);
+    menu.innerHTML = '<div class="pinhead">Pinned</div>' + (list.length
+      ? list.map(function (p) {
+          return '<a href="/orders/' + encodeURIComponent(p.id) + '">' + esc(p.name) + '</a>';
+        }).join('')
+      : '<div class="pinempty">None yet. Use the star on an order.</div>');
+    var star = document.getElementById('pinorder');
+    if (star) {
+      var on = list.some(function (p) { return String(p.id) === star.dataset.id; });
+      star.classList.toggle('on', on);
+      star.title = on ? 'Unpin' : 'Pin';
+      star.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+  }
+  btn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    var open = menu.hidden;
+    menu.hidden = !open;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+  document.addEventListener('click', function (e) {
+    if (!menu.hidden && !menu.contains(e.target)) { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') menu.hidden = true; });
+  var star = document.getElementById('pinorder');
+  if (star) star.addEventListener('click', function () {
+    var list = load(), id = star.dataset.id;
+    var i = list.findIndex(function (p) { return String(p.id) === id; });
+    if (i >= 0) list.splice(i, 1); else list.push({ id: id, name: star.dataset.name });
+    save(list); draw();
+  });
+  window.addEventListener('storage', draw);
+  draw();
+})();
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

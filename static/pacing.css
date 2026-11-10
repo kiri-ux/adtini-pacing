@@ -1018,3 +1018,13 @@ table.detailgrid td.perftot{text-align:right;font-weight:600;font-size:12px}
 th.monhead,td.moncell{width:1%}
 td.moncell input{min-width:0;width:44px}
 td.moncell input.prorated{border-color:var(--accent,#2b59c3)}
+.pinstar{background:none;border:1px solid var(--line,#d9dee7);border-radius:999px;width:30px;height:30px;
+  display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;margin-right:6px;color:#9aa3b2}
+.pinstar svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8}
+.pinstar.on{color:var(--gold,#F5B82E);border-color:var(--gold,#F5B82E)}
+.pinstar.on svg{fill:currentColor}
+.pinstar:hover{color:var(--gold,#F5B82E)}
+#pinbtn.haspins{color:var(--gold,#F5B82E)}
+.pinmenu{max-height:70vh;overflow-y:auto}
+.pinhead{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:6px 12px 4px}
+.pinempty{font-size:13px;color:var(--muted);padding:8px 12px 10px}
