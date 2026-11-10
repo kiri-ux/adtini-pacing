@@ -243,14 +243,22 @@
           <td class="num">{{ mb|money if mb else '—' }}</td>
           <td class="num">{{ d.media_spent|money if d.media_spent else '—' }}</td>
           <td class="num">{{ d.media_budget|money if d.media_budget else '—' }}</td>
-          <td class="num">{{ val(d, r.to_date) }}</td>
+          {% set ti = d.impressions_by_date.values()|sum %}{% set tc = d.clicks_by_date.values()|sum %}
+          <td class="num">{{ val(d, r.to_date) }}
+            {%- if money %}<div class="clicksub">{{ tc|num }} clicks</div>
+            {%- elif ti and not d.by_events %}<div class="clicksub" data-tip="{{ tc|num }} clicks">{{ '%.2f%%'|format(tc / ti * 100) }} CTR</div>{% endif %}</td>
           <td class="num">{{ val(d, r.remaining if r.total_target else none) }}</td>
           <td class="num sep"><span class="pace {{ r.pacing_pct|paceclass }}" title="{{ val(d, r.to_date) }} of {{ val(d, r.on_pace if r.total_target else none) }}">{{ r.delivery_ratio|pct }}</span></td>
           {% for day in dates %}
             {% set x = d.total_by_date.get(day) %}
             {% set st = d.day_state.get(day) %}
             <td class="num{% if day.day == 1 %} mstart{% endif %}{% if d.is_future(day) %} future{% endif %}">
-              {%- if d.is_future(day) -%}{%- elif x and st -%}<span class="daypill {{ st }}">{{ val(d, x) }}</span>{%- elif x -%}{{ val(d, x) }}{%- else -%}&mdash;{%- endif -%}</td>
+              {%- if d.is_future(day) -%}{%- elif x and st -%}<span class="daypill {{ st }}">{{ val(d, x) }}</span>{%- elif x -%}{{ val(d, x) }}{%- else -%}&mdash;{%- endif -%}
+              {%- if not d.is_future(day) and not d.by_events -%}
+                {%- set di = d.impressions_by_date.get(day) %}{% set dc = d.clicks_by_date.get(day) or 0 -%}
+                {%- if money %}<div class="clicksub">{{ dc|num if dc else '—' }}</div>
+                {%- elif di %}<div class="clicksub" data-tip="{{ dc|num }} clicks">{{ '%.2f%%'|format(dc / di * 100) }}</div>{% endif -%}
+              {%- endif -%}</td>
           {% endfor %}
         </tr>
         <tr class="ontrack">

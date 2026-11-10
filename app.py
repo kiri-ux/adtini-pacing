@@ -655,6 +655,7 @@ def order_detail(order_id: int):
             v=view,
             t=view.total,
             pacing_choices=PACING_CHOICES,
+            product_names=sorted(p.name for p in products.registry().values()),
             notes=views.day_log(db, order_id),
             linking=views.linking_view(
                 db, view.order, as_of=view.as_of,
@@ -755,6 +756,9 @@ def order_save(order_id: int):
             if prefix + "name" not in form:
                 continue
             item.name = (form.get(prefix + "name") or item.name).strip()
+            old_product, old_cpm = item.product, item.goal_cpm
+            if (form.get(prefix + "product") or "").strip():
+                item.product = form.get(prefix + "product").strip()
             kind = _chosen_pacing_type(
                 (form.get(prefix + "pacing_type") or "").strip(), item.pacing_type
             )
@@ -787,10 +791,29 @@ def order_save(order_id: int):
                     value = as_float(prefix + src)
                     if value is not None:
                         setattr(item, dst, value)
+            if item.product != old_product:
+                _reprice_for_product(db, item, keep_cpm=item.goal_cpm != old_cpm)
             item.terms_locked = True
 
     flash("Saved.")
     return redirect(url_for("order_detail", order_id=order_id))
+
+
+def _reprice_for_product(db, item, keep_cpm: bool) -> None:
+    """A product picked by hand takes that product's card rates: the goal
+    CPM (unless one was typed in the same save) and each split row's. A CTV
+    + Video row is priced at its own half, CTV or Video."""
+    import ratecard
+    from models import StrategyTerms
+
+    if not keep_cpm:
+        card = ratecard.setup_cpm(item.product, restricted=bool(item.restricted))
+        if card:
+            item.goal_cpm, item.goal_cpm_source = card, "rate card"
+    for term in db.execute(
+        select(StrategyTerms).where(StrategyTerms.line_item_id == item.id)
+    ).scalars():
+        term.rate = ratecard.merged_strategy_cpm(item.product, term.label) or item.goal_cpm
 
 
 @app.route("/orders/<int:order_id>/unlock", methods=["POST"])

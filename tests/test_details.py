@@ -902,3 +902,27 @@ def test_ctr_sits_under_each_strategy_row(site):
     assert '<th class="pin">CTR</th>' not in html
     assert " CTR</div>" in html
     assert 'clicks">' in html
+
+
+def test_picking_ctv_plus_video_prices_each_row_at_its_half(site):
+    import db as db_module
+    import ratecard
+    from models import LineItem, StrategyTerms
+
+    app_module, (order_id, li_id) = site
+    client = app_module.app.test_client()
+    with db_module.session_scope() as session:
+        session.add(StrategyTerms(order_id=order_id, line_item_id=li_id, label="Retargeting CTV", rate=5.0))
+        session.add(StrategyTerms(order_id=order_id, line_item_id=li_id, label="Geo-Fencing Video", rate=5.0))
+        cpm = session.get(LineItem, li_id).goal_cpm
+    client.post(f"/orders/{order_id}/save", data={
+        f"li-{li_id}-name": "Video", f"li-{li_id}-product": "CTV + Video Ads",
+        f"li-{li_id}-goal_cpm": cpm or "",
+    })
+    with db_module.session_scope() as session:
+        item = session.get(LineItem, li_id)
+        assert item.product == "CTV + Video Ads"
+        assert item.goal_cpm == ratecard.setup_cpm("CTV + Video Ads")
+        rates = {t.label: t.rate for t in session.query(StrategyTerms).filter_by(line_item_id=li_id)}
+    assert rates["Retargeting CTV"] == ratecard.setup_cpm("Connected TV Ads")
+    assert rates["Geo-Fencing Video"] == ratecard.setup_cpm("Video Ads")

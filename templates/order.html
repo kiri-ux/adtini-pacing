@@ -145,6 +145,11 @@
                      'event': ('client_monthly_budget', 'client_total_budget', 'goal_cpe')}[r.pacing_type] %}
       <tr data-state="{{ r.state }}" class="{% if r.needs_setup %}needssetup{% endif %}">
         <td class="elname"><input type="text" name="li-{{ li }}-name" value="{{ r.label }}">
+          <select class="prodpick" name="li-{{ li }}-product" title="Product">
+            {% set cur = r.line_item.product if r.line_item else none %}
+            {% if cur and cur not in product_names %}<option value="{{ cur }}" selected>{{ cur }}</option>{% endif %}
+            {% for p in product_names %}<option value="{{ p }}"{% if p == cur %} selected{% endif %}>{{ p }}</option>{% endfor %}
+          </select>
           {% if r.state != 'running' %}<span class="statepill {{ r.state }}">{{ r.status or r.state }}</span>{% endif %}
           {% if r.needs_setup %}<span class="setupflag"
             title="No sold total or no dates, so there is nothing to pace against">no goal set</span>{% endif %}</td>

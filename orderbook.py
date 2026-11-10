@@ -552,7 +552,9 @@ def import_orders(session, frame, cache: dict | None = None) -> ImportResult:
         else:
             result.line_items_updated += 1
 
-        item.product = product or item.product
+        # A product picked by hand stays, like the rest of its terms.
+        if not item.terms_locked or not item.product:
+            item.product = product or item.product
         item.status = row.get("item_status") or row.get("status") or item.status
         if row.get("sold_strategies"):
             item.sold_strategies = row.get("sold_strategies")
@@ -864,6 +866,13 @@ def _reset_old_split_rates(session) -> int:
         .where(LineItem.goal_cpm.is_not(None))
     ).all()
     for term, item in rows:
+        half = ratecard.merged_strategy_cpm(item.product, term.label)
+        if half is not None:
+            # CTV + Video: each row at its own half, whatever it was left at.
+            if term.rate != half:
+                term.rate = half
+                reset += 1
+            continue
         if item.terms_locked or term.rate is None or term.rate == item.goal_cpm:
             continue
         old = OLD_SETUP_CPM.get(
