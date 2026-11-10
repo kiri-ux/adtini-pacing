@@ -207,14 +207,15 @@
           <td class="num">{{ mb|money if mb else '—' }}</td>
           <td class="num">{{ e.media_spent|money if e.media_spent else '—' }}</td>
           <td class="num">{{ e.media_budget|money if e.media_budget else '—' }}</td>
-          <td class="num">{{ val(d, e.to_date) }}{% if money %}<div class="clicksub">{{ e.clicks|num }} clicks</div>{% endif %}</td>
+          <td class="num">{{ val(d, e.to_date) }}{% if money %}<div class="clicksub">{{ e.clicks|num }} clicks</div>{% elif e.to_date %}<div class="clicksub" title="{{ (e.clicks or 0)|num }} clicks">{{ '%.2f%%'|format((e.clicks or 0) / e.to_date * 100) }} CTR</div>{% endif %}</td>
           <td class="num">{{ val(d, e.remaining) }}</td>
           <td class="num sep"><span class="pace {{ e.pacing_pct|paceclass }}" title="{{ val(d, e.to_date) }} of {{ val(d, e.on_pace) }}">{{ (e.to_date / e.on_pace)|pct if e.on_pace else '—' }}</span></td>
           {% for day in dates %}
             {% set x = e.by_date.get(day) %}
             <td class="num{% if day.day == 1 %} mstart{% endif %}{% if d.is_future(day) %} future{% elif not x %} zero{% endif %}">
               {%- if d.is_future(day) -%}{%- elif x -%}{{ val(d, x) }}{%- else -%}&mdash;{%- endif -%}
-              {%- if money and not d.is_future(day) %}{% set c = e.clicks_by_date.get(day) %}<div class="clicksub">{{ c|num if c else '—' }}</div>{% endif -%}</td>
+              {%- if money and not d.is_future(day) %}{% set c = e.clicks_by_date.get(day) %}<div class="clicksub">{{ c|num if c else '—' }}</div>
+              {%- elif x and not d.is_future(day) %}<div class="clicksub" title="{{ (e.clicks_by_date.get(day) or 0)|num }} clicks">{{ '%.2f%%'|format((e.clicks_by_date.get(day) or 0) / x * 100) }}</div>{% endif -%}</td>
           {% endfor %}
         </tr>
       {% else %}
@@ -264,18 +265,13 @@
           <th class="pin">Total pacing</th><td colspan="12" class="sep"></td>
           {% for day in dates %}{{ pacecell(d, d.td_actual.get(day), d.td_target.get(day), day) }}{% endfor %}
         </tr>
+        {%- if d.by_events %}
         <tr class="cumrow perfrow">
-          {%- if d.by_events %}
           {% set ev = d.events_by_date.values()|sum %}
           <th class="pin">Events</th><td colspan="12" class="sep perftot">{{ ev|num if ev else '' }}</td>
           {% for day in dates %}{% set x = d.events_by_date.get(day) %}<td class="num{% if day.day == 1 %} mstart{% endif %}">{{ x|num if x else ('—' if not d.is_future(day) else '') }}</td>{% endfor %}
-          {%- else %}
-          {% set ci = d.impressions_by_date.values()|sum %}{% set cc = d.clicks_by_date.values()|sum %}
-          <th class="pin">CTR</th><td colspan="12" class="sep perftot">{% if ci %}{{ '%.2f%%'|format(cc / ci * 100) }} <span class="clicksub">{{ cc|num }} clicks</span>{% endif %}</td>
-          {% for day in dates %}{% set i = d.impressions_by_date.get(day) %}{% set c = d.clicks_by_date.get(day) or 0 %}
-          <td class="num{% if day.day == 1 %} mstart{% endif %}">{% if i %}{{ '%.2f%%'|format(c / i * 100) }}<div class="clicksub">{{ c|num }}</div>{% elif not d.is_future(day) %}—{% endif %}</td>{% endfor %}
-          {%- endif %}
         </tr>
+        {%- endif %}
 
 {%- endmacro %}
 

@@ -898,9 +898,10 @@ def test_goal_cpm_is_the_starting_cpm_and_over_max_is_flagged():
     assert ratecard.lookup("Social Mirror Ads").max_cpm == 3.00
 
 
-def test_the_grid_has_a_ctr_row(site):
+def test_ctr_sits_under_each_strategy_row(site):
     app_module, (order_id, li_id) = site
     html = app_module.app.test_client().get(
         f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
-    assert '<th class="pin">CTR</th>' in html
-    assert "clicks</span>" in html
+    assert '<th class="pin">CTR</th>' not in html
+    assert " CTR</div>" in html
+    assert 'clicks">' in html
