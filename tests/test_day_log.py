@@ -58,7 +58,7 @@ def site(tmp_path):
             LineItem(
                 order_id=order.id, external_id="122628", name="MC",
                 product="Mobile Conquesting Display & Video Ads",
-                monthly_impressions=100_000.0, total_impressions=300_000.0,
+                monthly_impressions=100_000.0, total_impressions=300_000.0, months_running=11,
                 goal_cpm=4.5,
             )
         )

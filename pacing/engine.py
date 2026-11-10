@@ -29,6 +29,7 @@ from pacing.calendar import (
     inclusive_days,
     month_bounds,
     month_window,
+    months_between,
 )
 
 
@@ -76,6 +77,12 @@ class PacingRow:
     # Delivered side, current month.
     month_days: int = 0
     month_daily_target: float = 0.0
+    # This month's goal. The monthly goal, unless the line is not sold in
+    # whole months (`prorated`): then the flight's daily share times the
+    # days of this month it runs.
+    month_goal: float = 0.0
+    months_running: float | None = None
+    prorated: bool = False
     month_to_date: float = 0.0
     month_on_pace: float = 0.0
     month_pacing_delta: float = 0.0
@@ -143,9 +150,9 @@ class PacingRow:
 
     @property
     def month_goal_ratio(self) -> float | None:
-        if not self.monthly_target:
+        if not self.month_goal:
             return None
-        return self.month_to_date / self.monthly_target
+        return self.month_to_date / self.month_goal
 
     @property
     def expected_ratio(self) -> float | None:
@@ -156,9 +163,9 @@ class PacingRow:
 
     @property
     def month_expected_ratio(self) -> float | None:
-        if not self.monthly_target:
+        if not self.month_goal:
             return None
-        return self.month_on_pace / self.monthly_target
+        return self.month_on_pace / self.month_goal
 
     @property
     def delivery_ratio(self) -> float | None:
@@ -368,6 +375,8 @@ def compute_row(
                 line_item.client_total_budget / line_item.google_total_spend
             )
 
+    row.month_goal = row.monthly_target
+    row.months_running = line_item.months_running
     points = sorted(daily, key=lambda p: p.date) if totals is None else []
     row.daily = points
     attr = _primary_attr(pacing_type)
@@ -417,6 +426,7 @@ def compute_row(
 
     row.flight_days = inclusive_days(start, end)
     row.daily_target = row.total_target / row.flight_days if row.flight_days else 0.0
+    row.prorated = is_prorated(row)
 
     if pacing_type == PACING_IMPRESSION:
         row.daily_budget = row.daily_target * row.unit_cost / 1000.0
@@ -436,10 +446,11 @@ def compute_row(
     if window:
         w_start, w_end = window
         row.month_days = inclusive_days(w_start, w_end)
-        # The month's sold amount spread over the days the flight actually
-        # covers in that month, not a flat 1/30th.
+        row.month_goal = goal_in_window(row, w_start, w_end)
+        # The month's goal spread over the days the flight actually covers
+        # in that month, not a flat 1/30th.
         row.month_daily_target = (
-            row.monthly_target / row.month_days if row.month_days else 0.0
+            row.month_goal / row.month_days if row.month_days else 0.0
         )
         row.month_to_date = in_month.of(attr) * gross
         row.month_on_pace = row.month_daily_target * elapsed_days(as_of, w_start, w_end)
@@ -449,6 +460,42 @@ def compute_row(
     _attach_effective_cost(row)
     _attach_rate_card(row, line_item)
     return row
+
+
+def is_prorated(row: PacingRow) -> bool:
+    """A line sold for fewer months than the calendar months it touches.
+
+    A one month line run 13 Oct to 12 Nov has 449,550 for the whole flight,
+    not 449,550 for each of October and November. The months come from the
+    line (`months_running`), else from total over monthly when that is a
+    whole number.
+    """
+    if not (row.start_date and row.end_date and row.total_target):
+        return False
+    months = row.months_running
+    if not months and row.monthly_target:
+        # Only a whole number of months says how long it was sold for.
+        ratio = row.total_target / row.monthly_target
+        months = round(ratio) if abs(ratio - round(ratio)) < 0.01 else None
+    if not months:
+        return False
+    return months_between(row.start_date, row.end_date) > months + 0.01
+
+
+def goal_in_window(row: PacingRow, first: dt.date, last: dt.date) -> float:
+    """What the line should serve between `first` and `last`, two days of
+    the same month inside its flight."""
+    if row.prorated:
+        return row.daily_target * inclusive_days(first, last)
+    return row.monthly_target
+
+
+def month_goal_on(row: PacingRow, day: dt.date) -> float:
+    """The goal for the month `day` falls in. 0 outside the flight."""
+    if not (row.start_date and row.end_date):
+        return row.monthly_target
+    window = month_window(day, row.start_date, row.end_date)
+    return goal_in_window(row, *window) if window else 0.0
 
 
 def _attach_rate_card(row: PacingRow, line_item: LineItem) -> None:
@@ -501,8 +548,8 @@ def total_row(rows: Sequence[PacingRow], pacing_type: str) -> PacingRow:
         return total
 
     for attr in (
-        "monthly_target", "total_target", "daily_target", "daily_budget",
-        "total_budget", "to_date", "remaining", "on_pace", "month_daily_target",
+        "monthly_target", "month_goal", "total_target", "daily_target",
+        "daily_budget", "total_budget", "to_date", "remaining", "on_pace", "month_daily_target",
         "month_to_date", "month_on_pace", "impressions", "clicks", "cost",
         "conversions", "client_monthly_budget", "client_total_budget",
         "google_monthly_spend", "google_total_spend", "monthly_events",

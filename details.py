@@ -459,6 +459,11 @@ def details_view(
             if in_flight(d) and values[slot]
         }
 
+    def month_of(r) -> float | None:
+        """The monthly goal to catch up to. None on a line not sold in
+        whole months: that one catches up to its flight's total."""
+        return None if r.prorated else r.monthly_target
+
     def catch_up(monthly, total, by_date, day: dt.date) -> float | None:
         """What a day has to serve so the goal still lands.
 
@@ -585,7 +590,7 @@ def details_view(
                 daily=srow.daily_target if sold else None,
                 rate=rate,
                 daily_budget=day_budget(
-                    catch_up(srow.monthly_target, srow.total_target,
+                    catch_up(None if row.prorated else srow.monthly_target, srow.total_target,
                              per_day(series, index), tomorrow),
                     rate,
                 ) if sold else None,
@@ -687,14 +692,16 @@ def details_view(
         # zeroed out").
         if day.day == 1:
             month_running = month_running_target = 0.0
-        if start and end and row.monthly_target:
+        if start and end and row.prorated:
+            month_daily = row.daily_target if start <= day <= end else 0.0
+        elif start and end and row.monthly_target:
             window = month_window(day, start, end)
             days = inclusive_days(*window) if window else 0
             month_daily = row.monthly_target / days if days else 0.0
         else:
             month_daily = 0.0
         # What each day needed, given what had served before it.
-        need = catch_up(row.monthly_target, row.total_target, total_by_date, day)
+        need = catch_up(month_of(row), row.total_target, total_by_date, day)
         day_target[day] = need if need is not None else row.daily_target
         running_target += row.daily_target
         month_running_target += month_daily
@@ -784,7 +791,7 @@ def details_view(
         month_target=month_target,
         day_target=day_target,
         day_budget=split_day_budget if split_day_budget is not None else day_budget(
-            catch_up(row.monthly_target, row.total_target, total_by_date, tomorrow),
+            catch_up(month_of(row), row.total_target, total_by_date, tomorrow),
             row.unit_cost,
         ),
         notes_by_date=notes_by_date,
