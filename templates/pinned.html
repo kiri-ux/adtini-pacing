@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %} · Pinned{% endblock %}
+{% block heading %}Pinned{% endblock %}
+
+{% block body %}
+<p class="crumbs">{{ rows|length }} orders
+  {% if as_of %}&middot; Paced through <span class="crumbc">{{ as_of.strftime('%-d %b %Y') }}</span>{% endif %}</p>
+{% set empty_text = "No pinned orders. Use the star on an order." %}
+{% include "_ordertable.html" %}
+{% endblock %}
+
+{% block scripts %}<script src="/static/tips.js" defer></script>{% endblock %}

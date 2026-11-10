@@ -1068,6 +1068,7 @@ def overview(
     needs_terms: bool | None = None,
     include_non_io: bool = False,
     markets: list[str] | None = None,
+    order_ids: list[int] | None = None,
 ) -> list[OverviewRow]:
     """One computed line per order, which is the summary tab.
 
@@ -1088,6 +1089,8 @@ def overview(
         stmt = stmt.where(Client.market == market)
     if markets is not None:
         stmt = stmt.where(Client.market.in_(markets))
+    if order_ids is not None:
+        stmt = stmt.where(Order.id.in_(order_ids))
     if pacing_type:
         stmt = stmt.where(Order.pacing_type == pacing_type)
     if query:
@@ -2180,7 +2183,10 @@ def group_by_targeting(
             "|".join(sorted(n.lower() for n in series.names))
             or series.label.strip().lower()
         )
-        where = "|".join(sorted(f"{a}:{b}" for a, b in series.campaigns))
+        # By DSP, not campaign id: AdLib beside a StackAdapt test is two
+        # lines, but a Meta campaign rebuilt under a new id is still the
+        # same line. Split by id, its delivery fell off the split row.
+        where = "|".join(sorted({a for a, _ in series.campaigns}))
         return f"{name}@{where}" if where else name
 
     # Numbered by which line started first, then by name, so a line keeps

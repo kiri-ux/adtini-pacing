@@ -1312,3 +1312,20 @@ def test_the_same_strategy_on_two_dsps_is_two_lines():
         "behavioral": {("Adlib Database", "246")},
         "behavioral#2": {("StackAdapt", "506515")},
     }
+
+
+def test_one_dsp_under_two_campaign_ids_is_one_line():
+    """A Meta campaign rebuilt under a new id stays the row it was."""
+    import views
+
+    def s(campaign, first):
+        return views.StrategySeries(
+            line_item_id=1, label="Categories", product="Meta Display & Video Ads",
+            by_date={dt.date(2026, 10, first): 10.0}, total=10.0,
+            names={"Chalfant - Facebook/Instagram Premium"},
+            campaigns={("Facebook & Instagram Targeting", campaign)},
+        )
+
+    grouped = views.group_by_targeting(
+        "Meta Display & Video Ads", [s("111", 1), s("222", 13)])
+    assert len(grouped) == 1

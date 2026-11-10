@@ -926,3 +926,13 @@ def test_picking_ctv_plus_video_prices_each_row_at_its_half(site):
         rates = {t.label: t.rate for t in session.query(StrategyTerms).filter_by(line_item_id=li_id)}
     assert rates["Retargeting CTV"] == ratecard.setup_cpm("Connected TV Ads")
     assert rates["Geo-Fencing Video"] == ratecard.setup_cpm("Video Ads")
+
+
+def test_pinned_page_shows_only_the_pinned_orders(site):
+    app_module, (order_id, li_id) = site
+    client = app_module.app.test_client()
+    html = client.get(f"/pinned?ids={order_id}").get_data(as_text=True)
+    assert f"/orders/{order_id}" in html
+    assert "1 orders" in html
+    empty = client.get("/pinned?ids=").get_data(as_text=True)
+    assert "No pinned orders" in empty
