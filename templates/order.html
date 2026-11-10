@@ -23,6 +23,10 @@
 {% include "_pagetabs.html" %}
 <div class="tabbody">
 
+{% if not v.rows %}
+{% set others = o.line_items|map(attribute='product')|select|unique|list %}
+<p class="warnbar">No paced products on this order.{% if others %} On it: {{ others|join(', ') }}.{% else %} It has no line items.{% endif %}</p>
+{% endif %}
 {% if v.status_contradicts_delivery %}
 <p class="warnbar">Status is {{ o.status }}, but {{ t.to_date|metric(t) }} has delivered.</p>
 {% endif %}
