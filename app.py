@@ -1367,9 +1367,43 @@ def campaign_link(order_id: int):
             if campaign_id:
                 wanted.add((source, campaign_id))
 
+        # Campaigns that reach this line item on its id. Ticked, they need no
+        # link; unticked, they are left out of it.
+        id_matched: set[tuple[str, str]] = set()
+        if item.external_id:
+            order = item.order
+            paced = [li for li in order.line_items if products.is_paced(li.product)]
+            join = views._delivery_join(db, paced)
+            for source, campaign, ext_order in db.execute(
+                select(
+                    DailyDelivery.data_source, DailyDelivery.campaign_id,
+                    DailyDelivery.external_order_id,
+                ).where(DailyDelivery.external_line_item_id == item.external_id).distinct()
+            ):
+                if join.resolve(ext_order, item.external_id) == item.id:
+                    id_matched.add((source, campaign))
+        excluded_now = 0
+        for key in id_matched:
+            link = existing.pop(key, None)
+            if key in wanted:
+                wanted.discard(key)
+                if link is not None:
+                    db.delete(link)
+            elif link is None:
+                db.add(CampaignLink(
+                    line_item_id=item.id, data_source=key[0], campaign_id=key[1],
+                    excluded=True, linked_by=who,
+                ))
+                excluded_now += 1
+            elif not link.excluded:
+                link.excluded = True
+                excluded_now += 1
+
         for key, link in existing.items():
             if key not in wanted:
                 db.delete(link)
+            elif link.excluded:
+                link.excluded = False
 
         for source, campaign_id in sorted(wanted):
             link = existing.get((source, campaign_id))
@@ -1395,10 +1429,10 @@ def campaign_link(order_id: int):
                 )
             )
 
-        removed = len(set(existing) - wanted)
+        removed = len(set(existing) - wanted) + excluded_now
         added = len(wanted - set(existing))
 
-    if not wanted and not removed:
+    if not wanted and not removed and not id_matched:
         flash("Nothing picked.")
     elif not wanted:
         flash("Link removed.")

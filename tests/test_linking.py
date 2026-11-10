@@ -451,3 +451,46 @@ def test_a_products_own_page_does_not_take_a_sibling_line_items_days(site):
 
     assert on_order == 6_000
     assert on_page == on_order
+
+
+def test_a_campaign_matched_on_the_line_item_id_can_be_left_out(site):
+    """An AdLib campaign and a StackAdapt test both carry the line item id.
+    Each is listed on its own, and the one left unticked stops counting."""
+    from models import CampaignLink, DailyDelivery
+
+    import db as db_module
+
+    app_module, order_id = site
+    client = app_module.app.test_client()
+    li = _line_item_id(app_module, order_id)
+    with db_module.session_scope() as session:
+        for source, campaign, impressions, order_ext in (
+            ("Adlib Database", "246", 300.0, "27900"),
+            ("StackAdapt", "506515", 200.0, "27900"),
+        ):
+            for day in range(1, 6):
+                session.add(DailyDelivery(
+                    date=dt.date(2026, 8, day), data_source=source,
+                    campaign_id=campaign, strategy_id=f"{campaign}-{day}",
+                    client_name="Someone Else", external_order_id=order_ext,
+                    external_line_item_id="27919",
+                    campaign_name=f"{source} campaign",
+                    product="Meta Display & Video Ads", strategy_name="Behavioral",
+                    impressions=impressions,
+                ))
+
+    assert _served(order_id) == 2_500
+    page = client.get(f"/orders/{order_id}").get_data(as_text=True)
+    assert "Adlib Database campaign" in page and "StackAdapt campaign" in page
+
+    client.post(f"/orders/{order_id}/link", data={
+        "line_item_id": str(li), "campaign": "StackAdapt␟506515"})
+    assert _served(order_id) == 1_000, "AdLib left out"
+    with db_module.session_scope() as session:
+        link = session.query(CampaignLink).one()
+        assert (link.campaign_id, link.excluded) == ("246", True)
+
+    client.post(f"/orders/{order_id}/link", data={
+        "line_item_id": str(li),
+        "campaign": ["StackAdapt␟506515", "Adlib Database␟246"]})
+    assert _served(order_id) == 2_500, "ticked again, it counts again"
