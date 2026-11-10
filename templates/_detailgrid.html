@@ -48,7 +48,7 @@
             {% for d in gs %}{% for n in d.notes_by_date.get(day, []) %}{% if n not in ns %}{% set _ = ns.append(n) %}{% endif %}{% endfor %}{% endfor %}
             <td class="note{% if day.day == 1 %} mstart{% endif %}">
               {%- if ns -%}
-              <span class="notemark" tabindex="0" title="{{ ns|map(attribute='body')|join(' · ') }}">&#9679;</span>
+              <span class="notemark" tabindex="0" data-tip="{{ ns|map(attribute='body')|join(' · ') }}">&#9679;</span>
               {%- endif -%}</td>
           {% endfor %}
         </tr>
@@ -207,7 +207,7 @@
           <td class="num">{{ mb|money if mb else '—' }}</td>
           <td class="num">{{ e.media_spent|money if e.media_spent else '—' }}</td>
           <td class="num">{{ e.media_budget|money if e.media_budget else '—' }}</td>
-          <td class="num">{{ val(d, e.to_date) }}{% if money %}<div class="clicksub">{{ e.clicks|num }} clicks</div>{% elif e.to_date %}<div class="clicksub" title="{{ (e.clicks or 0)|num }} clicks">{{ '%.2f%%'|format((e.clicks or 0) / e.to_date * 100) }} CTR</div>{% endif %}</td>
+          <td class="num">{{ val(d, e.to_date) }}{% if money %}<div class="clicksub">{{ e.clicks|num }} clicks</div>{% elif e.to_date %}<div class="clicksub" data-tip="{{ (e.clicks or 0)|num }} clicks">{{ '%.2f%%'|format((e.clicks or 0) / e.to_date * 100) }} CTR</div>{% endif %}</td>
           <td class="num">{{ val(d, e.remaining) }}</td>
           <td class="num sep"><span class="pace {{ e.pacing_pct|paceclass }}" title="{{ val(d, e.to_date) }} of {{ val(d, e.on_pace) }}">{{ (e.to_date / e.on_pace)|pct if e.on_pace else '—' }}</span></td>
           {% for day in dates %}
@@ -215,7 +215,7 @@
             <td class="num{% if day.day == 1 %} mstart{% endif %}{% if d.is_future(day) %} future{% elif not x %} zero{% endif %}">
               {%- if d.is_future(day) -%}{%- elif x -%}{{ val(d, x) }}{%- else -%}&mdash;{%- endif -%}
               {%- if money and not d.is_future(day) %}{% set c = e.clicks_by_date.get(day) %}<div class="clicksub">{{ c|num if c else '—' }}</div>
-              {%- elif x and not d.is_future(day) %}<div class="clicksub" title="{{ (e.clicks_by_date.get(day) or 0)|num }} clicks">{{ '%.2f%%'|format((e.clicks_by_date.get(day) or 0) / x * 100) }}</div>{% endif -%}</td>
+              {%- elif x and not d.is_future(day) %}<div class="clicksub" data-tip="{{ (e.clicks_by_date.get(day) or 0)|num }} clicks">{{ '%.2f%%'|format((e.clicks_by_date.get(day) or 0) / x * 100) }}</div>{% endif -%}</td>
           {% endfor %}
         </tr>
       {% else %}

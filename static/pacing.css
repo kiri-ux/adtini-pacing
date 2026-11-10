@@ -1028,3 +1028,6 @@ td.moncell input.prorated{border-color:var(--accent,#2b59c3)}
 .pinmenu{max-height:70vh;overflow-y:auto}
 .pinhead{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:6px 12px 4px}
 .pinempty{font-size:13px;color:var(--muted);padding:8px 12px 10px}
+.tip{position:fixed;z-index:200;max-width:320px;background:#f1efea;color:#2b2b2b;border:1px solid #cfcac0;
+  border-radius:8px;padding:6px 10px;font-size:12.5px;line-height:1.35;box-shadow:0 4px 14px rgba(0,0,0,.12);pointer-events:none}
+[data-tip]{cursor:help}
