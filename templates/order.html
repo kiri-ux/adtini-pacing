@@ -66,8 +66,8 @@
           <td>{{ r.status or r.state|capitalize }}{% if r.needs_setup %} <span class="setupflag">no goal set</span>{% endif %}</td>
           {% set pname = (r.line_item.product if r.line_item and r.line_item.product else r.label) %}
           <td class="clip" title="{{ r.label }}">{% if r.line_item_id %}<a class="detlink" href="{{ url_for('details_page', order_id=o.id, line_item_id=r.line_item_id) }}">{{ pname }}</a>{% else %}{{ pname }}{% endif %}</td>
-          <td class="num pair">{{ r.month_to_date|metric(r) }} <i>/ {{ r.monthly_target|metric(r) }}</i></td>
-          <td>{{ meter(r.month_to_date, r.month_on_pace, r.monthly_target,
+          <td class="num pair">{{ r.month_to_date|metric(r) }} <i>/ {{ r.month_goal|metric(r) }}</i></td>
+          <td>{{ meter(r.month_to_date, r.month_on_pace, r.month_goal,
                        r.month_delivery_ratio, r.month_pacing_pct|paceclass, r.is_money) }}</td>
           <td class="num pair">{{ r.to_date|metric(r) }} <i>/ {{ r.total_target|metric(r) }}</i></td>
           <td>{{ meter(r.to_date, r.on_pace, r.total_target,
@@ -129,7 +129,7 @@
       <tr><th>Campaign Elements:</th><th class="idhead">Item ID</th>
         <th class="pacehead">Paces on</th>
         <th class="num">Serve</th><th class="num">Tot. Serve</th>
-        <th class="num">Day Serve</th><th class="num cpmhead">CPM/CPC</th>
+        <th class="num">Day Serve</th><th class="num monhead">Months</th><th class="num cpmhead">CPM/CPC</th>
         <th class="num">Day Budg.</th><th class="num">Tot Budg.</th>
         <th class="num">TD Serve</th><th class="num">Serve Left</th>
         <th class="num">On Pace</th><th class="num">Pacing</th><th></th></tr>
@@ -156,6 +156,8 @@
         <td class="num"><input type="text" name="li-{{ li }}-{{ goal[0] }}" value="{{ r.monthly_target|entry }}"></td>
         <td class="num"><input type="text" name="li-{{ li }}-{{ goal[1] }}" value="{{ r.total_target|entry }}"></td>
         <td class="num ro">{{ r.daily_target|metric(r) }}</td>
+        <td class="num moncell"><input type="text" name="li-{{ li }}-months_running" value="{{ r.months_running|entry }}"
+          {%- if r.prorated %} class="prorated" title="Spread over the flight"{% endif %}></td>
         <td class="num cpmcell"><input type="text" name="li-{{ li }}-{{ goal[2] }}" value="{{ r.unit_cost|entry }}"{% if r.pacing_type != 'impression' %} placeholder="CPC"{% endif %}></td>
         <td class="num ro">{{ r.daily_budget|money }}</td>
         <td class="num ro">{{ r.total_budget|money }}</td>
@@ -177,6 +179,7 @@
         <td class="num">{{ tt.monthly_target|metric(tt) }}</td>
         <td class="num">{{ tt.total_target|metric(tt) }}</td>
         <td class="num">{{ tt.daily_target|metric(tt) }}</td>
+        <td></td>
         <td class="num">{{ tt.unit_cost|money }}</td>
         <td class="num">{{ tt.daily_budget|money }}</td>
         <td class="num">{{ tt.total_budget|money }}</td>

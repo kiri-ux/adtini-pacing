@@ -43,8 +43,8 @@
           {% endfor %}
           {% if r.products|length > 5 %}<span class="pill-more">+{{ r.products|length - 5 }}</span>{% endif %}
         </td>
-        <td class="num pair">{{ t.month_to_date|metric(t) }} <i>/ {{ t.monthly_target|metric(t) }}</i></td>
-        <td>{{ meter(t.month_to_date, t.month_on_pace, t.monthly_target,
+        <td class="num pair">{{ t.month_to_date|metric(t) }} <i>/ {{ t.month_goal|metric(t) }}</i></td>
+        <td>{{ meter(t.month_to_date, t.month_on_pace, t.month_goal,
                      t.month_delivery_ratio, r.health, t.is_money) }}</td>
         <td class="num pair">{{ t.to_date|metric(t) }} <i>/ {{ t.total_target|metric(t) }}</i></td>
         <td>{{ meter(t.to_date, t.on_pace, t.total_target,
@@ -63,9 +63,9 @@
       <tr class="totalrow">
         <td class="rowacts"></td>
         <td colspan="5">Pacing total &middot; {{ rows|length }} orders on this page</td>
-        <td class="num pair">{{ page_total.month_to_date|num }} <i>/ {{ page_total.monthly_target|num }}</i></td>
+        <td class="num pair">{{ page_total.month_to_date|num }} <i>/ {{ page_total.month_goal|num }}</i></td>
         <td>{{ meter(page_total.month_to_date, page_total.month_on_pace,
-                     page_total.monthly_target, page_total.month_delivery_ratio,
+                     page_total.month_goal, page_total.month_delivery_ratio,
                      page_total.month_health, false) }}</td>
         <td class="num pair">{{ page_total.to_date|num }} <i>/ {{ page_total.total_target|num }}</i></td>
         <td>{{ meter(page_total.to_date, page_total.on_pace, page_total.total_target,

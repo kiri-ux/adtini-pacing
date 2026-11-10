@@ -522,3 +522,37 @@ def test_a_strategy_naming_neither_half_keeps_the_lines_own_rate():
 
     assert ratecard.merged_strategy_cpm("CTV + Video Ads", "Categories") is None
     assert ratecard.merged_strategy_cpm("Display Ads", "D - Retargeting") is None
+
+
+def test_a_one_month_line_over_two_months_is_spread_over_its_flight():
+    """Sold one month, run 13 Oct to 12 Nov: November owes 12 days of the
+    flight's goal, not the whole monthly goal in 12 days."""
+    order = Order(
+        id=9, client_id=1, name="Forrest", pacing_type="impression",
+        start_date=dt.date(2026, 10, 13), end_date=dt.date(2026, 11, 12),
+    )
+    item = LineItem(
+        id=9, order_id=9, name="Social Mirror", monthly_impressions=449_550,
+        total_impressions=449_550, goal_cpm=2.50,
+    )
+    row = compute_row(item, order, [], dt.date(2026, 11, 9))
+    assert row.prorated
+    assert round(row.month_goal) == round(449_550 / 31 * 12)
+    assert round(row.month_daily_target) == round(449_550 / 31)
+    assert row.monthly_target == 449_550
+
+
+def test_months_running_on_the_line_wins():
+    order = Order(
+        id=10, client_id=1, name="Two months", pacing_type="impression",
+        start_date=dt.date(2026, 10, 15), end_date=dt.date(2026, 12, 14),
+    )
+    item = LineItem(
+        id=10, order_id=10, name="Display", monthly_impressions=100_000,
+        total_impressions=300_000, months_running=2,
+    )
+    assert compute_row(item, order, [], dt.date(2026, 11, 9)).prorated
+    item.months_running = 3
+    row = compute_row(item, order, [], dt.date(2026, 11, 9))
+    assert not row.prorated
+    assert row.month_goal == 100_000

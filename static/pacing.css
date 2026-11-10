@@ -1015,3 +1015,6 @@ table.detailgrid th.pin .stratcell .linkform select{flex:none;width:auto;min-wid
 table.detailgrid tr.unsoldrow th.pin .feednames{margin-top:2px}
 table.daily.pinned.detailgrid tr.noterow th.pin0{border-top-color:transparent}
 table.detailgrid td.perftot{text-align:right;font-weight:600;font-size:12px}
+th.monhead,td.moncell{width:1%}
+td.moncell input{min-width:0;width:44px}
+td.moncell input.prorated{border-color:var(--accent,#2b59c3)}

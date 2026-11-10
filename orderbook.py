@@ -569,6 +569,7 @@ def import_orders(session, frame, cache: dict | None = None) -> ImportResult:
             # dates a fuller one supplied.
             item.start_date = row.get("start_date") or item.start_date
             item.end_date = row.get("end_date") or item.end_date
+            _keep(item, "months_running", row.get("months_running"))
             _apply_sold_terms(item, row, pacing_type)
 
     session.flush()

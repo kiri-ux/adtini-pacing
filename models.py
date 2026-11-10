@@ -144,6 +144,11 @@ class LineItem(Base):
     start_date: Mapped[dt.date | None] = mapped_column(Date)
     end_date: Mapped[dt.date | None] = mapped_column(Date)
 
+    # How many months the line is sold for, from RZ or set by hand. Fewer
+    # than the calendar months its dates touch means the goal is spread
+    # over the flight, not asked in full of every month.
+    months_running: Mapped[float | None] = mapped_column(Float)
+
     # --- impression pacing ---
     monthly_impressions: Mapped[float | None] = mapped_column(Float)
     total_impressions: Mapped[float | None] = mapped_column(Float)

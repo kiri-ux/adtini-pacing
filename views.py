@@ -36,6 +36,7 @@ from pacing.engine import (
     Totals,
     compute_row,
     health,
+    month_goal_on,
     total_row,
 )
 
@@ -560,10 +561,11 @@ def month_serve(view: "OrderView") -> list[MonthServe]:
                 continue
             if row.end_date and row.end_date < start:
                 continue
+            mgoal = month_goal_on(row, max(start, row.start_date or start))
             if row_metric(row) == main:
-                goal += row.monthly_target
+                goal += mgoal
             else:
-                spend_goal += row.monthly_target
+                spend_goal += mgoal
         out.append(
             MonthServe(
                 label=start.strftime("%b %Y"),
@@ -826,7 +828,7 @@ def order_view(
             order.start_date and order.end_date
         ) else None
         days = inclusive_days(*window) if window else 0
-        on_pace_by_date[day] = (total.monthly_target / days) if days else 0.0
+        on_pace_by_date[day] = (total.month_goal / days) if days else 0.0
 
     for row in rows:
         if row.line_item_id is None or not row.monthly_target:
@@ -839,7 +841,7 @@ def order_view(
             days = inclusive_days(*window) if window else 0
             if not days:
                 continue
-            target = row.monthly_target / days
+            target = row.daily_target if row.prorated else row.monthly_target / days
             value = served.get(day)
             if value is None:
                 continue
@@ -938,7 +940,7 @@ def goal_total_row(rows: list[PacingRow], pacing_type: str) -> PacingRow:
     month = total_row(
         [r for r in rows if counts_toward_goal(r) and r.state == "running"], pacing_type
     )
-    for attr in ("monthly_target", "month_daily_target", "month_to_date",
+    for attr in ("monthly_target", "month_goal", "month_daily_target", "month_to_date",
                  "month_on_pace", "month_pacing_delta", "month_pacing_pct",
                  "month_days"):
         setattr(total, attr, getattr(month, attr))
@@ -1191,6 +1193,7 @@ class PageTotal:
     month_to_date: float = 0.0
     month_on_pace: float = 0.0
     monthly_target: float = 0.0
+    month_goal: float = 0.0
     to_date: float = 0.0
     on_pace: float = 0.0
     total_target: float = 0.0
@@ -1231,6 +1234,7 @@ def page_total(rows: list[OverviewRow]) -> PageTotal:
         out.month_to_date += t.month_to_date
         out.month_on_pace += t.month_on_pace
         out.monthly_target += t.monthly_target
+        out.month_goal += t.month_goal
         out.to_date += t.to_date
         out.on_pace += t.on_pace
         out.total_target += t.total_target

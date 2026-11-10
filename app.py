@@ -759,7 +759,7 @@ def order_save(order_id: int):
                 "monthly_spend", "total_spend", "goal_cpc",
                 "client_monthly_budget", "client_total_budget",
                 "google_monthly_spend", "google_total_spend", "goal_cpe",
-                "monthly_events", "total_events",
+                "monthly_events", "total_events", "months_running",
             ):
                 if prefix + field_name in form:
                     setattr(item, field_name, as_float(prefix + field_name))
