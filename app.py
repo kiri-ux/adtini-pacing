@@ -480,6 +480,19 @@ def _warm_paths(full: bool = True) -> list[str]:
         for order_id in orders:
             paths.append(url_for("order_detail", order_id=order_id))
             paths.append(url_for("order_budgeting", order_id=order_id))
+        # Their product pages last: the most of them, and the least opened.
+        from models import LineItem
+
+        with session_scope() as db:
+            items = db.execute(
+                select(LineItem.order_id, LineItem.id, LineItem.product)
+                .where(LineItem.order_id.in_(orders))
+                .order_by(LineItem.order_id, LineItem.sort_order, LineItem.id)
+            ).all()
+        paths += [
+            url_for("details_page", order_id=o, line_item_id=li)
+            for o, li, product in items if products.is_paced(product)
+        ]
     return paths
 
 

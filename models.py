@@ -24,6 +24,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -456,6 +457,17 @@ class DeliveryStaging(Base):
     viewthroughs: Mapped[float] = mapped_column(Float, default=0.0)
     click_conversions: Mapped[float] = mapped_column(Float, default=0.0)
     goal_cpm: Mapped[float | None] = mapped_column(Float)
+
+
+class PageSnapshot(Base):
+    """The last good copy of a page, zlib-compressed, so a deploy (which
+    starts with an empty memory cache) can show it while a fresh one builds."""
+
+    __tablename__ = "page_snapshots"
+
+    path: Mapped[str] = mapped_column(String(1000), primary_key=True)
+    body: Mapped[bytes] = mapped_column(LargeBinary)
+    built_at: Mapped[dt.datetime] = mapped_column(DateTime, index=True)
 
 
 class IngestedFile(Base):
