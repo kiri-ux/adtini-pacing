@@ -37,7 +37,7 @@
         <th class="num">Served</th>
         <th class="num">Left</th>
         <th class="num sep">Pacing</th>
-        {% for day in dates %}<th class="num{% if day.day == 1 %} mstart{% endif %}{% if g0.is_future(day) %} future{% endif %}">{{ day.strftime('%-d-%b') }}</th>{% endfor %}
+        {% for day in dates %}<th class="num{% if day.day == 1 %} mstart{% endif %}{% if g0.is_future(day) %} future{% elif g0.is_partial(day) %} partial{% endif %}"{% if g0.is_partial(day) %} data-tip="Partial day"{% endif %}>{{ day.strftime('%-d-%b') }}</th>{% endfor %}
       </tr></thead>
       {% for d in gs %}<tbody data-live="{{ 1 if 'live' in (d.row.status or '')|lower else 0 }}">{{ section(d, dates, pacecell, linked) }}</tbody>{% endfor %}
       <tbody>
@@ -213,7 +213,7 @@
           <td class="num sep"><span class="pace {{ e.pacing_pct|paceclass }}" title="{{ val(d, e.to_date) }} of {{ val(d, e.on_pace) }}">{{ (e.to_date / e.on_pace)|pct if e.on_pace else '—' }}</span></td>
           {% for day in dates %}
             {% set x = e.by_date.get(day) %}
-            <td class="num{% if day.day == 1 %} mstart{% endif %}{% if d.is_future(day) %} future{% elif not x %} zero{% endif %}">
+            <td class="num{% if day.day == 1 %} mstart{% endif %}{% if d.is_future(day) %} future{% elif not x %} zero{% endif %}{% if d.is_partial(day) %} partial{% endif %}">
               {%- if d.is_future(day) -%}{%- elif x -%}{{ val(d, x) }}{%- else -%}&mdash;{%- endif -%}
               {%- if money and not d.is_future(day) %}{% set c = e.clicks_by_date.get(day) %}<div class="clicksub">{{ c|num if c else '—' }}</div>
               {%- elif x and not d.is_future(day) %}<div class="clicksub" data-tip="{{ (e.clicks_by_date.get(day) or 0)|num }} clicks">{{ '%.2f%%'|format((e.clicks_by_date.get(day) or 0) / x * 100) }}</div>{% endif -%}</td>
@@ -253,8 +253,8 @@
           {% for day in dates %}
             {% set x = d.total_by_date.get(day) %}
             {% set st = d.day_state.get(day) %}
-            <td class="num{% if day.day == 1 %} mstart{% endif %}{% if d.is_future(day) %} future{% endif %}">
-              {%- if d.is_future(day) -%}{%- elif x and st -%}<span class="daypill {{ st }}">{{ val(d, x) }}</span>{%- elif x -%}{{ val(d, x) }}{%- else -%}&mdash;{%- endif -%}
+            <td class="num{% if day.day == 1 %} mstart{% endif %}{% if d.is_future(day) %} future{% endif %}{% if d.is_partial(day) %} partial{% endif %}">
+              {%- if d.is_future(day) -%}{%- elif x and st and not d.is_partial(day) -%}<span class="daypill {{ st }}">{{ val(d, x) }}</span>{%- elif x -%}{{ val(d, x) }}{%- else -%}&mdash;{%- endif -%}
               {%- if not d.is_future(day) and not d.by_events -%}
                 {%- set di = d.impressions_by_date.get(day) %}{% set dc = d.clicks_by_date.get(day) or 0 -%}
                 {%- if money %}<div class="clicksub">{{ dc|num if dc else '—' }}</div>

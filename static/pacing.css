@@ -694,6 +694,7 @@ table.detailgrid input:focus{outline:2px solid var(--blue-lt);background:var(--c
 table.detailgrid td.sep,table.detailgrid th.sep{border-right:2px solid var(--line)}
 table.detailgrid .mstart{border-left:2px solid var(--line)}
 table.detailgrid td.future{background:#FAFBFC}
+table.detailgrid td.partial,table.detailgrid th.partial{color:#98A2B3;font-style:italic}
 table.detailgrid tr.unsoldrow th.pin{color:var(--muted);font-weight:500}
 table.detailgrid tr.totalrow th.pin,table.detailgrid tr.totalrow td{background:var(--fill);
   font-weight:600;border-top:1px solid var(--line)}

@@ -71,6 +71,12 @@ OPTION_NAMES = {
 RUN_CPM_DAYS = 7
 
 
+def _partial_after(session, as_of: dt.date) -> dt.date | None:
+    """The partial newest day, when it is the day right after as_of."""
+    day = views.partial_delivery_date(session)
+    return day if day is not None and day == as_of + dt.timedelta(days=1) else None
+
+
 def run_cpm(points, as_of: dt.date) -> float | None:
     """Cost per thousand over (date, impressions, cost) points in the window.
 
@@ -235,6 +241,7 @@ class DetailsView:
     by_events: bool = False
     # The whole product's running CPM, same window as GridRow.run_cpm.
     run_cpm: float | None = None
+    partial_day: dt.date | None = None
     media_spent: float | None = None
     media_budget: float | None = None
     # The rate card entry for the product: starting / max CPM to read the
@@ -362,7 +369,10 @@ class DetailsView:
         return label[len(prefix):] if prefix and label.startswith(prefix) else label
 
     def is_future(self, day: dt.date) -> bool:
-        return day > self.as_of
+        return day > (self.partial_day or self.as_of)
+
+    def is_partial(self, day: dt.date) -> bool:
+        return self.partial_day is not None and day == self.partial_day
 
     # The grid opens on one month: the one the data runs through, or the
     # nearest month of the flight. A column per day of a whole flight was
@@ -778,6 +788,7 @@ def details_view(
         item=item,
         row=row,
         as_of=as_of,
+        partial_day=_partial_after(session, as_of),
         dates=dates,
         elements=elements,
         total_by_date=total_by_date,
