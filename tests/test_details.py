@@ -936,3 +936,34 @@ def test_pinned_page_shows_only_the_pinned_orders(site):
     assert "1 orders" in html
     empty = client.get("/pinned?ids=").get_data(as_text=True)
     assert "No pinned orders" in empty
+
+
+def test_a_partial_newest_day_is_shown_but_not_paced_on(site):
+    import db as db_module
+    import details
+    import views
+    from models import DailyDelivery
+
+    app_module, (order_id, li_id) = site
+    with db_module.session_scope() as session:
+        assert views.partial_delivery_date(session) is None
+        assert views.latest_delivery_date(session) == dt.date(2026, 10, 26)
+        # The morning drop carries a sliver of the day before.
+        session.add(DailyDelivery(
+            date=dt.date(2026, 10, 27), data_source="StackAdapt",
+            campaign_id="CMP-9", strategy_id="S-27",
+            client_name="Forrest Design Group", external_order_id="51200",
+            external_line_item_id="99001", product="Display Ads",
+            strategy_name="Display - Behavioral", strategy_type="Behavioral",
+            impressions=700.0, clicks=0.0, cost=1.4,
+        ))
+    with db_module.session_scope() as session:
+        assert views.partial_delivery_date(session) == dt.date(2026, 10, 27)
+        assert views.latest_delivery_date(session) == dt.date(2026, 10, 26)
+        d = details.details_view(session, order_id, li_id)
+        assert d.as_of == dt.date(2026, 10, 26)
+        assert d.is_partial(dt.date(2026, 10, 27))
+        assert not d.is_future(dt.date(2026, 10, 27))
+    html = app_module.app.test_client().get(
+        f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
+    assert 'data-tip="Partial day"' in html

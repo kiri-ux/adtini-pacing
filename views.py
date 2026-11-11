@@ -41,9 +41,36 @@ from pacing.engine import (
 )
 
 
+# The rZ export runs early in the morning and carries only part of the day
+# before; the next drop fills it in. A newest day under this share of the one
+# before it is that partial day.
+PARTIAL_DAY_SHARE = 0.5
+
+
+def partial_delivery_date(session) -> dt.date | None:
+    """The newest day in the feed when it is still a partial day, else None."""
+    last = session.execute(select(func.max(DailyDelivery.date))).scalar()
+    if last is None:
+        return None
+    rows = dict(session.execute(
+        select(DailyDelivery.date, func.sum(DailyDelivery.impressions))
+        .where(DailyDelivery.date.in_([last, last - dt.timedelta(days=1)]))
+        .group_by(DailyDelivery.date)
+    ).all())
+    before = float(rows.get(last - dt.timedelta(days=1)) or 0)
+    newest = float(rows.get(last) or 0)
+    if before and newest < before * PARTIAL_DAY_SHARE:
+        return last
+    return None
+
+
 def latest_delivery_date(session) -> dt.date | None:
-    """The last day the feed covers - everything is paced as of this date."""
-    return session.execute(select(func.max(DailyDelivery.date))).scalar()
+    """The last full day the feed covers - everything is paced as of this
+    date. A partial newest day shows in the grid but is not paced on."""
+    last = session.execute(select(func.max(DailyDelivery.date))).scalar()
+    if last is not None and partial_delivery_date(session) == last:
+        return last - dt.timedelta(days=1)
+    return last
 
 
 def earliest_delivery_date(session) -> dt.date | None:
