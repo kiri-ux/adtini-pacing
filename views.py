@@ -9,7 +9,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 import threading
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
 from sqlalchemy import case, false, func, or_, select, tuple_
@@ -113,6 +113,10 @@ class _Join:
     # (data source, campaign, line item) a buyer unticked: matched on its id
     # but not what that line item bought.
     excluded: set[tuple[str, str, int]] = field(default_factory=set)
+    # Line item id alone, for delivery that arrives with no order id. rZ
+    # reads the order id off "#NNNNN" in the DSP campaign name, so a campaign
+    # named "Client - Product - line item ID" carries the line item only.
+    by_line: dict[str, int] = field(default_factory=dict)
 
     def __bool__(self) -> bool:
         return bool(self.by_id or self.by_link)
@@ -158,6 +162,8 @@ class _Join:
         if target is None and order_id not in self.order_ids:
             # Adopted delivery, keyed on its line item id alone.
             target = self.by_id.get((None, line_item_id))
+        if target is None and not order_id and line_item_id:
+            target = self.by_line.get(line_item_id)
         if target is None and data_source is not None and campaign_id is not None:
             key = (data_source, campaign_id)
             windows = self.shared.get(key)
@@ -224,8 +230,15 @@ def _delivery_join(session, line_items: list[LineItem]) -> _Join:
         for source, campaign, li_id, start, end, o_start, o_end in links:
             grouped[(source, campaign)].append((li_id, start or o_start, end or o_end))
         shared = {k: v for k, v in grouped.items() if len(v) > 1}
+    line_counts = Counter(li.external_id for li in line_items if li.external_id)
+    by_line = {
+        li.external_id: li.id
+        for li in line_items
+        if li.external_id and line_counts[li.external_id] == 1
+    }
     return _Join(
         by_id=by_id,
+        by_line=by_line,
         by_link=by_link,
         order_ids={li.order.external_order_id for li in line_items},
         shared=shared,
