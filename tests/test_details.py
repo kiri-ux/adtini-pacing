@@ -967,3 +967,25 @@ def test_a_partial_newest_day_is_shown_but_not_paced_on(site):
     html = app_module.app.test_client().get(
         f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
     assert 'data-tip="Partial day"' in html
+
+
+def test_delivery_with_no_order_id_joins_on_its_line_item(site):
+    import db as db_module
+    import details
+    from models import DailyDelivery
+
+    app_module, (order_id, li_id) = site
+    with db_module.session_scope() as session:
+        before = details.details_view(session, order_id, li_id).row.to_date
+        # Renamed "Client - Product - line item ID": rZ drops the order id.
+        session.add(DailyDelivery(
+            date=dt.date(2026, 10, 27), data_source="StackAdapt",
+            campaign_id="CMP-9", strategy_id="S-27",
+            client_name="Forrest Design Group", external_order_id="",
+            external_line_item_id="99001", product="Display Ads",
+            strategy_name="Display - Behavioral", strategy_type="Behavioral",
+            impressions=10_000.0, clicks=0.0, cost=20.4,
+        ))
+    with db_module.session_scope() as session:
+        after = details.details_view(session, order_id, li_id).row.to_date
+    assert after == before + 10_000.0
