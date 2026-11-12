@@ -1015,3 +1015,24 @@ def test_a_renamed_beta_line_matches_on_its_trailing_number(site):
     with db_module.session_scope() as session:
         after = details.details_view(session, order_id, li_id).row.to_date
     assert after == before + 10_000.0
+
+
+def test_a_renamed_strategy_stays_one_row(site):
+    import db as db_module
+    import details
+    from models import DailyDelivery
+
+    app_module, (order_id, li_id) = site
+    with db_module.session_scope() as session:
+        before = [e.label for e in details.details_view(session, order_id, li_id).elements]
+        session.add(DailyDelivery(
+            date=dt.date(2026, 10, 27), data_source="StackAdapt",
+            campaign_id="CMP-9", strategy_id="S-26",
+            client_name="Forrest Design Group", external_order_id="51200",
+            external_line_item_id="99001", product="Display Ads",
+            strategy_name="test_Display - Behavioral", strategy_type="Behavioral",
+            impressions=10_000.0, clicks=0.0, cost=20.4,
+        ))
+    with db_module.session_scope() as session:
+        after = [e.label for e in details.details_view(session, order_id, li_id).elements]
+    assert len(after) == len(before)

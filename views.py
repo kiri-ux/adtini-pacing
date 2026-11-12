@@ -478,14 +478,46 @@ def strategy_series(
 
     collected: dict[tuple, StrategySeries] = {}
     seen_ids: dict[tuple, set[str]] = defaultdict(set)
+    fetched = []
+    for row in session.execute(stmt):
+        target = join.resolve(row[0], row[1], row[2], row[3], row[8])
+        if target is not None:
+            fetched.append((target, *row))
+    # A strategy renamed in the DSP keeps its id. Names that share a real id
+    # are one line under the newest name, so a rename does not split a row.
+    parent: dict[tuple, tuple] = {}
+
+    def find(x):
+        while parent.setdefault(x, x) != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    by_id: dict[tuple, tuple] = {}
+    for target, _o, _l, source, campaign, strategy_id, strategy_name, *_ in fetched:
+        name = (target, source, campaign, (strategy_name or "").strip())
+        find(name)
+        if not strategy_id or str(strategy_id).startswith("name:"):
+            continue
+        k = (target, source, campaign, strategy_id)
+        if k in by_id:
+            a, b = find(by_id[k]), find(name)
+            if a != b:
+                parent[b] = a
+        else:
+            by_id[k] = name
+    newest: dict[tuple, tuple] = {}
+    for target, _o, _l, source, campaign, _sid, strategy_name, _t, _p, date, *_ in fetched:
+        root = find((target, source, campaign, (strategy_name or "").strip()))
+        if root not in newest or date >= newest[root][0]:
+            newest[root] = (date, strategy_name)
     for (
-        order_id, li_id, source, campaign, strategy_id, strategy_name,
+        target, order_id, li_id, source, campaign, strategy_id, strategy_name,
         strategy_type, product, date,
         impressions, clicks, cost, conversions,
-    ) in session.execute(stmt):
-        target = join.resolve(order_id, li_id, source, campaign, date)
-        if target is None:
-            continue
+    ) in fetched:
+        root = find((target, source, campaign, (strategy_name or "").strip()))
+        strategy_name = newest[root][1]
         metrics = {
             "impressions": float(impressions or 0),
             "clicks": float(clicks or 0),
