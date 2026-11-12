@@ -117,6 +117,10 @@ class _Join:
     # reads the order id off "#NNNNN" in the DSP campaign name, so a campaign
     # named "Client - Product - line item ID" carries the line item only.
     by_line: dict[str, int] = field(default_factory=dict)
+    # Beta orders carry the order name as the line item id on both sides
+    # ("Client #929975 - 458102"); a rename changes the name but keeps the
+    # trailing number, so they also match on that number.
+    by_tail: dict[str, int] = field(default_factory=dict)
 
     def __bool__(self) -> bool:
         return bool(self.by_id or self.by_link)
@@ -135,6 +139,8 @@ class _Join:
         clauses = []
         if self.by_id:
             clauses.append(DailyDelivery.external_line_item_id.in_(self.external_ids))
+        for tail in self.by_tail:
+            clauses.append(DailyDelivery.external_line_item_id.like(f"% - {tail}"))
         if self.by_link:
             clauses.append(
                 tuple_(DailyDelivery.data_source, DailyDelivery.campaign_id).in_(
@@ -164,6 +170,10 @@ class _Join:
             target = self.by_id.get((None, line_item_id))
         if target is None and not order_id and line_item_id:
             target = self.by_line.get(line_item_id)
+        if target is None and line_item_id:
+            tail = name_id_tail(line_item_id)
+            if tail:
+                target = self.by_tail.get(tail)
         if target is None and data_source is not None and campaign_id is not None:
             key = (data_source, campaign_id)
             windows = self.shared.get(key)
@@ -172,6 +182,20 @@ class _Join:
                 return target if target in self.in_view else None
             target = self.by_link.get(key)
         return target
+
+
+_NAME_ID_TAIL = re.compile(r"\s-\s(\d{4,})\s*$")
+
+
+def name_id_tail(value: str | None) -> str | None:
+    """The trailing line item number of a name used as an id, else None.
+
+    "test_Service One Credit Union #929975 - 458102" -> "458102". A plain
+    numeric id has no tail: it already matches as itself."""
+    if not value or value.isdigit():
+        return None
+    m = _NAME_ID_TAIL.search(value)
+    return m.group(1) if m else None
 
 
 def _by_dates(windows: list, day: dt.date) -> int:
@@ -236,9 +260,17 @@ def _delivery_join(session, line_items: list[LineItem]) -> _Join:
         for li in line_items
         if li.external_id and line_counts[li.external_id] == 1
     }
+    tails = Counter(name_id_tail(li.external_id) for li in line_items if li.external_id)
+    by_tail = {
+        name_id_tail(li.external_id): li.id
+        for li in line_items
+        if li.external_id and name_id_tail(li.external_id)
+        and tails[name_id_tail(li.external_id)] == 1
+    }
     return _Join(
         by_id=by_id,
         by_line=by_line,
+        by_tail=by_tail,
         by_link=by_link,
         order_ids={li.order.external_order_id for li in line_items},
         shared=shared,
