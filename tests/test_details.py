@@ -989,3 +989,29 @@ def test_delivery_with_no_order_id_joins_on_its_line_item(site):
     with db_module.session_scope() as session:
         after = details.details_view(session, order_id, li_id).row.to_date
     assert after == before + 10_000.0
+
+
+def test_a_renamed_beta_line_matches_on_its_trailing_number(site):
+    import db as db_module
+    import details
+    import views
+    from models import DailyDelivery, LineItem
+
+    assert views.name_id_tail("test_Service One Credit Union #929975 - 458102") == "458102"
+    assert views.name_id_tail("458102") is None
+    app_module, (order_id, li_id) = site
+    with db_module.session_scope() as session:
+        session.get(LineItem, li_id).external_id = "Forrest Design Group #51200 - 458102"
+    with db_module.session_scope() as session:
+        before = details.details_view(session, order_id, li_id).row.to_date
+        session.add(DailyDelivery(
+            date=dt.date(2026, 10, 27), data_source="StackAdapt",
+            campaign_id="CMP-9", strategy_id="S-27",
+            client_name="Forrest Design Group", external_order_id="",
+            external_line_item_id="Forrest Design Group - Display - 458102",
+            product="Display Ads", strategy_name="Display - Behavioral",
+            strategy_type="Behavioral", impressions=10_000.0, clicks=0.0, cost=20.4,
+        ))
+    with db_module.session_scope() as session:
+        after = details.details_view(session, order_id, li_id).row.to_date
+    assert after == before + 10_000.0
