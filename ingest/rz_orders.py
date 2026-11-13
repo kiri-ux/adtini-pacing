@@ -23,7 +23,9 @@ import json
 import logging
 import re
 import ssl
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -86,6 +88,7 @@ class RZClient:
         self._password = password
         self._transport = transport or urllib_transport
         self._cookies: dict[str, str] = {}
+        self._login_lock = threading.Lock()
 
     def __repr__(self) -> str:  # never show the password
         return f"RZClient(user={self._user!r})"
@@ -138,6 +141,10 @@ class RZClient:
 
     # -- API ---------------------------------------------------------------
     def login(self) -> None:
+        with self._login_lock:
+            self._login()
+
+    def _login(self) -> None:
         self._cookies = {}
         data = self._send("POST", LOGIN_PATH, {
             "email": self._user,
@@ -414,6 +421,7 @@ def sync(
     today: dt.date | None = None,
     pause: float = 0.2,
     cluster_ids: list[str] | None = None,
+    workers: int = 4,
 ) -> SyncResult:
     """Read every open and recently ended order from RZ into the order book."""
     from models import IngestedFile
@@ -444,27 +452,45 @@ def sync(
         result.open_listed, result.clusters, len(ids),
     )
 
-    cache: dict = {}
-    for start in range(0, len(ids), BATCH):
-        batch = ids[start:start + BATCH]
-        rows: list[dict] = []
-        for order_id in batch:
-            try:
-                rows.extend(rows_for(client.order(order_id), names[order_id]))
-                result.orders_read += 1
-            except Exception as err:  # one bad order must not stop the rest
-                result.errors.append(f"order {order_id}: {err}")
+    def fetch(order_id):
+        try:
+            return order_id, client.order(order_id), None
+        except Exception as err:  # one bad order must not stop the rest
+            return order_id, None, err
+        finally:
             if pause:
                 time.sleep(pause)
-        if not rows:
-            continue
-        with session_scope() as session:
-            cache.clear()  # objects belong to the session that loaded them
-            outcome = import_orders(session, frame_for(rows), cache)
-            result.orders_added += outcome.orders_added
-            result.line_items_added += outcome.line_items_added
-            result.line_items_updated += outcome.line_items_updated
-        log.info("rz orders: %s/%s read", min(start + BATCH, len(ids)), len(ids))
+
+    # Reading orders one at a time was most of the morning run. A few at
+    # once, on one login made up front so the threads share its cookies.
+    if ids and workers > 1 and hasattr(client, "login") and not getattr(client, "_cookies", True):
+        client.login()
+    cache: dict = {}
+    pool = ThreadPoolExecutor(max_workers=max(1, workers))
+    try:
+        for start in range(0, len(ids), BATCH):
+            batch = ids[start:start + BATCH]
+            rows: list[dict] = []
+            for order_id, order, err in pool.map(fetch, batch):
+                if err is not None:
+                    result.errors.append(f"order {order_id}: {err}")
+                    continue
+                try:
+                    rows.extend(rows_for(order, names[order_id]))
+                    result.orders_read += 1
+                except Exception as err2:
+                    result.errors.append(f"order {order_id}: {err2}")
+            if not rows:
+                continue
+            with session_scope() as session:
+                cache.clear()  # objects belong to the session that loaded them
+                outcome = import_orders(session, frame_for(rows), cache)
+                result.orders_added += outcome.orders_added
+                result.line_items_added += outcome.line_items_added
+                result.line_items_updated += outcome.line_items_updated
+            log.info("rz orders: %s/%s read", min(start + BATCH, len(ids)), len(ids))
+    finally:
+        pool.shutdown(wait=True)
 
     with session_scope() as session:
         key = SOURCE_KEY.format(date=today.isoformat())

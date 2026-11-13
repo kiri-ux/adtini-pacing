@@ -391,7 +391,7 @@ def cached_page(view):
         # files one at a time for most of an hour). Show the last copy now
         # and build the new one behind it.
         if _warmer_started and not request.headers.get(pagecache.REFRESH_HEADER):
-            body = pagecache.stale(request.full_path)
+            body = pagecache.stale(request.full_path, stamp[2] if len(stamp) > 2 else None)
             if body is not None:
                 pagecache.prefetch([request.full_path])
                 return _timed(Response(body, mimetype="text/html"), "stale")
