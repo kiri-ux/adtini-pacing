@@ -932,11 +932,18 @@ def plan_split(item: LineItem, money: bool) -> list[PlannedStrategy]:
                 )
         return plan
 
+    used: set[str] = set()
     for name, share in zip(names, _shares(names, monthly, money)):
         part = (monthly * share) if monthly else None
+        label = _label(item.product, name)
+        if label in used:
+            # Two sold strategies of one targeting are two rows.
+            code = products.abbreviation(item.product)
+            label = f"{code} - {name}" if code else name
+        used.add(label)
         plan.append(
             PlannedStrategy(
-                label=_label(item.product, name),
+                label=label,
                 monthly=part,
                 total=(part * scale) if (part and scale) else (
                     (total * share) if total else None

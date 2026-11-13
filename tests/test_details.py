@@ -1070,3 +1070,19 @@ def test_campaigns_named_for_their_order_link_themselves(site):
             ("MC-77", li_id, "auto (name)")]
         # Run again: nothing new.
         assert views.auto_link_campaigns(session) == 0
+
+
+def test_lookalike_and_retargeting_draft_as_two_rows():
+    import details
+    from models import LineItem
+
+    item = LineItem(
+        name="Native Video", product="Native Video Ads",
+        monthly_impressions=100_000.0, total_impressions=1_200_000.0, goal_cpm=2.0,
+        sold_strategies="Behavioral, Content, Retargeting, Retargeting Lookalike",
+    )
+    plan = {p.label: p for p in details.plan_split(item, money=False)}
+    assert set(plan) == {"NV - Behavioral", "NV - Content", "NV - Retargeting", "NV - Lookalike"}
+    assert plan["NV - Retargeting"].monthly == pytest.approx(5_000)
+    assert plan["NV - Lookalike"].monthly == pytest.approx(31_666.67, rel=1e-3)
+    assert sum(p.monthly for p in plan.values()) == pytest.approx(100_000)
