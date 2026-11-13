@@ -152,6 +152,21 @@ def main() -> int:
     if result.rows_written or rz_changed:
         with session_scope() as session:
             log.info("order book: %s", adopt_unmatched_delivery(session).summary())
+        try:
+            with session_scope() as session:
+                made = views.auto_link_campaigns(session)
+                log.info("links: %d campaigns linked by name", made)
+                if made:
+                    import datetime as _dt
+                    from sqlalchemy import select as _select
+                    from models import IngestedFile
+                    newest = session.execute(
+                        _select(IngestedFile).order_by(IngestedFile.ingested_at.desc()).limit(1)
+                    ).scalar_one_or_none()
+                    if newest is not None:  # cached pages key on the newest load
+                        newest.ingested_at = _dt.datetime.utcnow()
+        except Exception:  # a failed auto-link must not turn the sweep red
+            log.exception("auto-linking failed")
 
     if result.files_loaded or rz_changed:
         draft_splits(log)
