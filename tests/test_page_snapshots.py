@@ -48,3 +48,16 @@ def test_a_saved_copy_outlives_memory_and_an_edit_drops_it(site):
         assert pagecache.stale("/orders/6?") == b"<p>six</p>"
     finally:
         pagecache.persist_enabled = False
+
+
+def test_a_copy_from_before_the_newest_delivery_is_not_served_stale():
+    import datetime as dt
+    import pagecache
+
+    pagecache.clear()
+    key = pagecache.key("/orders/1", (None, 0, None))
+    pagecache.put(key, b"old")
+    built = pagecache._latest_built["/orders/1"]
+    assert pagecache.stale("/orders/1", built - dt.timedelta(minutes=1)) == b"old"
+    assert pagecache.stale("/orders/1", built + dt.timedelta(minutes=1)) is None
+    pagecache.clear()

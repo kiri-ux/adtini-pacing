@@ -56,6 +56,9 @@ _pages: OrderedDict[tuple, bytes] = OrderedDict()
 # makes anyone wait on the build. Dropped on any edit: after a save the
 # page has to show the save.
 _latest: OrderedDict[str, bytes] = OrderedDict()
+# When each of those was built. A copy from before the newest delivery load
+# shows yesterday's numbers, so it is never served as the stale copy.
+_latest_built: dict[str, dt.datetime] = {}
 # Sent by the background builder: build this page, never answer it stale.
 REFRESH_HEADER = "X-Pacing-Refresh"
 _edits = 0
@@ -72,7 +75,10 @@ def data_stamp(session, fresh: bool = False) -> tuple:
     newest, count = session.execute(
         select(func.max(IngestedFile.ingested_at), func.count(IngestedFile.id))
     ).one()
-    _stamp, _stamp_read = (newest, count), now
+    delivery = session.execute(
+        select(func.max(IngestedFile.ingested_at)).where(IngestedFile.kind == "delivery")
+    ).scalar()
+    _stamp, _stamp_read = (newest, count, delivery), now
     return _stamp
 
 
@@ -146,6 +152,7 @@ def put(page_key: tuple, body: bytes) -> None:
         while len(_pages) > MAX_PAGES:
             _pages.popitem(last=False)
         _latest[page_key[0]] = body
+        _latest_built[page_key[0]] = dt.datetime.utcnow()
         _latest.move_to_end(page_key[0])
         while len(_latest) > MAX_PAGES:
             _latest.popitem(last=False)
@@ -153,14 +160,20 @@ def put(page_key: tuple, body: bytes) -> None:
         _to_save.put((page_key[0], body))
 
 
-def stale(path: str) -> bytes | None:
+def stale(path: str, since: dt.datetime | None = None) -> bytes | None:
     """The last copy of this page built from older data, if there is one.
-    After a deploy memory is empty, so the copy saved in the database."""
+    After a deploy memory is empty, so the copy saved in the database.
+
+    `since` is the newest delivery load: a copy built before it carries the
+    day before's numbers, and is not offered."""
     with _lock:
         body = _latest.get(path)
-    if body is not None or not persist_enabled:
-        return body
-    return _load_snapshot(path)
+        built = _latest_built.get(path)
+    if body is not None:
+        return body if since is None or (built and built >= since) else None
+    if not persist_enabled:
+        return None
+    return _load_snapshot(path, since)
 
 
 def clear() -> None:
@@ -176,14 +189,16 @@ SNAPSHOTS_KEPT = 400
 _to_save: queue.Queue[tuple[str, bytes]] = queue.Queue()
 
 
-def _load_snapshot(path: str) -> bytes | None:
+def _load_snapshot(path: str, since: dt.datetime | None = None) -> bytes | None:
     from db import session_scope
     from models import PageSnapshot
 
     try:
         with session_scope() as session:
             row = session.get(PageSnapshot, path)
-            return zlib.decompress(row.body) if row is not None else None
+            if row is None or (since is not None and row.built_at < since):
+                return None
+            return zlib.decompress(row.body)
     except Exception:
         log.exception("reading snapshot %s", path)
         return None
