@@ -1036,3 +1036,37 @@ def test_a_renamed_strategy_stays_one_row(site):
     with db_module.session_scope() as session:
         after = [e.label for e in details.details_view(session, order_id, li_id).elements]
     assert len(after) == len(before)
+
+
+def test_campaigns_named_for_their_order_link_themselves(site):
+    import db as db_module
+    import views
+    from models import CampaignLink, DailyDelivery
+
+    app_module, (order_id, li_id) = site
+    with db_module.session_scope() as session:
+        for day in (24, 25, 26):
+            # Named for the order, but the feed carries no ids to join on.
+            session.add(DailyDelivery(
+                date=dt.date(2026, 10, day), data_source="Display Mobile Conquesting**",
+                campaign_id="MC-77", strategy_id="S-MC",
+                client_name="Someone Else", external_order_id="",
+                external_line_item_id="Forrest Design Group #51200 Categories",
+                campaign_name="Forrest Design Group #51200 Categories",
+                product="Display", impressions=1_000.0, clicks=0.0, cost=2.0,
+            ))
+            # No order number and a client with nothing that fits: left alone.
+            session.add(DailyDelivery(
+                date=dt.date(2026, 10, day), data_source="Facebook & Instagram Targeting",
+                campaign_id="FB-1", strategy_id="S-FB",
+                client_name="Nobody", external_order_id="",
+                external_line_item_id="Nobody - Meta", campaign_name="Nobody - Meta",
+                product="Meta", impressions=1_000.0, clicks=0.0, cost=2.0,
+            ))
+    with db_module.session_scope() as session:
+        assert views.auto_link_campaigns(session) == 1
+        links = session.query(CampaignLink).all()
+        assert [(l.campaign_id, l.line_item_id, l.linked_by) for l in links] == [
+            ("MC-77", li_id, "auto (name)")]
+        # Run again: nothing new.
+        assert views.auto_link_campaigns(session) == 0

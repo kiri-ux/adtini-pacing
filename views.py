@@ -3022,3 +3022,114 @@ def sa_alerts(db, external_ids) -> list:
         .where(SaAlert.run_date == newest, SaAlert.external_line_item_id.in_(ids))
         .order_by(SaAlert.external_line_item_id, SaAlert.kind, SaAlert.id)
     ).scalars())
+
+
+# --- linking campaigns by their names ---------------------------------------
+# Products a feed line can stand in for: a Meta campaign is what a Meta Lead
+# line bought, CTV and Video both feed a CTV + Video line.
+_FAMILY = {
+    "MC": {"MC", "MCE"}, "MCE": {"MC", "MCE"},
+    "M": {"M", "ML"}, "ML": {"M", "ML"},
+    "CTV": {"CTV", "CV", "SMC"}, "V": {"V", "CV"}, "CV": {"CV", "CTV", "V"},
+    "PM": {"PM"}, "AV": {"AV"}, "AD": {"AD"},
+}
+_ORDER_IN_NAME = re.compile(r"#\s*(\d{4,6})\b")
+AUTO_LINK_DAYS = 30
+_DEAD = {"cancelled", "canceled", "declined", "rejected"}
+
+
+def _fits(feed_product: str | None, line_product: str | None) -> bool:
+    feed = products.lookup(feed_product)
+    line = products.lookup(line_product)
+    if feed is None or line is None:
+        return False
+    return line.abbreviation in _FAMILY.get(feed.abbreviation, {feed.abbreviation})
+
+
+def auto_link_campaigns(session, as_of: dt.date | None = None) -> int:
+    """Link campaigns that reach no line item, by what their names say.
+
+    A campaign named for its order ("Jennifer's Auto #54063") goes to that
+    order's one paced line item of the campaign's product. A campaign with
+    no order number goes to its client's one live line item of that product.
+    More than one fit and it is left for a buyer. Nothing a buyer linked or
+    unticked is touched. Returns the links made.
+    """
+    as_of = as_of or latest_delivery_date(session) or dt.date.today()
+    since = as_of - dt.timedelta(days=AUTO_LINK_DAYS)
+    items = [
+        li for li in session.execute(
+            select(LineItem).join(Order, Order.id == LineItem.order_id).where(
+                or_(Order.end_date.is_(None), Order.end_date >= since)
+            )
+        ).scalars()
+        if products.is_paced(li.product)
+        and (li.status or "").strip().lower() not in _DEAD
+    ]
+    if not items:
+        return 0
+    join = _delivery_join(session, items)
+    known = set(session.execute(
+        select(CampaignLink.data_source, CampaignLink.campaign_id)
+    ).tuples())
+
+    campaigns: dict[tuple[str, str], dict] = {}
+    for (source, campaign, order_id, li_id, name, product, client,
+         first, last) in session.execute(
+        select(
+            DailyDelivery.data_source, DailyDelivery.campaign_id,
+            DailyDelivery.external_order_id, DailyDelivery.external_line_item_id,
+            func.max(DailyDelivery.campaign_name), func.max(DailyDelivery.product),
+            func.max(DailyDelivery.client_name),
+            func.min(DailyDelivery.date), func.max(DailyDelivery.date),
+        )
+        .where(DailyDelivery.date >= since)
+        .where(or_(DailyDelivery.impressions > 0, DailyDelivery.cost > 0))
+        .group_by(
+            DailyDelivery.data_source, DailyDelivery.campaign_id,
+            DailyDelivery.external_order_id, DailyDelivery.external_line_item_id,
+        )
+    ):
+        if not source or not campaign or (source, campaign) in known:
+            continue
+        c = campaigns.setdefault((source, campaign), {
+            "reached": False, "name": name, "product": product,
+            "client": client, "first": first, "last": last,
+        })
+        if join.resolve(order_id, li_id, source, campaign, last) is not None:
+            c["reached"] = True
+        c["first"] = min(c["first"], first)
+        c["last"] = max(c["last"], last)
+
+    by_order: dict[str, list[LineItem]] = defaultdict(list)
+    by_client: dict[str, list[LineItem]] = defaultdict(list)
+    for li in items:
+        if li.order and li.order.external_order_id:
+            by_order[li.order.external_order_id.strip()].append(li)
+        if li.order and li.order.client and li.order.client.name:
+            by_client[li.order.client.name].append(li)
+
+    def overlaps(li: LineItem, first: dt.date, last: dt.date) -> bool:
+        start = li.start_date or li.order.start_date
+        end = li.end_date or li.order.end_date
+        return (start is None or start <= last) and (end is None or end >= first)
+
+    made = 0
+    for (source, campaign), c in campaigns.items():
+        if c["reached"]:
+            continue
+        m = _ORDER_IN_NAME.search(c["name"] or "")
+        pool = by_order.get(m.group(1), []) if m else by_client.get(c["client"] or "", [])
+        fits = [li for li in pool
+                if _fits(c["product"], li.product) and overlaps(li, c["first"], c["last"])]
+        if not m and len({li.order_id for li in fits}) != 1:
+            continue
+        if len(fits) != 1:
+            continue
+        session.add(CampaignLink(
+            line_item_id=fits[0].id, data_source=source, campaign_id=campaign,
+            campaign_name=(c["name"] or "")[:400] or None, linked_by="auto (name)",
+        ))
+        made += 1
+    session.flush()
+    return made
