@@ -1703,6 +1703,12 @@ def data_action():
                         os.unlink(path)
         else:
             message = "Pick a file first."
+    elif action == "auto-link":
+        with session_scope() as db:
+            made = views.auto_link_campaigns(db)
+        if made:
+            pagecache.edited()
+        message = f"{made} campaigns linked by name."
     elif action == "adopt":
         with session_scope() as db:
             message = adopt_unmatched_delivery(db).summary()
