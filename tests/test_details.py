@@ -1086,3 +1086,26 @@ def test_lookalike_and_retargeting_draft_as_two_rows():
     assert plan["NV - Retargeting"].monthly == pytest.approx(5_000)
     assert plan["NV - Lookalike"].monthly == pytest.approx(31_666.67, rel=1e-3)
     assert sum(p.monthly for p in plan.values()) == pytest.approx(100_000)
+
+
+def test_saving_two_rows_under_one_name_keeps_both(site):
+    import db as db_module
+    from models import StrategyTerms
+
+    app_module, (order_id, li_id) = site
+    client = app_module.app.test_client()
+    client.post(f"/orders/{order_id}/details/{li_id}/build")
+    with db_module.session_scope() as session:
+        rows = session.query(StrategyTerms).filter_by(line_item_id=li_id).all()
+        assert len(rows) >= 2
+        ids = [r.id for r in rows[:2]]
+        first = rows[0].label
+
+    response = client.post(f"/orders/{order_id}/strategies/save", data={
+        f"st-{ids[0]}-label": first,
+        f"st-{ids[1]}-label": first,
+    })
+    assert response.status_code == 302
+    with db_module.session_scope() as session:
+        labels = {session.get(StrategyTerms, i).label for i in ids}
+    assert labels == {first, f"{first} 2"}

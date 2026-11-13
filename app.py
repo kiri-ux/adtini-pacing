@@ -1003,14 +1003,23 @@ def strategies_save(order_id: int):
         order = db.get(Order, order_id)
         if order is None:
             abort(404)
-        for term in db.execute(
+        terms = list(db.execute(
             select(StrategyTerms).where(StrategyTerms.order_id == order_id)
-        ).scalars():
+        ).scalars())
+        taken = {(t.line_item_id, t.label) for t in terms}
+        for term in terms:
             prefix = f"st-{term.id}-"
             if prefix + "label" not in form:
                 continue
             label = (form.get(prefix + "label") or "").strip()
             if label and label != term.label:
+                # Two rows of one product keep two names.
+                base, n = label, 1
+                while (term.line_item_id, label) in taken:
+                    n += 1
+                    label = f"{base} {n}"
+                taken.discard((term.line_item_id, term.label))
+                taken.add((term.line_item_id, label))
                 term.label = label
                 term.match_key = sheets.match_key(label)
             term.monthly_target = as_float(prefix + "monthly")
