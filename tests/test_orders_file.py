@@ -1279,3 +1279,11 @@ def test_recompute_gives_a_short_product_name_its_full_one():
         item = session.query(LineItem).one()
 
     assert (item.name, item.product) == ("Meta Display & Video Ads",) * 2
+
+
+def test_the_data_page_links_campaigns_by_name(tmp_path):
+    _, client = _client(tmp_path)
+    response = client.post("/data", data={"action": "auto-link"}, follow_redirects=True)
+    assert response.status_code == 200
+    assert "campaigns linked by name" in response.get_data(as_text=True)
+    assert "Link campaigns by name" in response.get_data(as_text=True)

@@ -112,6 +112,19 @@
 
   <div class="datarow">
     <form method="post" action="{{ url_for('data_action') }}">
+      <input type="hidden" name="action" value="auto-link">
+      <div>
+        <h4>Link campaigns by name</h4>
+        <p class="hint">Links campaigns that served in the last 30 days to the
+          line item their name points to. Runs every morning.</p>
+      </div>
+      <button class="btn2 addprod" type="submit"
+        {% if sweep_running %}disabled{% endif %}>Link campaigns</button>
+    </form>
+  </div>
+
+  <div class="datarow">
+    <form method="post" action="{{ url_for('data_action') }}">
       <input type="hidden" name="action" value="adopt">
       <div>
         <h4>Adopt unmatched delivery</h4>
