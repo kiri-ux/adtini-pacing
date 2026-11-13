@@ -54,6 +54,9 @@ TARGETING = {
     "category": "category",
     "content": "content",
     "lookalike": "lookalike",
+    # A lookalike of the retargeting pool is prospecting, its own row.
+    "retargeting lookalike": "lookalike",
+    "lookalike retargeting": "lookalike",
     "matching": "matching",
     "cross platform": "cross platform",
     "website retargeting": "retargeting",

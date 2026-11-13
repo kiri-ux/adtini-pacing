@@ -828,7 +828,7 @@ def recompute_terms(session) -> RecomputeResult:
         session.flush()
         session.expunge_all()
 
-    result.split_rates_reset = _reset_old_split_rates(session)
+    result.split_rates_reset = reset_old_split_rates(session)
     return result
 
 
@@ -856,16 +856,21 @@ OLD_SETUP_CPM = {
 }
 
 
-def _reset_old_split_rates(session) -> int:
+def reset_old_split_rates(session) -> int:
     """Split rows still on the old card rate take their product's goal CPM."""
     reset = 0
     rows = session.execute(
         select(StrategyTerms, LineItem)
         .join(LineItem, StrategyTerms.line_item_id == LineItem.id)
-        .where(LineItem.goal_cpm_source == "rate card")
         .where(LineItem.goal_cpm.is_not(None))
+        .where(StrategyTerms.rate.is_not(None))
     ).all()
     for term, item in rows:
+        # On the card's rate now, whatever the source says.
+        if item.goal_cpm_source != "rate card" and item.goal_cpm != ratecard.setup_cpm(
+            item.product, restricted=bool(item.restricted)
+        ):
+            continue
         half = ratecard.merged_strategy_cpm(item.product, term.label)
         if half is not None:
             # CTV + Video: each row at its own half, whatever it was left at.

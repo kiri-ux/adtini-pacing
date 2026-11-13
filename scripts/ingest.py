@@ -44,7 +44,10 @@ def draft_splits(log: logging.Logger) -> None:
             log.info("splits: %s", result.summary())
             extra = views.add_extra_lines(session) + views.fill_lone_rows(session)
             log.info("splits: %d second lines added", extra)
-            result.strategies_added += extra
+            from orderbook import reset_old_split_rates
+            reset = reset_old_split_rates(session)
+            log.info("splits: %d row CPMs reset to the card", reset)
+            result.strategies_added += extra + reset
             if result.strategies_added:
                 # Cached pages are keyed on the newest load time; a page
                 # rendered between the load and this would otherwise keep
