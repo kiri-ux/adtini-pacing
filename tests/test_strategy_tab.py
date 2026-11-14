@@ -1292,26 +1292,29 @@ def test_an_unsold_line_can_be_linked_to_a_strategy_with_no_row_yet(site):
         assert term.linked_keys == "retargeting"
 
 
-def test_the_same_strategy_on_two_dsps_is_two_lines():
-    """An AdLib campaign and a StackAdapt test, both named the same: two
-    lines to compare, not one total."""
+def test_the_same_strategy_on_two_dsps_is_one_line():
+    """An AdLib line and its StackAdapt move, named the same (the AdLib name
+    may still carry the line item id): one row."""
     import views
 
-    def s(source, campaign, first):
+    def s(source, campaign, first, name, label):
         return views.StrategySeries(
-            line_item_id=1, label="SM - Behavioral", product="Social Mirror Ads",
+            line_item_id=1, label=label, product="Native Video Ads",
             by_date={dt.date(2026, 10, first): 10.0}, total=10.0,
-            names={"Forrest - Behavioral Social Mirror"},
-            campaigns={(source, campaign)},
+            names={name}, campaigns={(source, campaign)},
         )
 
-    grouped = views.group_by_targeting(
-        "Social Mirror Ads", [s("StackAdapt", "506515", 13), s("Adlib Database", "246", 1)])
+    grouped = views.group_by_targeting("Native Video Ads", [
+        s("StackAdapt", "519721", 13, "NRF - Retail Industry Content Native Video", "NV - Video"),
+        s("Adlib Database", "3972", 1,
+          "NRF - Retail Industry Content Native Video - 139578", "NV - Behavioral"),
+        s("StackAdapt", "519721", 13, "NRF - Retargeting Lookalike Native Video", "NV - Video"),
+        s("Adlib Database", "3972", 1,
+          "NRF - Retargeting Lookalike Native Video - 139578", "NV - Retargeting Lookalike"),
+    ])
     keys = {key: series.campaigns for key, _, series, _ in grouped}
-    assert keys == {
-        "behavioral": {("Adlib Database", "246")},
-        "behavioral#2": {("StackAdapt", "506515")},
-    }
+    both = {("StackAdapt", "519721"), ("Adlib Database", "3972")}
+    assert keys == {"content": both, "lookalike": both}
 
 
 def test_one_dsp_under_two_campaign_ids_is_one_line():

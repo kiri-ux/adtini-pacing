@@ -2276,7 +2276,13 @@ def group_by_targeting(
     def base_of(series) -> str:
         if combined:
             return COMBINED_KEY
-        key = sheets.match_key(series.label)
+        # The strategy's own name first: StackAdapt types every line
+        # "Video" and AdLib types a Content line "Behavioral", so the name
+        # is what says the targeting and what lines the two DSPs up.
+        key = next(
+            (k for k in (sheets.match_key(n) for n in sorted(series.names)) if k),
+            None,
+        ) or sheets.match_key(series.label)
         if key is None and _does_category_targeting(product):
             # Labelled category targeting (an audience list with no
             # targeting word), so it pairs with the Category row too.
@@ -2286,15 +2292,14 @@ def group_by_targeting(
     def name_of(series) -> str:
         if combined:
             return ""
-        name = (
-            "|".join(sorted(n.lower() for n in series.names))
+        # By name, across DSPs: the same strategy on AdLib and StackAdapt
+        # is one line, and a Meta campaign rebuilt under a new id is too.
+        # A trailing " - <line item id>" is naming, so it is dropped.
+        return (
+            "|".join(sorted({_NAME_ID_TAIL.sub("", n).strip().lower()
+                             for n in series.names}))
             or series.label.strip().lower()
         )
-        # By DSP, not campaign id: AdLib beside a StackAdapt test is two
-        # lines, but a Meta campaign rebuilt under a new id is still the
-        # same line. Split by id, its delivery fell off the split row.
-        where = "|".join(sorted({a for a, _ in series.campaigns}))
-        return f"{name}@{where}" if where else name
 
     # Numbered by which line started first, then by name, so a line keeps
     # its number (and the split row that claims it) when another overtakes it.
