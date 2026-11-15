@@ -336,3 +336,13 @@ def test_the_order_page_lists_every_note(site):
     table = html[html.index('class="elements notestable"'):]
     assert table.index("Creative swapped") < table.index("Lowered budget")
     assert "9/20/2026" in table and "Whole order" in table
+
+
+def test_the_note_picker_lists_products_by_name_and_picks_the_product(site):
+    app_module, order_id = site
+    html = app_module.app.test_client().get(f"/orders/{order_id}").get_data(as_text=True)
+    picker = html[html.index('id="dd-li"'):]
+    picker = picker[:picker.index("</select>")]
+    first = picker.index("<option")
+    assert " selected" in picker[first:picker.index("</option>")]
+    assert picker.rstrip().endswith('<option value="">Whole order</option>')

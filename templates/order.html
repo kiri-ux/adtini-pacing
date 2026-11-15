@@ -407,6 +407,18 @@
 {# The day log. A floating button near the top right, and a squat popover
    under it: reachable from anywhere on a long page without taking a place
    in the header, and without a full-height panel covering half the page. #}
+{% macro note_products() -%}
+  {%- set current = [] -%}
+  {%- for r in v.rows if r.line_item_id and r.state == 'running' and (r.to_date or r.total_target) -%}{%- set _ = current.append(r) -%}{%- endfor -%}
+  {%- set picks = current or (v.rows|selectattr('line_item_id')|list) -%}
+  {%- set names = picks|map(attribute='line_item')|map(attribute='product')|list -%}
+  {%- for r in picks -%}
+    {%- set pname = r.line_item.product or r.label -%}
+    {%- set ext = r.line_item.external_id if r.line_item.external_id and not r.line_item.external_id.startswith('name:') else none -%}
+    <option value="{{ r.line_item_id }}"{% if loop.first %} selected{% endif %}>{{ pname }}{% if names.count(r.line_item.product) > 1 and ext %} - {{ ext }}{% endif %}</option>
+  {%- endfor %}
+  <option value="">Whole order</option>
+{%- endmacro %}
 <div class="logwrap floating">
   <button type="button" id="notebtn" class="notebtn" aria-expanded="false"
     aria-controls="daylog" title="Day log">
@@ -421,12 +433,7 @@
       </div>
       <div class="dlrow">
         <label for="note-li">Product</label>
-        <select id="note-li" name="line_item_id">
-          <option value="">Whole order</option>
-          {% for r in v.rows %}
-          <option value="{{ r.line_item_id }}">{{ r.label }}</option>
-          {% endfor %}
-        </select>
+        <select id="note-li" name="line_item_id">{{ note_products() }}</select>
       </div>
       <textarea id="note-body" name="body" rows="2"
         placeholder="Lowered budget, creative swapped, client paused for the holiday"></textarea>
@@ -463,12 +470,7 @@
     <input type="hidden" name="date" value="{{ v.as_of.isoformat() }}" data-dayfield>
     <div class="dlrow">
       <label for="dd-li">Product</label>
-      <select id="dd-li" name="line_item_id">
-        <option value="">Whole order</option>
-        {% for r in v.rows %}
-        <option value="{{ r.line_item_id }}">{{ r.label }}</option>
-        {% endfor %}
-      </select>
+      <select id="dd-li" name="line_item_id">{{ note_products() }}</select>
     </div>
     <textarea name="body" rows="3" required
       placeholder="Lowered budget, creative swapped, client paused for the holiday"></textarea>
