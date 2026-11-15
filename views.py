@@ -2776,6 +2776,90 @@ def add_extra_lines(session, as_of: dt.date | None = None) -> int:
     return added
 
 
+def retarget_orphan_rows(session, as_of: dt.date | None = None) -> int:
+    """Point a row left behind by a misread targeting at the line it meant.
+
+    AdLib types an AI or Content line "Behavioral", so splits drafted from
+    that read got a second Behavioral row for it. Read by name, the line is
+    AI and the second row claims nothing. Where a product has as many such
+    rows as unclaimed lines, each row takes one, in order. Returns rows moved.
+    """
+    as_of = as_of or latest_delivery_date(session) or dt.date.today()
+    order_ids = list(
+        session.execute(
+            select(Order.id)
+            .where(
+                func.lower(func.coalesce(Order.order_type, "")) == PACEABLE_ORDER_TYPE,
+                Order.active.is_(True),
+                or_(Order.end_date.is_(None), Order.end_date >= as_of),
+                Order.id.in_(select(StrategyTerms.order_id).distinct()),
+            )
+            .order_by(Order.id)
+        ).scalars()
+    )
+    moved = 0
+    for start in range(0, len(order_ids), DRAFT_BATCH):
+        batch = order_ids[start : start + DRAFT_BATCH]
+        terms_by_item: dict[int, list[StrategyTerms]] = defaultdict(list)
+        for term in session.execute(
+            select(StrategyTerms)
+            .where(StrategyTerms.order_id.in_(batch))
+            .order_by(StrategyTerms.sort_order, StrategyTerms.id)
+        ).scalars():
+            if term.line_item_id:
+                terms_by_item[term.line_item_id].append(term)
+        items = [
+            li for li in session.execute(
+                select(LineItem).where(LineItem.id.in_(list(terms_by_item)))
+            ).scalars()
+            if products.is_paced(li.product) and not combined_strategy(li.product)
+        ]
+        series: dict[int, list[StrategySeries]] = {}
+        for metric in ("impressions", "cost"):
+            wanted = [
+                li for li in items
+                if ("impressions" if (li.pacing_type or li.order.pacing_type
+                                      or "impression") == "impression" else "cost")
+                == metric
+            ]
+            if wanted:
+                series.update(strategy_series(session, wanted, metric=metric))
+        for item in items:
+            terms = terms_by_item[item.id]
+            grouped = group_by_targeting(item.product, series.get(item.id, []))
+            ran = {k: s for k, _, s, _ in grouped}
+            labels = {k: label for k, label, _, _ in grouped}
+            claimed: set[str] = set()
+            owners: set[str] = set()
+            orphans: list[StrategyTerms] = []
+            for term in terms:
+                _, keys = claim(term, ran, claimed)
+                claimed.update(keys)
+                claimed.update(term_keys(term)[1:])
+                own = term_keys(term)[0]
+                if keys:
+                    owners.add(own)
+                elif own in owners and not term.linked_keys:
+                    orphans.append(term)
+            free = [k for k in ran if k not in claimed and "#" not in k]
+            if not orphans or len(orphans) != len(free):
+                continue
+            taken = {t.label for t in terms}
+            for term, key in zip(orphans, free):
+                label = labels[key]
+                base, n = label, 1
+                while label in taken:
+                    n += 1
+                    label = f"{base} {n}"
+                taken.add(label)
+                term.label = label
+                term.match_key = key
+                moved += 1
+        session.flush()
+        session.expunge_all()
+    return moved
+
+
 def draft_missing_splits(session, as_of: dt.date | None = None) -> DraftResult:
     """Draft a sold split for every product that has none.
 

@@ -1332,3 +1332,48 @@ def test_one_dsp_under_two_campaign_ids_is_one_line():
     grouped = views.group_by_targeting(
         "Meta Display & Video Ads", [s("111", 1), s("222", 13)])
     assert len(grouped) == 1
+
+
+def test_a_row_left_by_a_misread_targeting_moves_to_the_free_line(site):
+    """AdLib typed an AI line "Behavioral", so the draft gave it a second
+    Behavioral row. Read by name it is AI, and the empty row follows it."""
+    import datetime as dt
+
+    from models import DailyDelivery, LineItem, StrategyTerms
+
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        item = session.query(LineItem).filter_by(external_id="88001").one()
+        session.query(StrategyTerms).filter_by(order_id=order_id).delete()
+        session.query(DailyDelivery).filter_by(external_line_item_id="88001").delete()
+        session.add(StrategyTerms(order_id=order_id, line_item_id=item.id,
+                                  label="FB - Categories", sort_order=0,
+                                  monthly_target=1000.0))
+        session.add(StrategyTerms(order_id=order_id, line_item_id=item.id,
+                                  label="FB - Categories 2", sort_order=1))
+        for name in ("Meta - Nampa Categories", "Meta - Retargeting"):
+            for day in range(1, 6):
+                session.add(DailyDelivery(
+                    date=dt.date(2026, 8, day), data_source="Meta",
+                    campaign_id="CMP-1", strategy_id=f"{name}-{day}",
+                    client_name="Bud's Auto", external_order_id="44100",
+                    external_line_item_id="88001",
+                    product="Meta Display & Video Ads",
+                    strategy_name=name, strategy_type="Categories",
+                    impressions=500.0,
+                ))
+        item_id = item.id
+
+    with db_module.session_scope() as session:
+        moved = views.retarget_orphan_rows(session, as_of=dt.date(2026, 8, 10))
+    with db_module.session_scope() as session:
+        moved_again = views.retarget_orphan_rows(session, as_of=dt.date(2026, 8, 10))
+        labels = [t.label for t in session.query(StrategyTerms)
+                  .filter_by(line_item_id=item_id).order_by(StrategyTerms.sort_order)]
+
+    assert moved == 1 and moved_again == 0
+    assert labels[0] == "FB - Categories"
+    assert "Retargeting" in labels[1]
