@@ -1737,6 +1737,9 @@ def data_action():
     elif action == "draft-splits":
         with session_scope() as db:
             message = views.draft_missing_splits(db, as_of=_as_of()).summary()
+            moved = views.retarget_orphan_rows(db, as_of=_as_of())
+            if moved:
+                message += f"; {moved} rows moved to the line they meant"
             extra = views.add_extra_lines(db, as_of=_as_of())
             if extra:
                 message += f"; {extra} second lines added"
