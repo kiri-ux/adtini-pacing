@@ -2781,8 +2781,8 @@ def retarget_orphan_rows(session, as_of: dt.date | None = None) -> int:
 
     AdLib types an AI or Content line "Behavioral", so splits drafted from
     that read got a second Behavioral row for it. Read by name, the line is
-    AI and the second row claims nothing. Where a product has as many such
-    rows as unclaimed lines, each row takes one, in order. Returns rows moved.
+    AI and the second row claims nothing. Each such row takes an unclaimed
+    line, in order, until the lines run out. Returns rows moved.
     """
     as_of = as_of or latest_delivery_date(session) or dt.date.today()
     order_ids = list(
@@ -2842,7 +2842,7 @@ def retarget_orphan_rows(session, as_of: dt.date | None = None) -> int:
                 elif own in owners and not term.linked_keys:
                     orphans.append(term)
             free = [k for k in ran if k not in claimed and "#" not in k]
-            if not orphans or len(orphans) != len(free):
+            if not orphans or not free:
                 continue
             taken = {t.label for t in terms}
             for term, key in zip(orphans, free):

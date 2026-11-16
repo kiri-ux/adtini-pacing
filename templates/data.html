@@ -125,6 +125,19 @@
 
   <div class="datarow">
     <form method="post" action="{{ url_for('data_action') }}">
+      <input type="hidden" name="action" value="move-rows">
+      <div>
+        <h4>Move empty split rows</h4>
+        <p class="hint">An empty split row that repeats a running row's targeting
+          takes a running line no row claims. Runs every morning.</p>
+      </div>
+      <button class="btn2 addprod" type="submit"
+        {% if sweep_running %}disabled{% endif %}>Move rows</button>
+    </form>
+  </div>
+
+  <div class="datarow">
+    <form method="post" action="{{ url_for('data_action') }}">
       <input type="hidden" name="action" value="adopt">
       <div>
         <h4>Adopt unmatched delivery</h4>
