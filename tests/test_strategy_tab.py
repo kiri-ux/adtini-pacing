@@ -1377,3 +1377,14 @@ def test_a_row_left_by_a_misread_targeting_moves_to_the_free_line(site):
     assert moved == 1 and moved_again == 0
     assert labels[0] == "FB - Categories"
     assert "Retargeting" in labels[1]
+
+
+def test_b2b_and_premium_give_way_to_the_targeting_they_ride_with():
+    from sheets import match_key
+
+    assert match_key("Keystone Payroll - AI B2B Display") == "ai"
+    assert match_key("Keystone Payroll - Behavioral B2B Display") == "behavioral"
+    assert match_key("X - AI Facebook Premium") == "ai"
+    assert match_key("SM - B2B B") == "b2b"
+    assert match_key("B2B") == "b2b"
+    assert match_key("Premium") == "category"
