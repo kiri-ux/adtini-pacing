@@ -152,6 +152,9 @@ def _targeting_part(text: str) -> str:
     return stripped
 
 
+_MODIFIERS = {"b2b", "premium"}
+
+
 def match_key(label: str) -> str | None:
     """The targeting a label is for, or None when it names no known one."""
     text = (label or "").lower()
@@ -163,7 +166,10 @@ def match_key(label: str) -> str | None:
     # words: "ai" found inside "Air Conditioning & Heating" labelled a
     # Mobile Conquesting category audience as AI targeting, which Mobile
     # Conquesting does not even offer.
-    for name in sorted(TARGETING, key=len, reverse=True):
+    # "B2B" and "Premium" also ride along with other targetings ("AI B2B
+    # Display"), so they count only when nothing else is named.
+    names = sorted(TARGETING, key=len, reverse=True)
+    for name in [n for n in names if n not in _MODIFIERS] + [n for n in names if n in _MODIFIERS]:
         if re.search(r"\b" + re.escape(name) + r"\b", text):
             return TARGETING[name]
 
