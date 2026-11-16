@@ -1718,6 +1718,12 @@ def data_action():
         if made:
             pagecache.edited()
         message = f"{made} campaigns linked by name."
+    elif action == "move-rows":
+        with session_scope() as db:
+            moved = views.retarget_orphan_rows(db, as_of=_as_of())
+        if moved:
+            pagecache.edited()
+        message = f"{moved} split rows moved to their line."
     elif action == "adopt":
         with session_scope() as db:
             message = adopt_unmatched_delivery(db).summary()

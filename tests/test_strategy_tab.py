@@ -1388,3 +1388,46 @@ def test_b2b_and_premium_give_way_to_the_targeting_they_ride_with():
     assert match_key("SM - B2B B") == "b2b"
     assert match_key("B2B") == "b2b"
     assert match_key("Premium") == "category"
+
+
+def test_two_left_rows_and_one_free_line_moves_the_first(site):
+    """Keystone: two empty Behavioral rows and an unclaimed Retargeting line."""
+    import datetime as dt
+
+    from models import DailyDelivery, LineItem, StrategyTerms
+
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        item = session.query(LineItem).filter_by(external_id="88001").one()
+        session.query(StrategyTerms).filter_by(order_id=order_id).delete()
+        session.query(DailyDelivery).filter_by(external_line_item_id="88001").delete()
+        for n, label in enumerate(("FB - Categories", "FB - Categories 2",
+                                   "B2B FB - Categories")):
+            session.add(StrategyTerms(order_id=order_id, line_item_id=item.id,
+                                      label=label, sort_order=n,
+                                      monthly_target=1000.0 if n == 0 else None))
+        for name in ("Meta - Nampa Categories", "Meta - Retargeting"):
+            for day in range(1, 6):
+                session.add(DailyDelivery(
+                    date=dt.date(2026, 8, day), data_source="Meta",
+                    campaign_id="CMP-1", strategy_id=f"{name}-{day}",
+                    client_name="Bud's Auto", external_order_id="44100",
+                    external_line_item_id="88001",
+                    product="Meta Display & Video Ads",
+                    strategy_name=name, strategy_type="Categories",
+                    impressions=500.0,
+                ))
+        item_id = item.id
+
+    with db_module.session_scope() as session:
+        moved = views.retarget_orphan_rows(session, as_of=dt.date(2026, 8, 10))
+    with db_module.session_scope() as session:
+        labels = [t.label for t in session.query(StrategyTerms)
+                  .filter_by(line_item_id=item_id).order_by(StrategyTerms.sort_order)]
+
+    assert moved == 1
+    assert "Retargeting" in labels[1]
+    assert labels[2] == "B2B FB - Categories"

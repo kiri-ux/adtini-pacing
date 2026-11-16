@@ -1287,3 +1287,4 @@ def test_the_data_page_links_campaigns_by_name(tmp_path):
     assert response.status_code == 200
     assert "campaigns linked by name" in response.get_data(as_text=True)
     assert "Link campaigns by name" in response.get_data(as_text=True)
+    assert "Move empty split rows" in response.get_data(as_text=True)
