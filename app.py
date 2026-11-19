@@ -1920,6 +1920,53 @@ def sa_alerts_post():
     return {"ok": True, "run_date": run_date.isoformat(), "alerts": len(rows)}
 
 
+@app.route("/api/lines")
+def api_lines():
+    """Every Insertion Order line in the book, for tools that build from RZ data.
+
+    The orders here come from the daily RZ sync, so dates, statuses and new IOs
+    are current (the S3 orders exports only land on the 1st). Token auth
+    (X-Export-Token = EXPORT_TOKEN), not the login: scripts call it.
+    """
+    token = os.getenv("EXPORT_TOKEN", "")
+    sent = request.headers.get("X-Export-Token", "")
+    if not token or not hmac.compare_digest(token, sent):
+        abort(403)
+
+    def iso(d):
+        return d.isoformat() if d else None
+
+    with session_scope() as db:
+        rz = (db.query(func.max(IngestedFile.s3_key))
+              .filter(IngestedFile.s3_key.like("rz://orders/%")).scalar())
+        rows = (db.query(LineItem, Order, Client)
+                .join(Order, LineItem.order_id == Order.id)
+                .join(Client, Order.client_id == Client.id)
+                .filter(LineItem.external_id.isnot(None))
+                .all())
+        lines = [{
+            "line_item_id": li.external_id,
+            "line_item_name": li.name,
+            "product": li.product,
+            "status": li.status,
+            "start_date": iso(li.start_date or o.start_date),
+            "end_date": iso(li.end_date or o.end_date),
+            "monthly_impressions": li.monthly_impressions,
+            "client_monthly_budget": li.client_monthly_budget,
+            "sold_strategies": li.sold_strategies,
+            "order_id": o.external_order_id,
+            "order_name": o.name,
+            "order_type": o.order_type,
+            "order_status": o.status,
+            "order_start_date": iso(o.start_date),
+            "order_end_date": iso(o.end_date),
+            "buyer": o.buyer or c.buyer,
+            "client": c.name,
+            "market": c.market,
+        } for li, o, c in rows]
+    return {"rz_synced": rz.split("/")[-1] if rz else None, "count": len(lines), "lines": lines}
+
+
 @app.route("/healthz")
 def healthz():
     """Liveness, plus whether the schema is actually current.
