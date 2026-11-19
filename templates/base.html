@@ -105,12 +105,19 @@
   <form method="dialog"><button class="btn preview" type="submit">OK</button></form>
 </dialog>
 <script>
-/* Changing a CPM: what has gone at the old one, and the budget the rest
-   needs at the new one. */
+/* Changing a CPM: what has served at the old one, the budget the rest needs
+   at the new one, and the new line item (SA campaign group) budget. */
 (function () {
   var dlg = document.getElementById('cpmnote'), text = document.getElementById('cpmnotetext');
   function num(v) { return parseFloat(String(v || '').replace(/[$,]/g, '')); }
   function money(v) { return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function imps(v) { return Math.round(v).toLocaleString('en-US'); }
+  function esc(v) { var d = document.createElement('div'); d.textContent = v; return d.innerHTML; }
+  function budget(el, cpm) {
+    var oldCpm = num(el.dataset.cpmOld), served = num(el.dataset.served) || 0, total = num(el.dataset.total);
+    if (!oldCpm || !total || !cpm) return null;
+    return served * oldCpm / 1000 + Math.max(total - served, 0) * cpm / 1000;
+  }
   document.addEventListener('change', function (e) {
     var el = e.target;
     if (!el.matches || !el.matches('input[data-cpm-old]')) return;
@@ -119,10 +126,28 @@
     if (!oldCpm || !newCpm || !total || oldCpm === newCpm) return;
     var spent = served * oldCpm / 1000;
     var left = Math.max(total - served, 0);
-    var budget = spent + left * newCpm / 1000;
-    text.innerHTML = 'You have spent <b>' + money(spent) + '</b> at your current CPM of ' + money(oldCpm) +
-      '. By editing your CPM to ' + money(newCpm) + ', your new budget should be <b>' + money(budget) +
-      '</b> (' + Math.round(left).toLocaleString('en-US') + ' impressions left at ' + money(newCpm) + ').';
+    var mine = spent + left * newCpm / 1000;
+    var group = el.dataset.group
+      ? Array.prototype.slice.call(document.querySelectorAll('input[data-cpm-old][data-group="' + el.dataset.group + '"]'))
+      : [el];
+    var html = 'You have served <b>' + imps(served) + '</b> impressions at a ' + money(oldCpm) +
+      ' CPM, which is <b>' + money(spent) + '</b>.<br>At ' + money(newCpm) + ', the ' + imps(left) +
+      ' impressions left cost <b>' + money(left * newCpm / 1000) + '</b>.';
+    if (group.length > 1) {
+      var was = 0, now = 0, parts = [];
+      group.forEach(function (g) {
+        var before = budget(g, num(g.dataset.cpmOld)), after = g === el ? mine : budget(g, num(g.value));
+        if (before == null || after == null) return;
+        was += before; now += after;
+        parts.push(esc(g.dataset.name || 'Row') + ' ' + money(after));
+      });
+      html += '<br><br>This row\'s budget is now <b>' + money(mine) + '</b>.' +
+        '<br>The new line item budget is <b>' + money(now) + '</b> (was ' + money(was) +
+        '), which includes ' + parts.join(', ') + '.';
+    } else {
+      html += '<br><br>The new line item budget is <b>' + money(mine) + '</b>.';
+    }
+    text.innerHTML = html;
     if (dlg.showModal) dlg.showModal(); else alert(text.textContent);
   });
 })();
