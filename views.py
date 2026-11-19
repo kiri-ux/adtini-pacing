@@ -2192,6 +2192,27 @@ def term_keys(term: StrategyTerms) -> list[str]:
     return [own] + [k for k in linked if k != own]
 
 
+def channel_of(text: str | None) -> str | None:
+    """"ctv", "video" or None, from a row label or a feed name."""
+    t = (text or "").strip().lower()
+    if t.startswith("ctv - ") or any(
+        re.search(r"\b" + re.escape(w) + r"\b", t) for w in ratecard.CTV_WORDS
+    ):
+        return "ctv"
+    if t.startswith("v - ") or any(
+        re.search(r"\b" + re.escape(w) + r"\b", t) for w in ratecard.VIDEO_WORDS
+    ):
+        return "video"
+    return None
+
+
+def series_channel(series: "StrategySeries") -> str | None:
+    """The half a delivery line ran on: the feed's product, else its name."""
+    return channel_of(series.product) or next(
+        (c for c in (channel_of(n) for n in sorted(series.names)) if c), None
+    )
+
+
 def claim(term: StrategyTerms, ran: dict[str, "StrategySeries"],
           taken: set[str] | frozenset = frozenset()):
     """(the delivery a row claims merged into one series or None, keys used).
@@ -2201,6 +2222,9 @@ def claim(term: StrategyTerms, ran: dict[str, "StrategySeries"],
     """
     own, *linked = term_keys(term)
     keys = []
+    # A "CTV - " row takes CTV delivery and a "V - " row takes video, on a
+    # CTV + Video line where both halves run the same targeting.
+    want = channel_of(term.label)
     # Its targeting's first DSP line still free: "keyword", else "keyword#2".
     n = 1
     while True:
@@ -2208,7 +2232,7 @@ def claim(term: StrategyTerms, ran: dict[str, "StrategySeries"],
         if k not in ran:
             if n > 1:
                 break
-        elif k not in taken:
+        elif k not in taken and (want is None or series_channel(ran[k]) in (None, want)):
             keys.append(k)
             break
         n += 1
@@ -2782,7 +2806,8 @@ def retarget_orphan_rows(session, as_of: dt.date | None = None) -> int:
     AdLib types an AI or Content line "Behavioral", so splits drafted from
     that read got a second Behavioral row for it. Read by name, the line is
     AI and the second row claims nothing. Each such row takes an unclaimed
-    line, in order, until the lines run out. Returns rows moved.
+    line, in order, until the lines run out; one with no goals left after
+    that is removed. Returns rows moved or removed.
     """
     as_of = as_of or latest_delivery_date(session) or dt.date.today()
     order_ids = list(
@@ -2842,9 +2867,13 @@ def retarget_orphan_rows(session, as_of: dt.date | None = None) -> int:
                 elif own in owners and not term.linked_keys:
                     orphans.append(term)
             free = [k for k in ran if k not in claimed and "#" not in k]
-            if not orphans or not free:
-                continue
             taken = {t.label for t in terms}
+            # A repeat with no goals, no delivery and nothing left to take
+            # is a leftover; it goes.
+            for term in orphans[len(free):]:
+                if term.monthly_target is None and term.total_target is None:
+                    session.delete(term)
+                    moved += 1
             for term, key in zip(orphans, free):
                 label = labels[key]
                 base, n = label, 1

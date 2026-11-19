@@ -1391,7 +1391,8 @@ def test_b2b_and_premium_give_way_to_the_targeting_they_ride_with():
 
 
 def test_two_left_rows_and_one_free_line_moves_the_first(site):
-    """Keystone: two empty Behavioral rows and an unclaimed Retargeting line."""
+    """Keystone: two empty Behavioral rows and an unclaimed Retargeting line.
+    The first takes Retargeting; the other, with no goals, is removed."""
     import datetime as dt
 
     from models import DailyDelivery, LineItem, StrategyTerms
@@ -1428,6 +1429,75 @@ def test_two_left_rows_and_one_free_line_moves_the_first(site):
         labels = [t.label for t in session.query(StrategyTerms)
                   .filter_by(line_item_id=item_id).order_by(StrategyTerms.sort_order)]
 
-    assert moved == 1
+    assert moved == 2
     assert "Retargeting" in labels[1]
-    assert labels[2] == "B2B FB - Categories"
+    assert len(labels) == 2
+
+
+def test_ctv_and_video_rows_take_their_own_half():
+    """King Barr CTV + Video: Behavioral runs on both halves; each row
+    takes the delivery of its own half."""
+    import views
+    from models import StrategyTerms
+
+    def s(name, product, first):
+        return views.StrategySeries(
+            line_item_id=1, label=name, product=product,
+            by_date={dt.date(2026, 11, first): 10.0}, total=10.0, names={name},
+        )
+
+    grouped = views.group_by_targeting("CTV + Video", [
+        s("King Barr - Behavioral CTV", "CTV", 1),
+        s("King Barr - Behavioral Video", "Video", 2),
+    ])
+    ran = {k: series for k, _, series, _ in grouped}
+    taken: set[str] = set()
+    got = {}
+    for label in ("V - Behavioral", "CTV - Behavioral"):
+        series, keys = views.claim(StrategyTerms(label=label), ran, taken)
+        taken.update(keys)
+        got[label] = series.product
+    assert got == {"V - Behavioral": "Video", "CTV - Behavioral": "CTV"}
+
+
+def test_an_empty_repeat_row_with_nothing_to_take_is_removed(site):
+    import datetime as dt
+
+    from models import DailyDelivery, LineItem, StrategyTerms
+
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        item = session.query(LineItem).filter_by(external_id="88001").one()
+        session.query(StrategyTerms).filter_by(order_id=order_id).delete()
+        session.query(DailyDelivery).filter_by(external_line_item_id="88001").delete()
+        session.add(StrategyTerms(order_id=order_id, line_item_id=item.id,
+                                  label="FB - Categories", sort_order=0,
+                                  monthly_target=1000.0))
+        session.add(StrategyTerms(order_id=order_id, line_item_id=item.id,
+                                  label="FB - Categories 2", sort_order=1))
+        session.add(StrategyTerms(order_id=order_id, line_item_id=item.id,
+                                  label="FB - Categories 3", sort_order=2,
+                                  monthly_target=500.0))
+        for day in range(1, 6):
+            session.add(DailyDelivery(
+                date=dt.date(2026, 8, day), data_source="Meta",
+                campaign_id="CMP-1", strategy_id=f"cat-{day}",
+                client_name="Bud's Auto", external_order_id="44100",
+                external_line_item_id="88001",
+                product="Meta Display & Video Ads",
+                strategy_name="Meta - Nampa Categories", strategy_type="Categories",
+                impressions=500.0,
+            ))
+        item_id = item.id
+
+    with db_module.session_scope() as session:
+        changed = views.retarget_orphan_rows(session, as_of=dt.date(2026, 8, 10))
+    with db_module.session_scope() as session:
+        labels = [t.label for t in session.query(StrategyTerms)
+                  .filter_by(line_item_id=item_id).order_by(StrategyTerms.sort_order)]
+
+    assert changed == 1
+    assert labels == ["FB - Categories", "FB - Categories 3"]
