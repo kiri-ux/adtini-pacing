@@ -43,7 +43,7 @@ def draft_splits(log: logging.Logger) -> None:
             result = views.draft_missing_splits(session)
             log.info("splits: %s", result.summary())
             moved = views.retarget_orphan_rows(session)
-            log.info("splits: %d rows moved to the line they meant", moved)
+            log.info("splits: %d split rows moved or removed", moved)
             extra = views.add_extra_lines(session) + views.fill_lone_rows(session) + moved
             log.info("splits: %d second lines added", extra)
             from orderbook import reset_old_split_rates

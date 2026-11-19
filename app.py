@@ -1723,7 +1723,7 @@ def data_action():
             moved = views.retarget_orphan_rows(db, as_of=_as_of())
         if moved:
             pagecache.edited()
-        message = f"{moved} split rows moved to their line."
+        message = f"{moved} split rows moved or removed."
     elif action == "adopt":
         with session_scope() as db:
             message = adopt_unmatched_delivery(db).summary()
@@ -1745,7 +1745,7 @@ def data_action():
             message = views.draft_missing_splits(db, as_of=_as_of()).summary()
             moved = views.retarget_orphan_rows(db, as_of=_as_of())
             if moved:
-                message += f"; {moved} rows moved to the line they meant"
+                message += f"; {moved} split rows moved or removed"
             extra = views.add_extra_lines(db, as_of=_as_of())
             if extra:
                 message += f"; {extra} second lines added"
