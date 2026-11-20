@@ -470,6 +470,16 @@ class PageSnapshot(Base):
     built_at: Mapped[dt.datetime] = mapped_column(DateTime, index=True)
 
 
+class PinnedOrder(Base):
+    """An order starred for the Pinned page. Kept on the server so pins
+    follow the buyer across browsers."""
+
+    __tablename__ = "pinned_orders"
+
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), primary_key=True)
+    pinned_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+
+
 class IngestedFile(Base):
     """Ingest log, so a re-run skips files already loaded."""
 

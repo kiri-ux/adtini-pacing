@@ -22,6 +22,7 @@ from flask import (
     Response,
     abort,
     flash,
+    jsonify,
     make_response,
     redirect,
     render_template,
@@ -52,6 +53,7 @@ from models import (
     DayNote,
     IngestedFile,
     LineItem,
+    PinnedOrder,
     Order,
     SaAlert,
     StrategyTerms,
@@ -1571,6 +1573,45 @@ def _my_day_weekday() -> int:
 
 @app.route("/pinned")
 @login_required
+def pinned():
+    """The pinned orders, in one table like My Day."""
+    with session_scope() as db:
+        ids = list(db.execute(
+            select(PinnedOrder.order_id).order_by(PinnedOrder.pinned_at, PinnedOrder.order_id)
+        ).scalars())
+        rows = views.overview(
+            db, as_of=_as_of(), order_ids=ids, include_ended=True, include_non_io=True,
+        ) if ids else []
+        order = {oid: i for i, oid in enumerate(ids)}
+        rows.sort(key=lambda r: order.get(r.order.id, len(order)))
+        as_of = rows[0].as_of if rows else views.latest_delivery_date(db)
+        return render_template(
+            "pinned.html", nav="pinned", rows=rows,
+            page_total=views.page_total(rows), as_of=as_of,
+        )
+
+
+@app.route("/pins")
+@login_required
+def pins_list():
+    with session_scope() as db:
+        return jsonify(ids=list(db.execute(select(PinnedOrder.order_id)).scalars()))
+
+
+@app.route("/pins/<int:order_id>", methods=["POST"])
+@login_required
+def pins_toggle(order_id: int):
+    """Pin or unpin an order. `on` = 1 pins, 0 unpins."""
+    on = request.form.get("on", "1") == "1"
+    with session_scope() as db:
+        pin = db.get(PinnedOrder, order_id)
+        if on and pin is None and db.get(Order, order_id) is not None:
+            db.add(PinnedOrder(order_id=order_id))
+        elif not on and pin is not None:
+            db.delete(pin)
+    return jsonify(pinned=on)
+
+
 @cached_page
 def pinned():
     """The orders pinned in this browser, in one table like My Day. The
