@@ -1037,3 +1037,8 @@ td.elname .prodpick{display:block;margin-top:4px;font-size:11.5px;max-width:260p
 .cpmnote::backdrop{background:rgba(10,20,40,.35)}
 .cpmnote form{text-align:right;margin:14px 0 0}
 table.detailgrid .pctlive{display:inline-block;padding:4px 6px;font-variant-numeric:tabular-nums}
+table.overview .ctrcell{white-space:nowrap}
+table.overview .ctrcell.saunder{color:#B42318;font-weight:600}
+table.overview .ctrchg{font-size:11px;color:var(--muted,#667085)}
+table.overview .ctrchg.up{color:#067647}
+table.overview .ctrchg.down{color:#B42318}

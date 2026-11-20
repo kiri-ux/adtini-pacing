@@ -167,3 +167,26 @@ def test_a_pending_product_is_left_out_of_the_orders_goal(session):
     session.flush()
     rows = views.overview(session, as_of=AS_OF)
     assert rows[0].total.total_target == 90_000
+
+
+def test_ctr_compares_the_last_week_and_flags_stackadapt_under_adlib(session):
+    order, item = _build(session, flight_end=dt.date(2026, 10, 31), delivery_days=[])
+    def add(day, source, clicks):
+        session.add(DailyDelivery(
+            date=day, data_source=source, campaign_id=source, strategy_id=f"{source}-{day}",
+            client_name="Acme", external_order_id="900", external_line_item_id="7001",
+            product="Display Ads", impressions=1_000.0, clicks=clicks,
+        ))
+    for n in range(14):
+        day = AS_OF - dt.timedelta(days=n)
+        # The last 7 days on StackAdapt at 0.2%, the 7 before on AdLib at 0.5%.
+        add(day, "StackAdapt" if n < 7 else "Adlib Database", 2.0 if n < 7 else 5.0)
+    session.flush()
+
+    ctr = views.overview(session, as_of=AS_OF)[0].ctr
+    assert ctr.last7 == pytest.approx(0.2)
+    assert ctr.prior7 == pytest.approx(0.5)
+    assert ctr.change == pytest.approx(-0.3)
+    assert ctr.both and ctr.sa_under
+    assert ctr.adlib_ctr == pytest.approx(0.5)
+    assert ctr.stackadapt_ctr == pytest.approx(0.2)
