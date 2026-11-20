@@ -6,7 +6,7 @@
     <thead>
       <tr>
         <th class="rowacts"></th>
-        <th>Buyer</th><th>Partner</th><th>Client</th><th>Order ID</th><th>Products</th>
+        <th>Buyer</th><th>Partner</th><th>Client</th><th>Order ID</th><th>Products</th><th class="num">CTR (7d)</th>
         <th class="num">Monthly Serve / Goal</th><th class="meterhead">Monthly Pacing</th>
         <th class="num">Total Serve / Goal</th><th class="meterhead">Total Pacing</th>
         <th class="num">Avg Daily Serve / Needed</th><th class="num">Days Left</th>
@@ -43,6 +43,13 @@
           {% endfor %}
           {% if r.products|length > 5 %}<span class="pill-more">+{{ r.products|length - 5 }}</span>{% endif %}
         </td>
+        {% set c = r.ctr %}
+        <td class="num ctrcell{% if c and c.sa_under %} saunder{% endif %}"
+          {%- if c and (c.last7 is not none or c.both) %} data-tip="Last 7 days {{ '%.2f%%'|format(c.last7) if c.last7 is not none else '—' }} · Prior 7 days {{ '%.2f%%'|format(c.prior7) if c.prior7 is not none else '—' }}
+          {%- if c.both %} · Lifetime AdLib {{ '%.2f%%'|format(c.adlib_ctr) }} · StackAdapt {{ '%.2f%%'|format(c.stackadapt_ctr) }}{% endif %}"{% endif %}>
+          {%- if c and c.last7 is not none %}{{ '%.2f%%'|format(c.last7) }}
+            {%- if c.change is not none %}<div class="ctrchg {{ 'up' if c.change > 0 else ('down' if c.change < 0 else '') }}">{{ '%+.2f'|format(c.change) }}</div>{% endif %}
+          {%- else %}—{% endif %}</td>
         <td class="num pair">{{ t.month_to_date|metric(t) }} <i>/ {{ t.month_goal|metric(t) }}</i></td>
         <td>{{ meter(t.month_to_date, t.month_on_pace, t.month_goal,
                      t.month_delivery_ratio, r.health, t.is_money) }}</td>
@@ -54,7 +61,7 @@
         <td class="num">{{ t.days_left if t.flight_days else '—' }}</td>
       </tr>
     {% else %}
-      <tr><td colspan="12" class="empty">{% if empty_text %}{{ empty_text }}{% else %}Nothing to pace yet. Load a delivery file on the
+      <tr><td colspan="13" class="empty">{% if empty_text %}{{ empty_text }}{% else %}Nothing to pace yet. Load a delivery file on the
         <a href="/data">Data</a> page.{% endif %}</td></tr>
     {% endfor %}
     </tbody>
@@ -62,7 +69,7 @@
     <tfoot>
       <tr class="totalrow">
         <td class="rowacts"></td>
-        <td colspan="5">Pacing total &middot; {{ rows|length }} orders on this page</td>
+        <td colspan="6">Pacing total &middot; {{ rows|length }} orders on this page</td>
         <td class="num pair">{{ page_total.month_to_date|num }} <i>/ {{ page_total.month_goal|num }}</i></td>
         <td>{{ meter(page_total.month_to_date, page_total.month_on_pace,
                      page_total.month_goal, page_total.month_delivery_ratio,

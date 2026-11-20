@@ -1056,6 +1056,114 @@ def is_paused(row: PacingRow) -> bool:
 
 
 @dataclass
+class CtrStats:
+    """An order's CTR: the last 7 days against the 7 before, and lifetime
+    per platform when it ran on both AdLib and StackAdapt."""
+
+    week: tuple[float, float] = (0.0, 0.0)  # impressions, clicks
+    prior: tuple[float, float] = (0.0, 0.0)
+    adlib: tuple[float, float] = (0.0, 0.0)
+    stackadapt: tuple[float, float] = (0.0, 0.0)
+
+    @staticmethod
+    def _rate(pair: tuple[float, float]) -> float | None:
+        return pair[1] / pair[0] * 100 if pair[0] else None
+
+    @property
+    def last7(self) -> float | None:
+        return self._rate(self.week)
+
+    @property
+    def prior7(self) -> float | None:
+        return self._rate(self.prior)
+
+    @property
+    def change(self) -> float | None:
+        if self.last7 is None or self.prior7 is None:
+            return None
+        return self.last7 - self.prior7
+
+    @property
+    def both(self) -> bool:
+        return bool(self.adlib[0] and self.stackadapt[0])
+
+    @property
+    def adlib_ctr(self) -> float | None:
+        return self._rate(self.adlib)
+
+    @property
+    def stackadapt_ctr(self) -> float | None:
+        return self._rate(self.stackadapt)
+
+    @property
+    def sa_under(self) -> bool:
+        return self.both and self.stackadapt_ctr < self.adlib_ctr
+
+
+def _platform(source: str | None) -> str | None:
+    text = (source or "").lower()
+    if "adlib" in text:
+        return "adlib"
+    if "stackadapt" in text:
+        return "stackadapt"
+    return None
+
+
+def ctr_by_order(session, orders: list[Order], as_of: dt.date) -> dict[int, CtrStats]:
+    """CtrStats per order id, summed in the database in one pass."""
+    line_items = [li for o in orders for li in o.line_items if products.is_paced(li.product)]
+    join = _delivery_join(session, line_items)
+    if not join:
+        return {}
+    week_from = as_of - dt.timedelta(days=6)
+    prior_from = as_of - dt.timedelta(days=13)
+    in_week = (DailyDelivery.date >= week_from) & (DailyDelivery.date <= as_of)
+    in_prior = (DailyDelivery.date >= prior_from) & (DailyDelivery.date < week_from)
+
+    def within(cond, column):
+        return func.sum(case((cond, column), else_=0.0))
+
+    stmt = (
+        select(
+            DailyDelivery.external_order_id,
+            DailyDelivery.external_line_item_id,
+            DailyDelivery.data_source,
+            DailyDelivery.campaign_id,
+            func.sum(DailyDelivery.impressions),
+            func.sum(DailyDelivery.clicks),
+            within(in_week, DailyDelivery.impressions),
+            within(in_week, DailyDelivery.clicks),
+            within(in_prior, DailyDelivery.impressions),
+            within(in_prior, DailyDelivery.clicks),
+        )
+        .where(join.where(), DailyDelivery.date <= as_of)
+        .group_by(
+            DailyDelivery.external_order_id,
+            DailyDelivery.external_line_item_id,
+            DailyDelivery.data_source,
+            DailyDelivery.campaign_id,
+        )
+    )
+    order_of = {li.id: li.order_id for li in line_items}
+    out: dict[int, CtrStats] = {}
+    for order_id, li_id, source, campaign, imps, clicks, w_i, w_c, p_i, p_c in session.execute(stmt):
+        target = join.resolve(order_id, li_id, source, campaign)
+        if target is None or target not in order_of:
+            continue
+        stats = out.setdefault(order_of[target], CtrStats())
+
+        def add(pair, i, c):
+            return (pair[0] + float(i or 0), pair[1] + float(c or 0))
+
+        stats.week = add(stats.week, w_i, w_c)
+        stats.prior = add(stats.prior, p_i, p_c)
+        platform = _platform(source)
+        if platform:
+            setattr(stats, platform, add(getattr(stats, platform), imps, clicks))
+    return out
+
+
+@dataclass
 class OverviewRow:
     order: Order
     client: Client
@@ -1065,6 +1173,7 @@ class OverviewRow:
     covers_from: dt.date | None = None
     # Products on this order whose status is paused.
     paused: list[str] = field(default_factory=list)
+    ctr: "CtrStats | None" = None
 
     @property
     def health(self) -> str:
@@ -1279,6 +1388,10 @@ def overview(
         r for r in out
         if not r.is_cancelled or r.total.impressions or r.total.cost
     ]
+
+    ctrs = ctr_by_order(session, [r.order for r in out], as_of)
+    for r in out:
+        r.ctr = ctrs.get(r.order.id)
 
     if needs_terms is True:
         out = [r for r in out if r.total.needs_setup]
