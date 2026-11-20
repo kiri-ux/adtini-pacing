@@ -303,6 +303,27 @@ class DetailsView:
         return {sid: v / total * 100 for sid, v in served.items()}
 
     @property
+    def one_cpm(self) -> bool:
+        """Every sold row bids the same CPM, so the mix leaves the budget
+        where it is."""
+        return len({round(e.rate, 2) for e in self.elements if e.sold and e.rate}) <= 1
+
+    @property
+    def mix_budget(self) -> tuple[float, float] | None:
+        """(budget at the current serve mix, budget the split is set for)
+        when the rows bid different CPMs and the two are $10 or more apart."""
+        if self.row.is_money or self.one_cpm or not self.row.total_target:
+            return None
+        live = self.live_shares
+        rows = [e for e in self.elements if e.sold and e.rate]
+        if not live or not rows:
+            return None
+        plan = sum((e.total or 0) * e.rate / 1000 for e in rows)
+        mix = sum(self.row.total_target * live.get(e.strategy_id, 0) / 100 * e.rate / 1000
+                  for e in rows)
+        return (mix, plan) if abs(mix - plan) >= 10 else None
+
+    @property
     def is_search(self) -> bool:
         return products._key(self.item.product or "") in {"payperclickads"}
 

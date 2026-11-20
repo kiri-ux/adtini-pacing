@@ -565,9 +565,22 @@ def test_split_button_matches_what_is_serving(site):
     assert live[by_label["D - Behavioral"]] == pytest.approx(100)
     assert live[by_label["D - Retargeting"]] == pytest.approx(0)
 
+    # One CPM for every row: the % is the serve share, with no button.
+    html = client.get(f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
+    assert 'class="pctlive"' in html
+    assert "Match serving" not in html
+
+    # Different CPMs: the % stays editable, and a mix that moves the
+    # budget is flagged.
+    from models import StrategyTerms
+    with db_module.session_scope() as session:
+        rates = {"D - Behavioral": 2.0, "D - Retargeting": 6.0}
+        for t in session.query(StrategyTerms).filter_by(line_item_id=li_id):
+            t.rate = rates.get(t.label, t.rate)
     html = client.get(f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
     assert 'data-live="100.0"' in html
     assert "Match serving" in html
+    assert "CPMs differ by strategy" in html
 
 
 def test_serve_gap_shows_the_last_serve():
