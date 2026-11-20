@@ -1036,3 +1036,4 @@ td.elname .prodpick{display:block;margin-top:4px;font-size:11.5px;max-width:260p
 .cpmnote{border:0;border-radius:12px;padding:20px 22px;max-width:420px;box-shadow:0 10px 40px rgba(0,0,0,.25);font-size:14px;line-height:1.45}
 .cpmnote::backdrop{background:rgba(10,20,40,.35)}
 .cpmnote form{text-align:right;margin:14px 0 0}
+table.detailgrid .pctlive{display:inline-block;padding:4px 6px;font-variant-numeric:tabular-nums}

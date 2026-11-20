@@ -183,11 +183,15 @@
           {% set base = r.monthly_target or r.total_target %}
           {% set mine = e.monthly if r.monthly_target else e.total %}
           {% set live = d.live_shares %}
+          {% if d.one_cpm and live %}
+          <td class="num"><span class="pctlive" data-tip="Share of the last 7 days' serve">{{ '%.1f'|format(live.get(e.strategy_id, 0)) }}</span></td>
+          {% else %}
           <td class="num"><input class="pctin{% if e.pacing_pct|paceclass == 'under' %} under{% endif %}" type="text" inputmode="decimal" data-li="{{ d.item.id }}"
             data-mon="{{ r.monthly_target or '' }}" data-tot="{{ r.total_target or '' }}" data-money="{{ 1 if money else 0 }}"
             data-live="{{ '%.1f'|format(live[e.strategy_id]) if e.strategy_id in live else '' }}"
             data-todate="{{ e.to_date or 0 }}" data-frac="{{ (e.on_pace / e.total) if (e.on_pace and e.total) else '' }}"
             value="{{ '%.1f'|format(mine / base * 100) if (mine and base) else '' }}"></td>
+          {% endif %}
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-monthly" value="{{ e.monthly|entry(not money) }}"></td>
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-total" value="{{ e.total|entry(not money) }}"></td>
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-rate" value="{{ e.rate|entry }}"
@@ -231,8 +235,13 @@
           {% set sold_sum = d.elements|selectattr('sold')|map(attribute='monthly' if r.monthly_target else 'total')|map('default', 0, true)|sum %}
           {% set base = r.monthly_target or r.total_target %}
           <td class="num pcttotal">
+            {%- if d.one_cpm and d.live_shares -%}
+            <span class="pctsum">100%</span>
+            {%- else -%}
             <span class="pctsum" data-li="{{ d.item.id }}">{{ '%.0f%%'|format(sold_sum / base * 100) if (base and sold_sum) else '—' }}</span>
-            {%- if d.elements|selectattr('sold')|list -%}
+            {%- endif -%}
+            {%- if d.mix_budget %} <span class="cpmflag" tabindex="0" aria-label="Budget needs updating"><svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M8 1.6 15.2 14.2H.8Z" fill="#F5C518" stroke="#C99A00" stroke-width="1" stroke-linejoin="round"/><path d="M8 6v4" stroke="#3A2E00" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="12.1" r=".9" fill="#3A2E00"/></svg><span class="tipbox">CPMs differ by strategy. At the current serve mix the line item budget is {{ d.mix_budget[0]|money }}, set for {{ d.mix_budget[1]|money }}.</span></span>{% endif -%}
+            {%- if d.elements|selectattr('sold')|list and not (d.one_cpm and d.live_shares) -%}
             <button type="button" class="pctfix" data-li="{{ d.item.id }}" title="{{ 'Match serving' if d.live_shares else 'Recalculate to 100%' }}">&#8635;</button>
             {%- endif -%}</td>
           <td class="num">{{ val(d, r.monthly_target or none) }}</td>
