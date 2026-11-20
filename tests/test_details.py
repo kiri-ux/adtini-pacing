@@ -931,11 +931,15 @@ def test_picking_ctv_plus_video_prices_each_row_at_its_half(site):
 def test_pinned_page_shows_only_the_pinned_orders(site):
     app_module, (order_id, li_id) = site
     client = app_module.app.test_client()
-    html = client.get(f"/pinned?ids={order_id}").get_data(as_text=True)
+    empty = client.get("/pinned").get_data(as_text=True)
+    assert "No pinned orders" in empty
+    assert client.post(f"/pins/{order_id}", data={"on": "1"}).get_json() == {"pinned": True}
+    assert client.get("/pins").get_json()["ids"] == [order_id]
+    html = client.get("/pinned").get_data(as_text=True)
     assert f"/orders/{order_id}" in html
     assert "1 orders" in html
-    empty = client.get("/pinned?ids=").get_data(as_text=True)
-    assert "No pinned orders" in empty
+    client.post(f"/pins/{order_id}", data={"on": "0"})
+    assert client.get("/pins").get_json()["ids"] == []
 
 
 def test_a_partial_newest_day_is_shown_but_not_paced_on(site):

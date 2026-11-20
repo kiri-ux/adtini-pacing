@@ -48,34 +48,39 @@
 </div>
 
 <script>
-/* Pinned orders, kept in this browser. The rail star opens them all in
-   one table; the ids go in the address since the server never sees them. */
+/* Pinned orders, kept on the server. Pins saved in this browser before
+   that are sent up once. */
 (function () {
-  var KEY = 'pinnedOrders';
-  function load() { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch (e) { return []; } }
-  function save(list) { try { localStorage.setItem(KEY, JSON.stringify(list)); } catch (e) {} }
-  var btn = document.getElementById('pinbtn');
+  var OLD = 'pinnedOrders', btn = document.getElementById('pinbtn');
+  var star = document.getElementById('pinorder'), ids = [];
+  function post(id, on) {
+    var body = new URLSearchParams(); body.set('on', on ? '1' : '0');
+    return fetch('/pins/' + encodeURIComponent(id), { method: 'POST', body: body, credentials: 'same-origin' });
+  }
   function draw() {
-    var list = load();
-    btn.href = '/pinned?ids=' + list.map(function (p) { return encodeURIComponent(p.id); }).join(',');
-    btn.title = list.length ? 'Pinned orders (' + list.length + ')' : 'Pinned orders';
-    var star = document.getElementById('pinorder');
+    btn.title = ids.length ? 'Pinned orders (' + ids.length + ')' : 'Pinned orders';
     if (star) {
-      var on = list.some(function (p) { return String(p.id) === star.dataset.id; });
+      var on = ids.indexOf(String(star.dataset.id)) >= 0;
       star.classList.toggle('on', on);
       star.title = on ? 'Unpin' : 'Pin';
       star.setAttribute('aria-pressed', on ? 'true' : 'false');
     }
   }
-  var star = document.getElementById('pinorder');
+  function load() {
+    return fetch('/pins', { credentials: 'same-origin' }).then(function (r) { return r.json(); })
+      .then(function (d) { ids = (d.ids || []).map(String); draw(); });
+  }
+  var old = [];
+  try { old = JSON.parse(localStorage.getItem(OLD)) || []; } catch (e) {}
+  (old.length ? Promise.all(old.map(function (p) { return post(p.id, true); }))
+      .then(function () { try { localStorage.removeItem(OLD); } catch (e) {} })
+    : Promise.resolve()).then(load).catch(function () {});
   if (star) star.addEventListener('click', function () {
-    var list = load(), id = star.dataset.id;
-    var i = list.findIndex(function (p) { return String(p.id) === id; });
-    if (i >= 0) list.splice(i, 1); else list.push({ id: id, name: star.dataset.name });
-    save(list); draw();
+    var id = String(star.dataset.id), on = ids.indexOf(id) < 0;
+    if (on) ids.push(id); else ids.splice(ids.indexOf(id), 1);
+    draw();
+    post(id, on).catch(load);
   });
-  window.addEventListener('storage', draw);
-  draw();
 })();
 </script>
 <div id="tip" class="tip" role="tooltip" hidden></div>
