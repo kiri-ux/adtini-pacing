@@ -288,7 +288,18 @@ def test_a_months_goal_is_what_was_sold_for_that_month(site):
 
 def test_the_headers_month_goal_leaves_out_lines_that_finished(site):
     """Completed lines count toward the flight, not toward this month."""
+    import db as db_module
+    from models import DailyDelivery
+
     _, order_id = site
+    # The feed covers the spring line, so its goal is one it can pace.
+    with db_module.session_scope() as session:
+        session.add(DailyDelivery(
+            date=dt.date(2026, 4, 10), data_source="Display", campaign_id="CMP-1",
+            strategy_id="S-0", client_name="Ram Jack", external_order_id="44807",
+            external_line_item_id="101789", product="Display Ads",
+            impressions=1_000.0, clicks=1.0, cost=2.0,
+        ))
     view = _view(order_id)
 
     assert view.goal_total.total_target == 525_000 + 333_330

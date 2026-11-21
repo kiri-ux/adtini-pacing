@@ -864,7 +864,7 @@ def order_view(
     total = total_row(rows, order.pacing_type)
     open_total = total_row([r for r in rows if r.is_open], order.pacing_type)
     # The header's figures: live, paused and completed, as My Day counts.
-    goal_total = goal_total_row(rows, order.pacing_type)
+    goal_total = goal_total_row(rows, order.pacing_type, covers_from)
     closed_total = total_row([r for r in rows if not r.is_open], order.pacing_type)
 
     # The daily grid runs the length of the flight, so a buyer can see which
@@ -1036,10 +1036,23 @@ def counts_toward_goal(row: PacingRow) -> bool:
     return "pending" not in status and row.state != "cancelled"
 
 
-def goal_total_row(rows: list[PacingRow], pacing_type: str) -> PacingRow:
+def goal_total_row(rows: list[PacingRow], pacing_type: str,
+                   covers_from: dt.date | None = None) -> PacingRow:
     """Live, paused and completed lines over the flight; the month only
     from lines still running. A line that finished in the spring is no part
-    of November's goal - counted, it read Chalfant's month as 3% of 993,750."""
+    of November's goal - counted, it read Chalfant's month as 3% of 993,750.
+
+    A finished line the feed cannot speak for is left out: one that ended
+    before the feed's first day, or started before it and has no serve on
+    record. Its goal is known and its serve is not, so it read Keystone
+    26760's total as 47% when the line running is at 103%."""
+    def unknown(r) -> bool:
+        if r.state == "running" or not covers_from:
+            return False
+        if r.end_date and r.end_date < covers_from:
+            return True
+        return bool(not r.to_date and r.start_date and r.start_date < covers_from)
+    rows = [r for r in rows if not unknown(r)]
     total = total_row([r for r in rows if counts_toward_goal(r)], pacing_type)
     month = total_row(
         [r for r in rows if counts_toward_goal(r) and r.state == "running"], pacing_type
@@ -1347,7 +1360,7 @@ def overview(
         # Live, paused and completed products, as the order page's header
         # does; pending approval or launch has not started (kiri, 11/9).
         total = total_row(rows, order.pacing_type)
-        open_total = goal_total_row(rows, order.pacing_type)
+        open_total = goal_total_row(rows, order.pacing_type, covers_from)
         if open_total.total_target:
             total = open_total
 
