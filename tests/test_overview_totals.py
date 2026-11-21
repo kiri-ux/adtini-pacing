@@ -190,3 +190,20 @@ def test_ctr_compares_the_last_week_and_flags_stackadapt_under_adlib(session):
     assert ctr.both and ctr.sa_under
     assert ctr.adlib_ctr == pytest.approx(0.5)
     assert ctr.stackadapt_ctr == pytest.approx(0.2)
+
+
+def test_a_finished_line_with_no_serve_on_record_is_left_out_of_the_total(session):
+    """Keystone 26760: a 2022 line with its goal and none of its serve read
+    the order's total as 47% beside a running line at 103%."""
+    days = [dt.date(2026, 8, 1) + dt.timedelta(days=n) for n in range(40)]
+    order, item = _build(session, flight_end=dt.date(2026, 10, 31), delivery_days=days)
+    session.add(LineItem(
+        order_id=order.id, external_id="5001", name="Display Ads", product="Display Ads",
+        status="IO Completed", start_date=dt.date(2022, 8, 4), end_date=dt.date(2026, 8, 20),
+        monthly_impressions=100_000.0, total_impressions=2_800_000.0, goal_cpm=1.0,
+    ))
+    session.flush()
+    session.expire_all()
+
+    row = views.overview(session, as_of=AS_OF, include_ended=True)[0]
+    assert row.total.total_target == 90_000
