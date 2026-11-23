@@ -432,6 +432,9 @@ def _timed(response, how: str, seconds: float = 0.0):
 @app.after_request
 def _drop_cache_on_write(response):
     if request.method == "POST" and response.status_code < 500:
+        if request.endpoint == "note_sync_pushes" and not (response.get_json(silent=True) or {}).get("added"):
+            # Runs on every order page load; nothing added, nothing to drop.
+            return response
         order_id = (request.view_args or {}).get("order_id")
         pagecache.edited(order_id)
         if order_id and _warmer_started:

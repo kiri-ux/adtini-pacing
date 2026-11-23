@@ -76,7 +76,8 @@
 {% macro section(d, dates, pacecell, linked) -%}
 {% set r = d.row %}
 {% set money = d.is_money %}
-{% set n = (d.elements|length or 1) + 5 %}
+{# Total, Daily goal, Month pacing, Total pacing, and Events when shown. #}
+{% set n = (d.elements|length or 1) + (5 if d.by_events else 4) %}
 {% set p = d.product_pill %}
 {% macro prodcell() -%}
   <th class="pin0 prodcell" rowspan="{{ d.elements|length or 1 }}">
@@ -184,7 +185,7 @@
           {% set mine = e.monthly if r.monthly_target else e.total %}
           {% set live = d.live_shares %}
           {% if d.one_cpm and live %}
-          <td class="num"><span class="pctlive" data-tip="Share of the last 7 days' serve">{{ '%.1f'|format(live.get(e.strategy_id, 0)) }}</span></td>
+          <td class="num"><span class="pctlive" data-tip="Share of the last 7 days' serve">{{ '%.1f'|format(mine / base * 100) if (mine and base) else '0.0' }}</span></td>
           {% else %}
           <td class="num"><input class="pctin{% if e.pacing_pct|paceclass == 'under' %} under{% endif %}" type="text" inputmode="decimal" data-li="{{ d.item.id }}"
             data-mon="{{ r.monthly_target or '' }}" data-tot="{{ r.total_target or '' }}" data-money="{{ 1 if money else 0 }}"
@@ -196,7 +197,7 @@
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-total" value="{{ e.total|entry(not money) }}"></td>
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-rate" value="{{ e.rate|entry }}"
             {%- if not money %} data-cpm-old="{{ e.rate or '' }}" data-served="{{ e.to_date or 0 }}" data-total="{{ e.total or '' }}" data-group="li-{{ d.item.id }}" data-name="{{ d.short_label(d.selected_option(e.label) or e.label) }}"{% endif %}>{% if money %}<div class="clicksub" title="CPC">{{ (e.to_date / e.clicks)|money if e.clicks else '—' }} CPC</div>{% endif %}</td>
-          {% elif e.ordered and (e.monthly or e.total) %}
+          {% elif e.monthly or e.total %}
           {% set base = r.monthly_target or r.total_target %}
           {% set mine = e.monthly if r.monthly_target else e.total %}
           <td class="num">{{ '%.1f'|format(mine / base * 100) if (mine and base) else '—' }}</td>
