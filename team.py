@@ -138,3 +138,20 @@ def team_for(partner: str | None, order_buyer: str | None = None,
         buyer=Person(buyer_name, buyer) if buyer_name else None,
         paid_media=Person(pmb_name, pmb) if pmb_name else None,
     )
+
+
+def runs(team: Team | None, name: str | None, full: str | None = None) -> bool:
+    """Whether `name` (a first name or the sheet's name) or `full` is the
+    order's buyer or paid media buyer."""
+    if team is None or not (name or full):
+        return False
+    first = (name or "").split()[0].lower() if name else ""
+    for person in (team.buyer, team.paid_media):
+        if person is None:
+            continue
+        if full and person.name == full:
+            return True
+        if name and (person.short == name or person.name.lower() == name.lower()
+                     or person.name.split()[0].lower() == first):
+            return True
+    return False

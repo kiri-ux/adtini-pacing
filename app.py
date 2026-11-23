@@ -42,6 +42,7 @@ import pagecache
 import timing
 import products
 import schedule
+import team as team_sheet
 import sheets
 import views
 from config import get_settings
@@ -1769,24 +1770,6 @@ def pins_toggle(order_id: int):
 
 
 @cached_page
-def pinned():
-    """The orders pinned in this browser, in one table like My Day. The
-    pins live in the browser, so the ids come in the address."""
-    ids = [int(x) for x in (request.args.get("ids") or "").split(",") if x.strip().isdigit()]
-    with session_scope() as db:
-        rows = views.overview(
-            db, as_of=_as_of(), order_ids=ids, include_ended=True, include_non_io=True,
-        ) if ids else []
-        order = {oid: i for i, oid in enumerate(ids)}
-        rows.sort(key=lambda r: order.get(r.order.id, len(order)))
-        as_of = rows[0].as_of if rows else views.latest_delivery_date(db)
-        return render_template(
-            "pinned.html", nav="pinned", rows=rows,
-            page_total=views.page_total(rows), as_of=as_of,
-        )
-
-
-@cached_page
 def _my_day_page():
     buyer = request.args.get("buyer")
     weekday = _my_day_weekday()
@@ -1820,8 +1803,11 @@ def _my_day_page():
             markets = sorted(set(mine) | set(theirs))
             rows = [
                 r for r in (views.overview(db, as_of=_as_of(), markets=markets) if markets else [])
-                if schedule.key(r.client.market) in mine_keys
-                or (full_name and r.order.buyer == full_name)
+                if (schedule.key(r.client.market) in mine_keys
+                    or (full_name and r.order.buyer == full_name))
+                # Only orders they run: the buyer for programmatic products,
+                # the paid media buyer for paid media (kiri, 11/23).
+                and team_sheet.runs(r.team, buyer, full_name)
             ]
             shown = {r.client.market for r in rows if r.client.market}
             partners = sorted(set(partners) | shown, key=str.lower)
