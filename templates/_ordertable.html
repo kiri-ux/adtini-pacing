@@ -29,8 +29,8 @@
         </td>
         {% set tm = r.team %}
         <td class="team"{% if tm and (tm.buyer or tm.paid_media) %} data-tip="Buyer: {{ tm.buyer.name if tm.buyer else '—' }} · Paid media: {{ tm.paid_media.name if tm.paid_media else '—' }}"{% endif %}>
-          {%- if tm and tm.buyer %}<span class="ini">{{ tm.buyer.initials }}</span>{% else %}—{% endif -%}
-          {%- if tm and tm.paid_media %}<span class="ini pmb">{{ tm.paid_media.initials }}</span>{% endif %}</td>
+          {%- if tm and tm.buyer %}<span class="ini"{% if tm.buyer.color %} style="border-color:{{ tm.buyer.color }}"{% endif %}>{{ tm.buyer.initials }}</span>{% else %}—{% endif -%}
+          {%- if tm and tm.paid_media %}<span class="ini"{% if tm.paid_media.color %} style="border-color:{{ tm.paid_media.color }}"{% endif %}>{{ tm.paid_media.initials }}</span>{% endif %}</td>
         <td class="clip" title="{{ r.client.market or '' }}">{{ r.client.market or '—' }}</td>
         <td class="lnk clip" title="{{ r.client.name }}"><a
           href="{{ url_for('order_detail', order_id=r.order.id) }}">{{ r.client.name }}</a>
