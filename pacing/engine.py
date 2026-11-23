@@ -320,6 +320,8 @@ class DeliveryTotals:
     every: Totals
     in_flight: Totals
     in_month: Totals
+    # The line's first day of delivery, when known.
+    first: dt.date | None = None
 
 
 def compute_row(
@@ -384,6 +386,12 @@ def compute_row(
     row.daily = points
     attr = _primary_attr(pacing_type)
     gross = row.client_cost_ratio if pacing_type == PACING_EVENT else 1.0
+
+    if line_item.start_date in (None, order.start_date):
+        first = totals.first if totals is not None else next(
+            (p.date for p in points if getattr(p, attr)), None)
+        start = sold_window_start(row, start, end, first) or start
+        row.start_date = start
 
     paceable = bool(start and end and row.total_target)
     flight = (start, end) if paceable else None
@@ -489,6 +497,28 @@ def is_prorated(row: PacingRow) -> bool:
     if not months:
         return False
     return months_between(row.start_date, row.end_date) > months + 0.01
+
+
+def sold_window_start(row: PacingRow, start, end, first) -> dt.date | None:
+    """The start of the last N sold months, for a line that carries the
+    order's dates, is sold for fewer months than they span, and first served
+    inside those last months: a renewal on a long order (Chalfant YouTube
+    136622: order from 2/6, line sold 3 months, served from 9/1)."""
+    months = sold_months(row)
+    if not (months and start and end and first) or months != int(months):
+        return None
+    if months_between(start, end) <= months + 1:
+        return None
+    y, m = end.year, end.month - int(months)
+    while m < 1:
+        y, m = y - 1, m + 12
+    last_day = (dt.date(y + (m == 12), m % 12 + 1, 1) - dt.timedelta(days=1)).day
+    month_end = (end + dt.timedelta(days=1)).day == 1
+    day = last_day if month_end else min(end.day, last_day)
+    begin = dt.date(y, m, day) + dt.timedelta(days=1)
+    if begin <= start or first < begin - dt.timedelta(days=7):
+        return None
+    return begin
 
 
 def sold_months(row: PacingRow) -> float | None:

@@ -2162,7 +2162,7 @@ def _totals_by_line_item(
             spilled.append(item)
             continue
         out[line_item_id] = DeliveryTotals(
-            every=every, in_flight=every, in_month=month
+            every=every, in_flight=every, in_month=month, first=first
         )
     return out, spilled
 

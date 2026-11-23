@@ -570,3 +570,28 @@ def test_an_order_whose_only_product_paces_in_spend_totals_in_spend():
     total = total_row([row], "impression")
     assert total.pacing_type == "click"
     assert total.total_target == 5_000
+
+
+def test_a_renewal_on_a_long_order_paces_over_its_sold_months():
+    # Chalfant YouTube 136622: the order runs from 2/6, the line carries no
+    # dates, is sold for 3 months and serves from 9/1. The sheet runs it
+    # 9/1-11/30 at 31,250 a month, not 93,750 spread over ten months.
+    order = Order(id=2, client_id=1, name="Chalfant", pacing_type="impression",
+                  start_date=dt.date(2026, 2, 6), end_date=dt.date(2026, 11, 30))
+    item = LineItem(id=2, order_id=2, name="YT", monthly_impressions=31_250,
+                    total_impressions=93_750, goal_cpm=20.0, months_running=3)
+    served = days(dt.date(2026, 9, 1), dt.date(2026, 11, 21), 1_100)
+    row = compute_row(item, order, served, dt.date(2026, 11, 21))
+    assert row.start_date == dt.date(2026, 9, 1)
+    assert not row.prorated
+    assert row.month_goal == 31_250
+
+
+def test_a_line_serving_from_the_order_start_keeps_its_dates():
+    order = Order(id=3, client_id=1, name="Spread", pacing_type="impression",
+                  start_date=dt.date(2026, 2, 6), end_date=dt.date(2026, 11, 30))
+    item = LineItem(id=3, order_id=3, name="YT", monthly_impressions=31_250,
+                    total_impressions=93_750, goal_cpm=20.0, months_running=3)
+    served = days(dt.date(2026, 2, 6), dt.date(2026, 3, 1), 500)
+    row = compute_row(item, order, served, dt.date(2026, 3, 1))
+    assert row.start_date == dt.date(2026, 2, 6)
