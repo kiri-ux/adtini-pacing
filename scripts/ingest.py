@@ -159,6 +159,11 @@ def main() -> int:
             log.info("order book: %s", adopt_unmatched_delivery(session).summary())
         try:
             with session_scope() as session:
+                log.info("campaign names: %d updated", views.refresh_feed_campaigns(session))
+        except Exception:  # pages top it up themselves if this fails
+            log.exception("campaign names refresh failed")
+        try:
+            with session_scope() as session:
                 made = views.auto_link_campaigns(session)
                 log.info("links: %d campaigns linked by name", made)
                 if made:

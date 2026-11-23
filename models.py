@@ -459,6 +459,19 @@ class DeliveryStaging(Base):
     goal_cpm: Mapped[float | None] = mapped_column(Float)
 
 
+class FeedCampaign(Base):
+    """Each campaign name the feed has used, and the last day it served, so
+    the Campaign links box searches names without reading the delivery
+    table (most of a minute, and 10 minutes once, per rebuild)."""
+
+    __tablename__ = "feed_campaigns"
+
+    data_source: Mapped[str] = mapped_column(String(120), primary_key=True)
+    campaign_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    campaign_name: Mapped[str] = mapped_column(String(400), primary_key=True)
+    last_date: Mapped[dt.date] = mapped_column(Date, index=True)
+
+
 class RenderTiming(Base):
     """One page build: total seconds and the main steps, for /timings."""
 

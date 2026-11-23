@@ -20,6 +20,7 @@ from models import (
     Client,
     DailyDelivery,
     DayNote,
+    FeedCampaign,
     LineItem,
     Order,
     StrategyTerms,
@@ -1854,9 +1855,18 @@ _names: tuple[tuple, list[tuple[str, str, str]]] | None = None
 
 @timing.timed("campaign names")
 def _campaign_names(session, since: dt.date) -> list[tuple[str, str, str]]:
+    """(source, campaign, lowercase name) for every name used since `since`.
+
+    Read from `feed_campaigns`, which the load keeps up; topped up here from
+    the last few days of delivery when a load ran before this table caught
+    up. Held in memory until the table moves."""
     global _names
-    newest = session.execute(select(func.max(DailyDelivery.id))).scalar()
-    key = (str(session.get_bind().url), since, newest)
+    refresh_feed_campaigns(session)
+    newest = session.execute(
+        select(func.max(FeedCampaign.last_date), func.count())
+        .select_from(FeedCampaign)
+    ).one()
+    key = (str(session.get_bind().url), since, tuple(newest))
     with _names_lock:
         if _names is not None and _names[0] == key:
             return _names[1]
@@ -1864,16 +1874,56 @@ def _campaign_names(session, since: dt.date) -> list[tuple[str, str, str]]:
             (source, campaign, name.lower())
             for source, campaign, name in session.execute(
                 select(
-                    DailyDelivery.data_source,
-                    DailyDelivery.campaign_id,
-                    DailyDelivery.campaign_name,
-                )
-                .where(DailyDelivery.date >= since, DailyDelivery.campaign_name.is_not(None))
-                .distinct()
+                    FeedCampaign.data_source,
+                    FeedCampaign.campaign_id,
+                    FeedCampaign.campaign_name,
+                ).where(FeedCampaign.last_date >= since)
             )
         ]
         _names = (key, rows)
         return rows
+
+
+# Days re-read when topping up: the load rewrites the last three.
+FEED_CAMPAIGN_OVERLAP = 4
+
+
+def refresh_feed_campaigns(session) -> int:
+    """Bring `feed_campaigns` up to the newest delivery. Cheap when current:
+    two max() lookups on indexed dates."""
+    latest = session.execute(select(func.max(DailyDelivery.date))).scalar()
+    have = session.execute(select(func.max(FeedCampaign.last_date))).scalar()
+    if latest is None or (have is not None and have >= latest):
+        return 0
+    start = (have - dt.timedelta(days=FEED_CAMPAIGN_OVERLAP)) if have \
+        else latest - dt.timedelta(days=150)
+    found = session.execute(
+        select(
+            DailyDelivery.data_source, DailyDelivery.campaign_id,
+            DailyDelivery.campaign_name, func.max(DailyDelivery.date),
+        )
+        .where(
+            DailyDelivery.date >= start,
+            DailyDelivery.campaign_name.is_not(None),
+            DailyDelivery.data_source.is_not(None),
+            DailyDelivery.campaign_id.is_not(None),
+        )
+        .group_by(DailyDelivery.data_source, DailyDelivery.campaign_id,
+                  DailyDelivery.campaign_name)
+    ).all()
+    changed = 0
+    for source, campaign, name, last in found:
+        name = name[:400]
+        row = session.get(FeedCampaign, (source, campaign, name))
+        if row is None:
+            session.add(FeedCampaign(data_source=source, campaign_id=campaign,
+                                     campaign_name=name, last_date=last))
+            changed += 1
+        elif row.last_date is None or last > row.last_date:
+            row.last_date = last
+            changed += 1
+    session.flush()
+    return changed
 
 
 @timing.timed("campaign candidates")
