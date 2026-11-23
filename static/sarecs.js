@@ -38,6 +38,7 @@ document.querySelectorAll('.sarecs').forEach(function (card) {
           .then(function (j) {
             var td = b.parentNode;
             if (j.ok) {
+              if (window.syncPushNotes) window.syncPushNotes(false);
               td.innerHTML = '<span class="recdone">' + esc(j.result) + '</span>' +
                 (b.dataset.link ? ' <a href="' + esc(b.dataset.link) + '" target="_blank" rel="noopener">See live changes</a>' : '');
             } else {

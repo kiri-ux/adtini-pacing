@@ -49,6 +49,8 @@
 {% with show_line=true %}{% include "_saalerts.html" %}{% endwith %}
 {% for lid in recs_lines %}{% with line_id=lid, show_line=(recs_lines|length > 1) %}{% include "_sarecs.html" %}{% endwith %}{% endfor %}
 {% if recs_lines %}{% include "_sarecs_js.html" %}{% endif %}
+<span hidden data-push-sync="{{ url_for('note_sync_pushes', order_id=o.id) }}"></span>
+<script src="{{ url_for('static', filename='pushnotes.js') }}" defer></script>
 
 <div class="tablecard">
   <div class="cardhead">

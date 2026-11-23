@@ -973,6 +973,59 @@ def note_add(order_id: int):
     return _back(order_id, "#daylog")
 
 
+PUSH_NOTE_AUTHOR = "StackAdapt push"
+
+
+def _push_note_body(e: dict) -> str:
+    parts = [e.get("action"), e.get("scope") or "All in group", e.get("kind"), e.get("target")]
+    body = " · ".join(str(p) for p in parts if p)
+    return f"{body}: {e['result']}" if e.get("result") else body
+
+
+@app.route("/orders/<int:order_id>/notes/sync-pushes", methods=["POST"])
+@login_required
+def note_sync_pushes(order_id: int):
+    """Copy StackAdapt changes pushed from campaign-insights into this order's
+    notes, one note per push, so Notes is the change log (kiri 2026-11-23)."""
+    import json
+    import urllib.parse
+    import urllib.request
+    from zoneinfo import ZoneInfo
+
+    with session_scope() as db:
+        order = db.get(Order, order_id)
+        if order is None:
+            abort(404)
+        by_line = {li.external_id: li.id for li in order.line_items
+                   if li.external_id and not li.external_id.startswith("name:")}
+        if not by_line:
+            return {"added": 0}
+        url = (os.environ.get("INSIGHTS_URL", "https://campaign-insights.onrender.com")
+               + "/api/sa_log?lines=" + urllib.parse.quote(",".join(by_line)))
+        try:
+            with urllib.request.urlopen(url, timeout=15) as r:
+                log = json.load(r).get("log") or []
+        except Exception:
+            return {"added": 0, "error": "insights unreachable"}
+        have = {(n.date, n.body) for n in db.execute(
+            select(DayNote).where(DayNote.order_id == order_id, DayNote.author == PUSH_NOTE_AUTHOR)
+        ).scalars()}
+        added = 0
+        for e in log:
+            li = by_line.get(str(e.get("line") or ""))
+            try:
+                on = dt.datetime.fromisoformat(e["at"]).astimezone(ZoneInfo("America/New_York")).date()
+            except Exception:
+                continue
+            body = _push_note_body(e)
+            if li is None or (on, body) in have:
+                continue
+            db.add(DayNote(order_id=order_id, line_item_id=li, date=on, body=body, author=PUSH_NOTE_AUTHOR))
+            have.add((on, body))
+            added += 1
+    return {"added": added}
+
+
 @app.route("/orders/<int:order_id>/notes/<int:note_id>/delete", methods=["POST"])
 @login_required
 def note_delete(order_id: int, note_id: int):

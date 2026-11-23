@@ -346,3 +346,38 @@ def test_the_note_picker_lists_products_by_name_and_picks_the_product(site):
     first = picker.index("<option")
     assert " selected" in picker[first:picker.index("</option>")]
     assert picker.rstrip().endswith('<option value="">Whole order</option>')
+
+
+def test_stackadapt_pushes_become_notes_once(site, monkeypatch):
+    import io
+    import json
+    import urllib.request
+
+    import db as db_module
+    from models import DayNote
+
+    app_module, order_id = site
+    log = {"log": [
+        {"at": "2026-11-23T15:30:57+00:00", "line": "122628", "action": "Cap at 5%",
+         "scope": "All campaigns", "kind": "Device", "target": "Desktop",
+         "result": "Caps set (Desktop 5%) on 4 campaigns"},
+        {"at": "2026-11-23T15:31:00+00:00", "line": "999", "action": "Pause", "kind": "Creative",
+         "target": "x.jpg", "result": "Paused 1 ad"},
+    ]}
+    seen = []
+
+    def fake(url, timeout=0):
+        seen.append(url)
+        return io.BytesIO(json.dumps(log).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    c = app_module.app.test_client()
+    assert c.post(f"/orders/{order_id}/notes/sync-pushes").get_json() == {"added": 1}
+    assert c.post(f"/orders/{order_id}/notes/sync-pushes").get_json() == {"added": 0}
+    assert "lines=122628" in seen[0]
+    with db_module.session_scope() as session:
+        note = session.query(DayNote).one()
+        assert note.date == dt.date(2026, 11, 23)
+        assert note.author == "StackAdapt push"
+        assert note.body == "Cap at 5% · All campaigns · Device · Desktop: Caps set (Desktop 5%) on 4 campaigns"
+        assert note.line_item_id is not None
