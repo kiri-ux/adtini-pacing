@@ -85,6 +85,7 @@
     {%- if p -%}<span class="pill-prod" style="background:{{ p.hex }};color:{{ p.text_hex }}" title="{{ d.item.product }}">{{ p.code }}</span>
     {%- else -%}{{ d.item.product or d.item.name }}{%- endif -%}
     {%- if linked -%}</a>{%- endif -%}
+    <span class="liid">{{ d.ext_id or d.item.id }}</span>
     {%- if linked and not d.has_split -%}
     <button class="btn2 buildbtn" type="submit" form="build-{{ d.item.id }}">Build split</button>
     {%- endif -%}
@@ -117,17 +118,15 @@
       {% for e in d.elements %}
         <tr class="{{ 'soldrow' if e.sold else 'unsoldrow' }}{% if loop.first %} prodstart{% endif %}">
           {% if loop.first %}{{ prodcell() }}{% endif %}<th class="pin">
-            <div class="stratcell{% if e.sold and e.feed_names %} matched{% endif %}">
+            <div class="stratcell{% if e.sold %} matched{% endif %}">
             {%- if e.sold -%}
             {% set opts = d.strategy_options %}
             {% set picked = d.selected_option(e.label) %}
-            {%- if e.feed_names -%}
             <button type="button" class="stricon" title="{{ d.short_label(picked or e.label) }}"
               aria-label="Strategy: {{ d.short_label(picked or e.label) }}"
               onclick="this.closest('.stratcell').classList.toggle('editing')">{{ stricon(d.strategy_key(e.label)) }}</button>
-            <span class="feedmain">{% for n in e.feed_names %}<span title="{{ n }}">{{ d.short_label(n) }}</span>{% endfor %}</span>
-            {%- endif -%}
-            <select form="splitform" name="st-{{ e.strategy_id }}-label"{% if e.feed_names %} class="strsel"{% endif %}>
+            <span class="feedmain">{% for n in (e.feed_names or [picked or e.label]) %}<span title="{{ n }}">{{ d.short_label(n) }}</span>{% endfor %}</span>
+            <select form="splitform" name="st-{{ e.strategy_id }}-label" class="strsel">
               {% if not picked %}<option value="{{ e.label }}" selected>{{ d.short_label(e.label) }}</option>{% endif %}
               {% for opt in opts %}<option value="{{ opt }}"{% if opt == picked %} selected{% endif %}>{{ d.short_label(opt) }}</option>{% endfor %}
             </select>
@@ -176,7 +175,7 @@
               </span></span>
             {%- if e.cpm_over %} <span class="cpmflag over" tabindex="0" aria-label="{{ e.cpm_over }}"><svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M8 1.6 15.2 14.2H.8Z" fill="#D92D20" stroke="#A3201A" stroke-width="1" stroke-linejoin="round"/><path d="M8 6v4" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="12.1" r=".9" fill="#fff"/></svg><span class="tipbox">{{ e.cpm_over }}</span></span>
             {%- elif e.cpm_flag %} <span class="cpmflag" tabindex="0" aria-label="{{ e.cpm_flag }}"><svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M8 1.6 15.2 14.2H.8Z" fill="#F5C518" stroke="#C99A00" stroke-width="1" stroke-linejoin="round"/><path d="M8 6v4" stroke="#3A2E00" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="12.1" r=".9" fill="#3A2E00"/></svg><span class="tipbox">{{ e.cpm_flag }}</span></span>{% endif -%}
-            {%- if e.sold or e.ordered %}{{ servegap(e) }}{% endif -%}
+            {%- if (e.sold or e.ordered) and not (r.start_date and r.start_date > d.as_of) and 'pending' not in (r.status or '')|lower %}{{ servegap(e) }}{% endif -%}
             </div>
             {%- if e.feed_names and not e.sold %}<div class="feednames">{% for n in e.feed_names %}<div title="{{ n }}">{{ d.short_label(n) }}</div>{% endfor %}</div>{% endif -%}
             </th>

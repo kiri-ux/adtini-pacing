@@ -595,3 +595,32 @@ def test_a_line_serving_from_the_order_start_keeps_its_dates():
     served = days(dt.date(2026, 2, 6), dt.date(2026, 3, 1), 500)
     row = compute_row(item, order, served, dt.date(2026, 3, 1))
     assert row.start_date == dt.date(2026, 2, 6)
+
+
+def test_a_line_sold_for_the_first_months_of_a_long_order_ends_with_them():
+    # Treasure Valley 122032: order 1/1/26 to 12/31/27, line carries the
+    # order's dates, sold 11 months at 133,333 and serving at that rate from
+    # 2/2. The sheet runs it 2/2-12/31/26.
+    order = Order(id=4, client_id=1, name="TV", pacing_type="impression",
+                  start_date=dt.date(2026, 1, 1), end_date=dt.date(2027, 12, 31))
+    item = LineItem(id=4, order_id=4, name="MC", monthly_impressions=133_333,
+                    total_impressions=1_466_663, goal_cpm=3.5,
+                    start_date=dt.date(2026, 1, 1), end_date=dt.date(2027, 12, 31))
+    served = days(dt.date(2026, 2, 2), dt.date(2026, 11, 18), 4_400)
+    row = compute_row(item, order, served, dt.date(2026, 11, 18))
+    assert row.start_date == dt.date(2026, 2, 2)
+    assert row.end_date == dt.date(2026, 12, 31)
+    assert row.month_goal == 133_333
+    assert 0.97 < row.to_date / row.on_pace < 1.03
+
+
+def test_a_renewal_with_no_serve_yet_starts_with_its_sold_months():
+    # Treasure Valley 139588: sold 12 months for 2027 on the same order.
+    order = Order(id=5, client_id=1, name="TV", pacing_type="impression",
+                  start_date=dt.date(2026, 1, 1), end_date=dt.date(2027, 12, 31))
+    item = LineItem(id=5, order_id=5, name="MC", monthly_impressions=100_000,
+                    total_impressions=1_200_000, goal_cpm=3.5,
+                    start_date=dt.date(2026, 1, 1), end_date=dt.date(2027, 12, 31))
+    row = compute_row(item, order, [], dt.date(2026, 11, 18))
+    assert row.start_date == dt.date(2027, 1, 1)
+    assert not row.on_pace
