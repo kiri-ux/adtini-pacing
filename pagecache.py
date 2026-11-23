@@ -252,6 +252,9 @@ def clear() -> None:
 # Off until the warmer starts (never under tests).
 persist_enabled = False
 SNAPSHOTS_KEPT = 400
+# A copy saved before this process started was built by the code before
+# the deploy, so it can show what the deploy changed the old way.
+STARTED = dt.datetime.utcnow()
 _to_save: queue.Queue[tuple[str, bytes]] = queue.Queue()
 
 
@@ -262,7 +265,8 @@ def _load_snapshot(path: str, since: dt.datetime | None = None) -> bytes | None:
     try:
         with session_scope() as session:
             row = session.get(PageSnapshot, path)
-            if row is None or (since is not None and row.built_at < since):
+            if row is None or row.built_at < STARTED or (
+                    since is not None and row.built_at < since):
                 return None
             return zlib.decompress(row.body)
     except Exception:
