@@ -22,6 +22,7 @@ from flask import (
     Response,
     abort,
     flash,
+    g,
     jsonify,
     make_response,
     redirect,
@@ -442,6 +443,21 @@ def _drop_cache_on_write(response):
             # carries the flash); its Budgeting grids are fetched right after.
             pagecache.prefetch([url_for("order_budgeting", order_id=order_id)])
     return response
+
+
+@app.before_request
+def _person_waiting():
+    # Background builds hold off while a person's page is being served.
+    if request.headers.get(pagecache.WARM_HEADER) or request.endpoint in (None, "static", "healthz"):
+        return
+    g.pagecache_person = True
+    pagecache.person_started()
+
+
+@app.teardown_request
+def _person_served(_exc=None):
+    if g.pop("pagecache_person", False):
+        pagecache.person_done()
 
 
 _warmer_started = False

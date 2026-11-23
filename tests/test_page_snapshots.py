@@ -61,3 +61,21 @@ def test_a_copy_from_before_the_newest_delivery_is_not_served_stale():
     assert pagecache.stale("/orders/1", built - dt.timedelta(minutes=1)) == b"old"
     assert pagecache.stale("/orders/1", built + dt.timedelta(minutes=1)) is None
     pagecache.clear()
+
+
+def test_background_builds_wait_for_a_person():
+    import threading
+    import time
+
+    import pagecache
+
+    pagecache.person_started()
+    done = []
+    t = threading.Thread(target=lambda: (pagecache.wait_for_people(5), done.append(time.monotonic())))
+    started = time.monotonic()
+    t.start()
+    time.sleep(0.5)
+    assert not done
+    pagecache.person_done()
+    t.join(2)
+    assert done and done[0] - started >= 0.5

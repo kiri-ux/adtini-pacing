@@ -271,6 +271,33 @@ def prefetch(paths) -> None:
         _wanted.put(path)
 
 
+# Requests from people being served right now. The warmer and the prefetcher
+# wait for them before starting their next page: one CPU, and a person's
+# click comes before a page nobody has asked for yet.
+WARM_HEADER = "X-Pacing-Warm"
+_people = 0
+_people_lock = threading.Lock()
+
+
+def person_started() -> None:
+    global _people
+    with _people_lock:
+        _people += 1
+
+
+def person_done() -> None:
+    global _people
+    with _people_lock:
+        _people = max(0, _people - 1)
+
+
+def wait_for_people(limit: float = 120.0) -> None:
+    """Hold background builds while someone is waiting on a page."""
+    deadline = time.monotonic() + limit
+    while _people and time.monotonic() < deadline:
+        time.sleep(0.2)
+
+
 def start_warmer(app, paths=("/",), every: float = 60.0) -> None:
     """Re-render the pacing table whenever new data lands.
 
@@ -301,8 +328,9 @@ def start_warmer(app, paths=("/",), every: float = 60.0) -> None:
                     with app.test_request_context():
                         todo = paths(full) if callable(paths) else paths
                     for path in todo:
+                        wait_for_people()
                         started = time.monotonic()
-                        client.get(path)
+                        client.get(path, headers={WARM_HEADER: "1"})
                         log.info(
                             "warmed %s in %.1fs", path, time.monotonic() - started
                         )
@@ -316,8 +344,9 @@ def start_warmer(app, paths=("/",), every: float = 60.0) -> None:
             sess["ok"] = True
         while True:
             path = _wanted.get()
+            wait_for_people()
             try:
-                client.get(path, headers={REFRESH_HEADER: "1"})
+                client.get(path, headers={REFRESH_HEADER: "1", WARM_HEADER: "1"})
             except Exception:
                 log.exception("prefetch %s", path)
 
