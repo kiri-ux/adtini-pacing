@@ -131,3 +131,28 @@ def test_timed_steps_add_up_once():
     steps = timing.stop()
     assert set(k for k in steps if not k.startswith("_in_")) == {"outer"}
     assert 0.05 <= steps["outer"] < 0.2
+
+
+def test_campaign_names_come_from_the_kept_table_and_top_up(site):
+    import datetime as dt
+
+    import db as db_module
+    import views
+    from models import DailyDelivery, FeedCampaign
+
+    def row(day, name, cid="C1"):
+        return DailyDelivery(date=day, data_source="StackAdapt", campaign_id=cid,
+                             strategy_id="s", campaign_name=name, impressions=10.0)
+
+    with db_module.session_scope() as s:
+        s.add(row(dt.date(2026, 11, 1), "Bud's Auto #54063"))
+    with db_module.session_scope() as s:
+        names = views._campaign_names(s, dt.date(2026, 10, 1))
+        assert ("StackAdapt", "C1", "bud's auto #54063") in names
+        assert s.query(FeedCampaign).count() == 1
+    with db_module.session_scope() as s:
+        s.add(row(dt.date(2026, 11, 5), "Jen #77001", "C2"))
+    with db_module.session_scope() as s:
+        names = views._campaign_names(s, dt.date(2026, 10, 1))
+        assert ("StackAdapt", "C2", "jen #77001") in names
+        assert s.get(FeedCampaign, ("StackAdapt", "C2", "Jen #77001")).last_date == dt.date(2026, 11, 5)
