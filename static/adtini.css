@@ -137,6 +137,8 @@ nav.tabs a.on{background:var(--page);color:var(--navy)}
   background:none;border:0;color:var(--text);padding:9px 18px;
 }
 .seg button.on{background:#EAF2FE;color:var(--blue);font-weight:600}
+.recseg{margin:0 0 10px}
+.recseg button{padding:6px 14px}
 
 /* Quote the client for the other product, from the page that already has
    their details. */
