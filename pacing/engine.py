@@ -390,8 +390,16 @@ def compute_row(
     if line_item.start_date in (None, order.start_date):
         first = totals.first if totals is not None else next(
             (p.date for p in points if getattr(p, attr)), None)
-        start = sold_window_start(row, start, end, first) or start
+        begin = sold_window_start(row, start, end, first, as_of)
+        if begin:
+            start = begin
+        elif line_item.end_date in (None, order.end_date):
+            served = (totals.every.of(attr) if totals is not None
+                      else sum(getattr(p, attr) or 0 for p in points))
+            start, end = sold_window_head(
+                row, start, end, first, served, as_of) or (start, end)
         row.start_date = start
+        row.end_date = end
 
     paceable = bool(start and end and row.total_target)
     flight = (start, end) if paceable else None
@@ -499,14 +507,23 @@ def is_prorated(row: PacingRow) -> bool:
     return months_between(row.start_date, row.end_date) > months + 0.01
 
 
-def sold_window_start(row: PacingRow, start, end, first) -> dt.date | None:
+def sold_window_start(row: PacingRow, start, end, first,
+                      as_of: dt.date | None = None) -> dt.date | None:
     """The start of the last N sold months, for a line that carries the
     order's dates, is sold for fewer months than they span, and first served
     inside those last months: a renewal on a long order (Chalfant YouTube
-    136622: order from 2/6, line sold 3 months, served from 9/1)."""
+    136622: order from 2/6, line sold 3 months, served from 9/1). A line that
+    has served nothing a month or more into the order, with those last months
+    still ahead, is the renewal too (Treasure Valley 139588, sold for 2027 on
+    a 2026-2027 order)."""
     months = sold_months(row)
-    if not (months and start and end and first) or months != int(months):
+    if not (months and start and end) or months != int(months):
         return None
+    if first is None:
+        if as_of is None or months_between(start, as_of) < 2:
+            return None
+        begin = sold_window_start(row, start, end, end, as_of)
+        return begin if begin and begin > as_of else None
     if months_between(start, end) <= months + 1:
         return None
     y, m = end.year, end.month - int(months)
@@ -519,6 +536,45 @@ def sold_window_start(row: PacingRow, start, end, first) -> dt.date | None:
     if begin <= start or first < begin - dt.timedelta(days=7):
         return None
     return begin
+
+
+def sold_window_head(row: PacingRow, start, end, first, served=0.0,
+                     as_of: dt.date | None = None):
+    """The first N sold months, from the first serve, for a line that
+    carries the order's dates and is sold for fewer months than they span
+    (Treasure Valley 122032: order 1/1/26 to 12/31/27, line sold 11 months,
+    served from 2/2/26, runs to 12/31/26). Ends on a month end when the first
+    serve is in a month's first week, else N months on from it. Only when
+    it serves at about the monthly goal: one serving at the total spread
+    over the order's months keeps the order's dates."""
+    months = sold_months(row)
+    if not (months and start and end and first and as_of) or months != int(months):
+        return None
+    if months_between(start, end) <= months + 1 or not (start <= first <= end):
+        return None
+    ran = (min(as_of, end) - first).days + 1
+    if ran < 14 or not row.monthly_target:
+        return None
+    rate = served / ran * 30.44
+    spread = row.total_target / months_between(start, end)
+    if abs(rate - row.monthly_target) >= abs(rate - spread):
+        return None
+    begin = first
+    if begin.day <= 7:
+        y, m = begin.year, begin.month + int(months)
+        while m > 12:
+            y, m = y + 1, m - 12
+        finish = dt.date(y, m, 1) - dt.timedelta(days=1)
+    else:
+        y, m = begin.year, begin.month + int(months)
+        while m > 12:
+            y, m = y + 1, m - 12
+        nxt = dt.date(y + (m == 12), m % 12 + 1, 1)
+        finish = min(dt.date(y, m, 1) + dt.timedelta(days=begin.day - 2),
+                     nxt - dt.timedelta(days=1))
+    if finish >= end:
+        return None
+    return begin, finish
 
 
 def sold_months(row: PacingRow) -> float | None:
