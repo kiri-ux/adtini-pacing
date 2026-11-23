@@ -1539,6 +1539,17 @@ def campaign_link(order_id: int):
         removed = len(set(existing) - wanted) + excluded_now
         added = len(wanted - set(existing))
 
+    if request.headers.get("X-Requested-With") == "fetch":
+        # Saved from the dialog without a reload: the order page rebuilds in
+        # the background instead of while the buyer waits (kiri 2026-11-23).
+        if _warmer_started:
+            pagecache.prefetch([url_for("order_detail", order_id=order_id)])
+        parts = []
+        if added:
+            parts.append(f"{added} campaign{'' if added == 1 else 's'} linked")
+        if removed:
+            parts.append(f"{removed} removed")
+        return jsonify(ok=True, message=(", ".join(parts) + ".") if parts else "Updated.")
     if not wanted and not removed and not id_matched:
         flash("Nothing picked.")
     elif not wanted:

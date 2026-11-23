@@ -103,6 +103,55 @@
     });
   }
 
+  // Save without reloading the page: the write is quick, the order page
+  // rebuild is not, so it happens in the background.
+  var form = dlg.querySelector("form");
+  if (form && window.fetch && window.FormData) {
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var save = form.querySelector(".save");
+      if (save) { save.disabled = true; save.textContent = "Saving…"; }
+      fetch(form.action, {method: "POST", body: new FormData(form), credentials: "same-origin",
+                          headers: {"X-Requested-With": "fetch"}})
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+        .then(function (j) {
+          var li = liField.value;
+          var picked = Array.prototype.slice.call(dlg.querySelectorAll('input[name="campaign"]:checked'));
+          var btn = document.querySelector('.linkbtn[data-li="' + li + '"]');
+          if (btn) {
+            btn.dataset.campaigns = picked.map(function (i) { return i.value; }).join(",");
+            btn.dataset.verified = verified.checked ? "1" : "";
+            btn.dataset.by = by.value;
+            var cell = btn.closest("tr").querySelector(".campcell");
+            if (cell) {
+              cell.innerHTML = "";
+              if (picked.length) {
+                var ul = document.createElement("ul");
+                ul.className = "camplist";
+                picked.forEach(function (i) {
+                  var item = document.createElement("li");
+                  var lab = dlg.querySelector('label[for="' + i.id + '"]');
+                  item.textContent = lab ? lab.textContent : i.value;
+                  ul.appendChild(item);
+                });
+                cell.appendChild(ul);
+              } else {
+                cell.innerHTML = '<span class="muted">—</span>';
+              }
+            }
+          }
+          var note = document.createElement("p");
+          note.className = "flash";
+          note.textContent = (j.message || "Saved.") + " Pacing numbers update on the next page load.";
+          var main = document.querySelector("main") || document.body;
+          main.insertBefore(note, main.firstChild);
+          dlg.close();
+        })
+        .catch(function () { form.submit(); })
+        .then(function () { if (save) { save.disabled = false; save.textContent = "Save links"; } });
+    });
+  }
+
   // Lifetime vs month to date, on the table and in the dialog at once.
   var toggle = document.getElementById("lifetime");
   if (toggle) {
