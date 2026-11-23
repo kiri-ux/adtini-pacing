@@ -19,6 +19,7 @@ Two things a buyer still does by hand, and this page is where they do them:
 from __future__ import annotations
 
 import datetime as dt
+import re
 from dataclasses import dataclass, field
 
 from sqlalchemy import func, select
@@ -130,6 +131,12 @@ def cpm_flag(run: float | None, setup: float | None,
     if pace > 1.0 + PACE_BAND and drift < -CPM_DRIFT:
         return f"Low CPM: ${run:.2f} vs ${setup:.2f}"
     return None
+
+
+def _plain(text: str | None) -> str:
+    """Lowercase words only, without a "(NRF)"-style aside or punctuation."""
+    text = re.sub(r"\([^)]*\)", " ", text or "")
+    return " ".join(re.sub(r"[^\w\s]", " ", text.lower()).split())
 
 
 @dataclass
@@ -395,11 +402,18 @@ class DetailsView:
         # Feed names lead with the advertiser ("Keystone Payroll - ..."),
         # which every row on the order shares.
         head, sep, rest = label.partition(" - ")
+        if not (sep and rest.strip()):
+            return label
         client = getattr(getattr(self.item.order, "client", None), "name", None) or ""
-        if sep and rest.strip() and client:
-            h, c = head.strip().lower(), client.strip().lower()
-            if h == c or (h.split() and c.split() and h.split()[0] == c.split()[0]):
-                return rest.strip()
+        h, c = _plain(head), _plain(client)
+        if c and (h == c or h.startswith(c) or c.startswith(h)
+                  or (h.split() and c.split() and h.split()[0] == c.split()[0])):
+            return rest.strip()
+        # Or a head every row on the grid shares: that is the advertiser too.
+        heads = {_plain(e.label.partition(" - ")[0]) for e in getattr(self, "elements", None) or []
+                 if " - " in (e.label or "")}
+        if len(heads) == 1 and h in heads and len(getattr(self, "elements", None) or []) > 1:
+            return rest.strip()
         return label
 
     def is_future(self, day: dt.date) -> bool:

@@ -1138,3 +1138,8 @@ def test_short_label_drops_the_advertiser_prefix():
     short = lambda l: details.DetailsView.short_label(d, l)
     assert short("Keystone Payroll - Retargeting B2B Display") == "Retargeting B2B Display"
     assert short("Behavioral - Auto Intenders") == "Behavioral - Auto Intenders"
+    item.order.client.name = "National Retail Federation"
+    assert short("National Retail Federation (NRF) - Retargeting Native Video") == "Retargeting Native Video"
+    item.order.client.name = "Acme"
+    d.elements = [NS(label="NRF Org - Retargeting"), NS(label="NRF Org - Behavioral")]
+    assert short("NRF Org - Behavioral") == "Behavioral"
