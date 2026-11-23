@@ -83,6 +83,8 @@ def _key(text: str | None) -> str:
 @lru_cache(maxsize=1)
 def _sheet() -> dict[str, tuple[str, str]]:
     out: dict[str, tuple[str, str]] = {}
+    if not SNAPSHOT.exists():
+        return out
     with SNAPSHOT.open(newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
             out[_key(row["partner"])] = (row["buyer"].strip(), row["paid_media_buyer"].strip())
