@@ -55,9 +55,9 @@ document.querySelectorAll('.sarecs').forEach(function (card) {
           var head = '<p class="recgroup"><a href="' + esc(g.sa_url) + '" target="_blank" rel="noopener">' + esc(g.name) + '</a>' +
             ' <span class="pace ' + (g.status === 'On goal' ? 'on-pace' : 'under') + '">CTR ' + pct(g.ctr) + ' vs ' + pct(g.goal) + ' goal</span></p>';
           return head + (recs.length ? '<div class="scroller"><table class="overview satable"><thead><tr><th>Action</th><th>Applies to</th><th>Type</th><th>Target</th><th>Impr</th><th>Share</th><th>CTR</th><th></th></tr></thead><tbody>' + recs.map(row).join('') + '</tbody></table></div>'
-            : '<p class="dsub">No recs.</p>');
+            : '<p class="dsub recempty">No recs.</p>');
         }).join('');
-        body.innerHTML = tabs + (html || '<p class="dsub">None yet.</p>');
+        body.innerHTML = tabs + (html || '<p class="dsub recempty">None yet.</p>');
       }
       render();
       card.hidden = false;
