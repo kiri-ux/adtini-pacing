@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import func, select
 
 import products
+import timing
 import ratecard
 import sheets
 import strategy_menu
@@ -454,6 +455,7 @@ def _source_label(source: str) -> str:
     return "AdLib" if source.lower().startswith("adlib") else source
 
 
+@timing.timed("details grid")
 def details_view(
     session, order_id: int, line_item_id: int, as_of: dt.date | None = None
 ) -> DetailsView | None:

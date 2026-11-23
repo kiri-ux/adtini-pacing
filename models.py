@@ -459,6 +459,19 @@ class DeliveryStaging(Base):
     goal_cpm: Mapped[float | None] = mapped_column(Float)
 
 
+class RenderTiming(Base):
+    """One page build: total seconds and the main steps, for /timings."""
+
+    __tablename__ = "render_timings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    path: Mapped[str] = mapped_column(String(1000))
+    seconds: Mapped[float] = mapped_column(Float)
+    steps: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    background: Mapped[bool] = mapped_column(Boolean, default=False)
+    at: Mapped[dt.datetime] = mapped_column(DateTime, index=True)
+
+
 class CacheEdit(Base):
     """A save, so every worker drops the pages it made wrong, not only the
     worker that took the save."""
