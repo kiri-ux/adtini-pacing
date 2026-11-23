@@ -201,3 +201,14 @@ def test_my_day_remembers_the_day_picked_today(site):
     assert response.status_code == 302
     location = response.headers["Location"]
     assert "buyer=Mallory" in location and "day=3" in location
+
+
+def test_runs_matches_listed_buyer_or_pmb_only():
+    import team
+    t = team.Team(buyer=team.Person("Laura Ostrowski", "Laura"), paid_media=None)
+    assert team.runs(t, "Laura")
+    assert not team.runs(t, "Hanna")
+    assert not team.runs(None, "Laura")
+    t2 = team.Team(buyer=None, paid_media=team.Person("Hanna Smith", "Hanna"))
+    assert team.runs(t2, "Hanna")
+    assert not team.runs(t2, "Laura")

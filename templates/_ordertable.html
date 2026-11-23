@@ -28,9 +28,13 @@
               <path d="M11 4h2v8h3l-4 5-4-5h3z"/></svg></a>
         </td>
         {% set tm = r.team %}
-        <td class="team"{% if tm and (tm.buyer or tm.paid_media) %} data-tip="Buyer: {{ tm.buyer.name if tm.buyer else '—' }} · Paid media: {{ tm.paid_media.name if tm.paid_media else '—' }}"{% endif %}>
-          {%- if tm and tm.buyer %}<span class="ini"{% if tm.buyer.color %} style="border-color:{{ tm.buyer.color }}"{% endif %}>{{ tm.buyer.initials }}</span>{% else %}—{% endif -%}
-          {%- if tm and tm.paid_media %}<span class="ini"{% if tm.paid_media.color %} style="border-color:{{ tm.paid_media.color }}"{% endif %}>{{ tm.paid_media.initials }}</span>{% endif %}</td>
+        {%- set tip = [] %}
+        {%- if tm and tm.buyer %}{% set _ = tip.append('Buyer: ' ~ tm.buyer.name) %}{% endif %}
+        {%- if tm and tm.paid_media %}{% set _ = tip.append('Paid media: ' ~ tm.paid_media.name) %}{% endif %}
+        <td class="team"{% if tip %} data-tip="{{ tip|join(' · ') }}"{% endif %}>
+          {%- if tm and tm.buyer %}<span class="ini"{% if tm.buyer.color %} style="border-color:{{ tm.buyer.color }}"{% endif %}>{{ tm.buyer.initials }}</span>{% endif -%}
+          {%- if tm and tm.paid_media %}<span class="ini"{% if tm.paid_media.color %} style="border-color:{{ tm.paid_media.color }}"{% endif %}>{{ tm.paid_media.initials }}</span>{% endif -%}
+          {%- if not tip %}—{% endif %}</td>
         <td class="clip" title="{{ r.client.market or '' }}">{{ r.client.market or '—' }}</td>
         <td class="lnk clip" title="{{ r.client.name }}"><a
           href="{{ url_for('order_detail', order_id=r.order.id) }}">{{ r.client.name }}</a>
