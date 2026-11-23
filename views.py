@@ -2790,6 +2790,9 @@ class DraftResult:
 # objects, and this runs in the web worker beside whatever else it is serving.
 DRAFT_BATCH = 50
 
+# A line that served within this many days counts as running.
+RUNNING_DAYS = 7
+
 
 def fill_lone_rows(session) -> int:
     """A product with one split row and no goals on it gets the product's.
@@ -2886,7 +2889,8 @@ def add_extra_lines(session, as_of: dt.date | None = None) -> int:
 
         for item in items:
             terms = terms_by_item[item.id]
-            ran = {k: s for k, _, s, _ in group_by_targeting(item.product, series.get(item.id, []))}
+            grouped = group_by_targeting(item.product, series.get(item.id, []))
+            ran = {k: s for k, _, s, _ in grouped}
             claimed: set[str] = set()
             for term in terms:
                 # A second line of the row's own targeting linked by hand
@@ -2918,6 +2922,33 @@ def add_extra_lines(session, as_of: dt.date | None = None) -> int:
                     match_key=owner.match_key, sort_order=next_sort,
                     source="second line",
                 ))
+                next_sort += 1
+                claimed.add(key)
+                added += 1
+            # Any other line still running that no row claims (a retargeting
+            # campaign the order never listed) gets its own row, linked to it.
+            recent = as_of - dt.timedelta(days=RUNNING_DAYS)
+            label_of = {k: label for k, label, _, _ in grouped}
+            for key in sorted(ran):
+                series = ran[key]
+                if key in claimed or series.total <= 0:
+                    continue
+                if not series.by_date or max(series.by_date) < recent:
+                    continue
+                base = label_of.get(key) or series.label
+                label, n = base, 1
+                while label in labels:
+                    n += 1
+                    label = f"{base} {n}"
+                labels.add(label)
+                term = StrategyTerms(
+                    order_id=item.order_id, line_item_id=item.id, label=label,
+                    match_key=sheets.match_key(label), sort_order=next_sort,
+                    source="running, not in split",
+                )
+                if term_keys(term)[0] != key:
+                    term.linked_keys = key
+                session.add(term)
                 next_sort += 1
                 claimed.add(key)
                 added += 1
