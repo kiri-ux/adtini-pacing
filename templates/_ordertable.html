@@ -6,7 +6,7 @@
     <thead>
       <tr>
         <th class="rowacts"></th>
-        <th>Buyer</th><th>Partner</th><th>Client</th><th>Order ID</th><th>Products</th><th class="num">CTR (7d)</th>
+        <th>Buyer / PMB</th><th>Partner</th><th>Client</th><th>Order ID</th><th>Products</th><th class="num">CTR (7d)</th>
         <th class="num">Monthly Serve / Goal</th><th class="meterhead">Monthly Pacing</th>
         <th class="num">Total Serve / Goal</th><th class="meterhead">Total Pacing</th>
         <th class="num">Avg Daily Serve / Needed</th><th class="num">Days Left</th>
@@ -27,7 +27,10 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20h14v-2H5z"/>
               <path d="M11 4h2v8h3l-4 5-4-5h3z"/></svg></a>
         </td>
-        <td class="clip">{{ r.order.buyer or '—' }}</td>
+        {% set tm = r.team %}
+        <td class="team"{% if tm and (tm.buyer or tm.paid_media) %} data-tip="Buyer: {{ tm.buyer.name if tm.buyer else '—' }} · Paid media: {{ tm.paid_media.name if tm.paid_media else '—' }}"{% endif %}>
+          {%- if tm and tm.buyer %}<span class="ini">{{ tm.buyer.initials }}</span>{% else %}—{% endif -%}
+          {%- if tm and tm.paid_media %}<span class="ini pmb">{{ tm.paid_media.initials }}</span>{% endif %}</td>
         <td class="clip" title="{{ r.client.market or '' }}">{{ r.client.market or '—' }}</td>
         <td class="lnk clip" title="{{ r.client.name }}"><a
           href="{{ url_for('order_detail', order_id=r.order.id) }}">{{ r.client.name }}</a>
