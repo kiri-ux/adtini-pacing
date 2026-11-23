@@ -38,14 +38,36 @@ NAMES = {
 }
 
 
+# Initials kiri set where the sheet has no last name (11/23).
+INITIALS = {"Renn": "DR", "Bree": "BB"}
+
+# Outline colors, from the product chip palette in the adtini hex codes
+# sheet (1VB4IpDRPYbhkz2T4ke_MIvaS8UWnEE3ljxs-73tzUpI). One per person.
+COLORS = {
+    "Hana": "#DC143C", "Stacy": "#483D8B", "Olivia": "#2E8B57", "Bree": "#F4A300",
+    "Alyssa": "#9966CC", "Amin": "#20B2AA", "Bella": "#FF4500", "Carly": "#008080",
+    "Hanna": "#F88379", "Jacob": "#4B4B4B", "John": "#87CEEB", "Katie Oxman": "#FFD700",
+    "Laura": "#40E0D0", "Lauren": "#2A3439", "Luke": "#8B8B8B", "Mallory": "#7FFFD4",
+    "Matt": "#E0B0FF", "Matt H": "#D8BFD8", "Nicolette": "#B2BEB5", "Renn": "#FFDAB9",
+    "Taylor": "#98FB98",
+}
+
+
 @dataclass(frozen=True)
 class Person:
     name: str
+    short: str | None = None  # the sheet's name for them
 
     @property
     def initials(self) -> str:
+        if self.short in INITIALS:
+            return INITIALS[self.short]
         parts = [p for p in self.name.replace("-", " ").split() if p[:1].isalpha()]
         return "".join(p[0].upper() for p in parts[:2]) or self.name[:2].upper()
+
+    @property
+    def color(self) -> str | None:
+        return COLORS.get(self.short or "")
 
 
 @dataclass(frozen=True)
@@ -93,6 +115,6 @@ def team_for(partner: str | None, order_buyer: str | None = None,
     buyer_name = full_name(buyer, known) if buyer else order_buyer
     pmb_name = full_name(pmb, known) if pmb else None
     return Team(
-        buyer=Person(buyer_name) if buyer_name else None,
-        paid_media=Person(pmb_name) if pmb_name else None,
+        buyer=Person(buyer_name, buyer) if buyer_name else None,
+        paid_media=Person(pmb_name, pmb) if pmb_name else None,
     )

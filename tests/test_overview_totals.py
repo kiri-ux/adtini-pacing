@@ -216,3 +216,6 @@ def test_team_initials_come_from_the_partner_sheet():
     t = team.team_for("Some New Partner", "Jane Doe")
     assert t.buyer.name == "Jane Doe" and t.paid_media is None
     assert team.full_name("Renn", ["Renn Smith", "Amin Vora"]) == "Renn Smith"
+    t = team.team_for("AGM Albuquerque")
+    assert t.buyer.initials == "DR" and t.buyer.color
+    assert team.team_for("Ampersand").paid_media.initials == "BB"
