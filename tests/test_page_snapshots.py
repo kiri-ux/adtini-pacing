@@ -50,6 +50,26 @@ def test_a_saved_copy_outlives_memory_and_an_edit_drops_it(site):
         pagecache.persist_enabled = False
 
 
+def test_a_saved_copy_from_before_a_deploy_is_not_served(site, monkeypatch):
+    import datetime as dt
+    import pagecache
+
+    pagecache.persist_enabled = True
+    try:
+        pagecache._to_save.put(("/orders/7/budgeting?", b"<p>old code</p>"))
+        threading.Thread(target=pagecache._save_snapshots, daemon=True).start()
+        for _ in range(50):
+            if pagecache._to_save.empty() and pagecache._load_snapshot("/orders/7/budgeting?"):
+                break
+            time.sleep(0.05)
+        pagecache.clear()
+        assert pagecache.stale("/orders/7/budgeting?") == b"<p>old code</p>"
+        monkeypatch.setattr(pagecache, "STARTED", dt.datetime.utcnow() + dt.timedelta(seconds=5))
+        assert pagecache.stale("/orders/7/budgeting?") is None
+    finally:
+        pagecache.persist_enabled = False
+
+
 def test_a_copy_from_before_the_newest_delivery_is_not_served_stale():
     import datetime as dt
     import pagecache
