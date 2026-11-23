@@ -52,8 +52,10 @@ document.querySelectorAll('.sarecs').forEach(function (card) {
             var td = b.parentNode;
             if (j.ok) {
               if (window.syncPushNotes) window.syncPushNotes(false);
+              var cp = /Copied to (\d+)/.exec(j.result || '');
+              var link = cp ? 'https://www.stackadapt.com/editor?ids=' + cp[1] + '&tab=inventory' : b.dataset.link;
               td.innerHTML = '<span class="recdone">' + esc(j.result) + '</span>' +
-                (b.dataset.link ? ' <a href="' + esc(b.dataset.link) + '" target="_blank" rel="noopener">See live changes</a>' : '');
+                (link ? ' <a href="' + esc(link) + '" target="_blank" rel="noopener">See live changes</a>' : '');
             } else {
               td.innerHTML = '<span class="recerr">' + esc(j.error || 'Push failed') + '</span>';
             }
