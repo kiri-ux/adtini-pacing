@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% set nav = 'data' %}
+{% block heading %}Page timings{% endblock %}
+
+{% block body %}
+<p class="crumbs"><a href="/">Pacing</a> / <a href="{{ url_for('data_page') }}">Data</a> / <span class="crumbc">Timings</span></p>
+<div class="tablecard">
+  <div class="cardhead"><h3>Time by step, last 24 hours</h3><span class="dsub">{{ count }} builds</span></div>
+  <div class="scroller"><table class="overview">
+    <thead><tr><th>Step</th><th class="num">Total s</th><th class="num">Avg s</th><th class="num">Builds</th></tr></thead>
+    <tbody>{% for name, total, n in by_step %}<tr><td>{{ name }}</td><td class="num">{{ '%.1f'|format(total) }}</td><td class="num">{{ '%.2f'|format(total / n) }}</td><td class="num">{{ n }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+<div class="tablecard">
+  <div class="cardhead"><h3>Slowest builds, last 24 hours</h3></div>
+  <div class="scroller"><table class="overview">
+    <thead><tr><th>When (UTC)</th><th>Page</th><th>Who</th><th class="num">Seconds</th><th>Steps</th></tr></thead>
+    <tbody>{% for r in slowest %}<tr><td class="nowrap">{{ r.at.strftime('%-m/%-d %H:%M') }}</td><td>{{ r.path }}</td><td>{{ 'background' if r.background else 'person' }}</td><td class="num">{{ '%.1f'|format(r.seconds) }}</td><td class="dsub">{{ r.steps or '' }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+{% endblock %}

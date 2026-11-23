@@ -6,6 +6,7 @@ shared adtini stylesheet) so the two tools read as one product.
 from __future__ import annotations
 
 import datetime as dt
+from collections import defaultdict
 import functools
 import hmac
 import io
@@ -38,6 +39,7 @@ from werkzeug.exceptions import HTTPException
 import details
 import exports
 import pagecache
+import timing
 import products
 import schedule
 import sheets
@@ -408,20 +410,74 @@ def cached_page(view):
             if body is not None:
                 return _timed(Response(body, mimetype="text/html"), "hit")
             started = time.monotonic()
+            timing.start()
             try:
                 response = make_response(view(*args, **kwargs))
             except OperationalError:
                 # A dropped connection: start the pool again and try once more.
                 app.logger.warning("database connection dropped, retrying %s", request.path)
                 engine.dispose()
+                timing.start()
                 response = make_response(view(*args, **kwargs))
+            finally:
+                steps = timing.stop()
         if response.status_code == 200 and response.mimetype == "text/html":
             pagecache.put(page_key, response.get_data())
         elapsed = time.monotonic() - started
         app.logger.info("rendered %s in %.2fs", request.full_path, elapsed)
+        _record_timing(request.full_path, elapsed, steps)
         return _timed(response, "miss", elapsed)
 
     return wrapped
+
+
+def _record_timing(path: str, elapsed: float, steps: dict) -> None:
+    """Keep the build time and its main steps for /timings."""
+    if app.config.get("TESTING"):
+        return
+    from models import RenderTiming
+
+    steps = {k: v for k, v in steps.items() if not k.startswith("_in_")}
+    steps["template + other"] = max(0.0, elapsed - sum(steps.values()))
+    text = ", ".join(f"{k} {v:.1f}" for k, v in sorted(steps.items(), key=lambda kv: -kv[1]) if v >= 0.05)
+    try:
+        with session_scope() as db:
+            row = RenderTiming(
+                path=path[:1000], seconds=elapsed, steps=text[:2000],
+                background=bool(request.headers.get(pagecache.WARM_HEADER)),
+                at=dt.datetime.utcnow(),
+            )
+            db.add(row)
+            db.flush()
+            if row.id % 200 == 0:
+                db.execute(RenderTiming.__table__.delete().where(
+                    RenderTiming.at < dt.datetime.utcnow() - dt.timedelta(days=3)))
+    except Exception:
+        app.logger.exception("recording a page timing")
+
+
+@app.route("/timings")
+@login_required
+def timings_page():
+    from models import RenderTiming
+
+    since = dt.datetime.utcnow() - dt.timedelta(hours=24)
+    with session_scope() as db:
+        rows = db.execute(
+            select(RenderTiming).where(RenderTiming.at >= since)
+        ).scalars().all()
+        by_step: dict[str, list[float]] = defaultdict(list)
+        for r in rows:
+            for part in (r.steps or "").split(", "):
+                name, _, secs = part.rpartition(" ")
+                try:
+                    by_step[name].append(float(secs))
+                except ValueError:
+                    pass
+        steps = sorted(((k, sum(v), len(v)) for k, v in by_step.items() if k),
+                       key=lambda t: -t[1])
+        slowest = sorted(rows, key=lambda r: -r.seconds)[:60]
+        return render_template("timings.html", by_step=steps, slowest=slowest, count=len(rows))
 
 
 def _timed(response, how: str, seconds: float = 0.0):

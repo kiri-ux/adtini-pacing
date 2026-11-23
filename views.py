@@ -26,6 +26,7 @@ from models import (
 )
 import ratecard
 import products
+import timing
 import sheets
 from orderbook import PACEABLE_ORDER_TYPE, line_item_label
 from pacing.calendar import inclusive_days, month_bounds, month_window
@@ -210,6 +211,7 @@ def _by_dates(windows: list, day: dt.date) -> int:
     return min(windows, key=lambda w: (gap(w), w[1] or dt.date.min))[0]
 
 
+@timing.timed("delivery join")
 def _delivery_join(session, line_items: list[LineItem]) -> _Join:
     by_id = {
         (li.order.external_order_id, li.external_id): li.id
@@ -309,6 +311,7 @@ def _daily_from_strategies(
     return out
 
 
+@timing.timed("daily query")
 def _daily_by_line_item(
     session, line_items: list[LineItem]
 ) -> dict[int, list[DailyPoint]]:
@@ -438,6 +441,7 @@ class StrategySeries:
         return (self.clicks / self.impressions) if self.impressions else None
 
 
+@timing.timed("delivery query")
 def strategy_series(
     session, line_items: list[LineItem], metric: str = "impressions"
 ) -> dict[int, list[StrategySeries]]:
@@ -798,6 +802,7 @@ GRID_RANGES = (
 )
 
 
+@timing.timed("notes")
 def day_log(session, order_id: int) -> list["DayNote"]:
     """The running commentary on an order, newest day first."""
     return list(
@@ -809,6 +814,7 @@ def day_log(session, order_id: int) -> list["DayNote"]:
     )
 
 
+@timing.timed("order view")
 def order_view(
     session,
     order_id: int,
@@ -1122,6 +1128,7 @@ def _platform(source: str | None) -> str | None:
     return None
 
 
+@timing.timed("ctr")
 def ctr_by_order(session, orders: list[Order], as_of: dt.date) -> dict[int, CtrStats]:
     """CtrStats per order id, summed in the database in one pass."""
     line_items = [li for o in orders for li in o.line_items if products.is_paced(li.product)]
@@ -1283,6 +1290,7 @@ def hidden_matches(
     return out
 
 
+@timing.timed("overview")
 def overview(
     session,
     as_of: dt.date | None = None,
@@ -1837,6 +1845,7 @@ _names_lock = threading.Lock()
 _names: tuple[tuple, list[tuple[str, str, str]]] | None = None
 
 
+@timing.timed("campaign names")
 def _campaign_names(session, since: dt.date) -> list[tuple[str, str, str]]:
     global _names
     newest = session.execute(select(func.max(DailyDelivery.id))).scalar()
@@ -1860,6 +1869,7 @@ def _campaign_names(session, since: dt.date) -> list[tuple[str, str, str]]:
         return rows
 
 
+@timing.timed("campaign candidates")
 def campaign_candidates(
     session, order: Order, join: "_Join", as_of: dt.date
 ) -> list[CampaignCandidate]:
@@ -1986,6 +1996,7 @@ def campaign_candidates(
     return out
 
 
+@timing.timed("linking")
 def linking_view(
     session,
     order: Order,
@@ -2615,6 +2626,7 @@ def _strategy_line_item(term: StrategyTerms, line_items: list[LineItem]) -> Line
     )
 
 
+@timing.timed("strategy blocks")
 def strategy_blocks(session, view: "OrderView") -> list[StrategyBlock]:
     """Per-strategy pacing, grouped under the product each runs in.
 
@@ -3282,6 +3294,7 @@ def _draft_block(session, block: "StrategyBlock") -> int:
 SA_ALERT_LABELS = {"high_cpm_overshare": "High CPM over share", "low_ecpm": "Low eCPM"}
 
 
+@timing.timed("sa alerts")
 def sa_alerts(db, external_ids) -> list:
     """StackAdapt alerts from the newest nightly run for these line items."""
     from models import SaAlert

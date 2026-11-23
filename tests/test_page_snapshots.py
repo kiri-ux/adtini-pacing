@@ -114,3 +114,20 @@ def test_a_save_in_one_worker_drops_the_other_workers_pages(site):
     finally:
         pagecache.persist_enabled = False
         pagecache._seen_edit = None
+
+
+def test_timed_steps_add_up_once():
+    import time
+
+    import timing
+
+    @timing.timed("outer")
+    def outer(n):
+        time.sleep(0.02)
+        return outer(n - 1) if n else 0
+
+    timing.start()
+    outer(2)
+    steps = timing.stop()
+    assert set(k for k in steps if not k.startswith("_in_")) == {"outer"}
+    assert 0.05 <= steps["outer"] < 0.2
