@@ -1420,7 +1420,8 @@ def overview(
         b for b in session.execute(select(Order.buyer).distinct()).scalars() if b
     ))
     for r in out:
-        r.team = team_sheet.team_for(r.client.market, r.order.buyer, known)
+        r.team = team_sheet.team_for(r.client.market, r.order.buyer, known,
+                                     [p.code for p in r.products])
 
     if needs_terms is True:
         out = [r for r in out if r.total.needs_setup]
