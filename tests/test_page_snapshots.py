@@ -79,3 +79,38 @@ def test_background_builds_wait_for_a_person():
     pagecache.person_done()
     t.join(2)
     assert done and done[0] - started >= 0.5
+
+
+def test_a_save_in_one_worker_drops_the_other_workers_pages(site):
+    import datetime as dt
+
+    import db as db_module
+    import pagecache
+    from models import CacheEdit
+
+    pagecache.persist_enabled = True
+    pagecache._seen_edit = None
+    try:
+        with db_module.session_scope() as s:
+            pagecache.sync_edits(s)  # this worker starts here
+        pagecache.clear()
+        mine = pagecache.key("/orders/7?", (None, 0, None))
+        other = pagecache.key("/orders/8?", (None, 0, None))
+        pagecache.put(mine, b"seven")
+        pagecache.put(other, b"eight")
+
+        # A save here is not applied twice when read back.
+        pagecache.edited(7)
+        with db_module.session_scope() as s:
+            pagecache.sync_edits(s)
+        assert pagecache.get(pagecache.key("/orders/8?", (None, 0, None))) == b"eight"
+
+        # A save the other worker took on order 8.
+        with db_module.session_scope() as s:
+            s.add(CacheEdit(order_id=8, at=dt.datetime.utcnow()))
+        with db_module.session_scope() as s:
+            pagecache.sync_edits(s)
+        assert pagecache.get(pagecache.key("/orders/8?", (None, 0, None))) is None
+    finally:
+        pagecache.persist_enabled = False
+        pagecache._seen_edit = None

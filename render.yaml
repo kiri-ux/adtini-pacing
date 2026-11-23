@@ -7,24 +7,25 @@ services:
   - type: web
     name: adtini-pacing
     runtime: python
-    # Standard (1 CPU, 2 GB), set in the dashboard. The blueprint re-applies
-    # this on every merge, so it has to match: the #20 merge on Nov 5 2026
-    # synced it back to Starter and pages stalled on 0.5 CPU.
-    plan: standard
+    # Pro (2 CPU, 4 GB), kiri 2026-11-23. The blueprint re-applies this on
+    # every merge, so it has to match the dashboard: the #20 merge on Nov 5
+    # 2026 synced it back to Starter and pages stalled on 0.5 CPU.
+    plan: pro
     buildCommand: pip install -r requirements.txt
     # Applied before traffic moves to the new version, so the code and the
     # schema never disagree. The app itself never creates or alters tables.
     preDeployCommand: alembic upgrade head
-    # ONE worker. The app costs ~110MB resident before it serves anything, so
-    # two of them plus an ingest does not fit in Starter's 512MB and the
-    # worker gets OOM-killed mid-request - which reads as a 502. Threads give
-    # the concurrency instead; the work is IO-bound on the database.
+    # TWO workers, one per CPU: a Python process only uses one, so a page
+    # build in one no longer holds up a click served by the other. Each
+    # keeps its own page cache; saves are shared through `cache_edits`, and
+    # only one worker runs the warmer (a file lock). ~110MB resident each
+    # before the cache, well inside 4GB.
     #
     # No --max-requests: the health check alone recycled the worker every
     # twenty minutes, filling the log with restarts for no gain now that the
     # ingest runs in its own process and the worker no longer grows.
     # The timeout covers a manual upload of a ~70MB drop.
-    startCommand: gunicorn app:app --timeout 600 --worker-class gthread --workers 1 --threads 8
+    startCommand: gunicorn app:app --timeout 600 --worker-class gthread --workers 2 --threads 8
     healthCheckPath: /healthz
     envVars:
       - key: PYTHON_VERSION
