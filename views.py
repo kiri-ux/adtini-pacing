@@ -27,6 +27,7 @@ from models import (
 import ratecard
 import products
 import sheets
+import team as team_sheet
 from orderbook import PACEABLE_ORDER_TYPE, line_item_label
 from pacing.calendar import inclusive_days, month_bounds, month_window
 from pacing.engine import (
@@ -1187,6 +1188,7 @@ class OverviewRow:
     # Products on this order whose status is paused.
     paused: list[str] = field(default_factory=list)
     ctr: "CtrStats | None" = None
+    team: "team_sheet.Team | None" = None
 
     @property
     def health(self) -> str:
@@ -1405,6 +1407,11 @@ def overview(
     ctrs = ctr_by_order(session, [r.order for r in out], as_of)
     for r in out:
         r.ctr = ctrs.get(r.order.id)
+    known = tuple(sorted(
+        b for b in session.execute(select(Order.buyer).distinct()).scalars() if b
+    ))
+    for r in out:
+        r.team = team_sheet.team_for(r.client.market, r.order.buyer, known)
 
     if needs_terms is True:
         out = [r for r in out if r.total.needs_setup]

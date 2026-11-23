@@ -207,3 +207,12 @@ def test_a_finished_line_with_no_serve_on_record_is_left_out_of_the_total(sessio
 
     row = views.overview(session, as_of=AS_OF, include_ended=True)[0]
     assert row.total.total_target == 90_000
+
+
+def test_team_initials_come_from_the_partner_sheet():
+    import team
+    t = team.team_for("7 Mountains PA State College", "Amin Vora")
+    assert (t.buyer.initials, t.paid_media.initials) == ("AV", "HM")
+    t = team.team_for("Some New Partner", "Jane Doe")
+    assert t.buyer.name == "Jane Doe" and t.paid_media is None
+    assert team.full_name("Renn", ["Renn Smith", "Amin Vora"]) == "Renn Smith"
