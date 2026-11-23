@@ -26,9 +26,14 @@ document.querySelectorAll('.sarecs').forEach(function (card) {
       } else {
         sub.textContent = 'From Insights report ' + (j.report_name || report);
       }
+      function liveLink(result, fallback) {
+        var cp = /Copied to (\d+)/.exec(result || '');
+        var link = cp ? 'https://www.stackadapt.com/editor?ids=' + cp[1] + '&tab=inventory' : fallback;
+        return link ? ' <a href="' + esc(link) + '" target="_blank" rel="noopener">See live changes</a>' : '';
+      }
       body.innerHTML = j.groups.map(function (g) {
         var rows = (g.recs || []).map(function (r) {
-          var cell = r.pushed ? '<span class="recdone" title="' + esc(r.pushed.at) + '">' + esc(r.pushed.result) + '</span>'
+          var cell = r.pushed ? '<span class="recdone" title="' + esc(r.pushed.at) + '">' + esc(r.pushed.result) + '</span>' + liveLink(r.pushed.result, r.link)
             : r.can_push ? '<button type="button" class="recpush" data-rid="' + esc(r.rid) + '" data-link="' + esc(r.link || '') + '">Push</button>' : '';
           return '<tr><td class="nowrap"><span class="recflag ' + esc(r.tone) + '">' + esc(label(r.action)) + '</span></td>' +
             '<td>' + esc(r.scope || 'All in group') + '</td><td>' + esc(r.kind) + '</td><td>' + esc(r.target) + '</td>' +
@@ -52,10 +57,7 @@ document.querySelectorAll('.sarecs').forEach(function (card) {
             var td = b.parentNode;
             if (j.ok) {
               if (window.syncPushNotes) window.syncPushNotes(false);
-              var cp = /Copied to (\d+)/.exec(j.result || '');
-              var link = cp ? 'https://www.stackadapt.com/editor?ids=' + cp[1] + '&tab=inventory' : b.dataset.link;
-              td.innerHTML = '<span class="recdone">' + esc(j.result) + '</span>' +
-                (link ? ' <a href="' + esc(link) + '" target="_blank" rel="noopener">See live changes</a>' : '');
+              td.innerHTML = '<span class="recdone">' + esc(j.result) + '</span>' + liveLink(j.result, b.dataset.link);
             } else {
               td.innerHTML = '<span class="recerr">' + esc(j.error || 'Push failed') + '</span>';
             }
