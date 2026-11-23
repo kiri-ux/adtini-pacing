@@ -12,7 +12,13 @@ document.querySelectorAll('.sarecs').forEach(function (card) {
     .then(function (j) {
       if (!j || !j.groups || !j.groups.length) return;
       var report = j.report;
-      sub.textContent = 'From Insights report ' + (j.report_name || report);
+      var pushUrl = api + (j.push_url || '/reports/' + encodeURIComponent(report) + '/sa_push');
+      if (j.updated) {
+        var t = new Date(j.updated);
+        sub.textContent = 'StackAdapt, last 30 days · updated ' + t.toLocaleString([], {month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit'});
+      } else {
+        sub.textContent = 'From Insights report ' + (j.report_name || report);
+      }
       body.innerHTML = j.groups.map(function (g) {
         var rows = (g.recs || []).map(function (r) {
           var cell = r.pushed ? '<span class="recdone" title="' + esc(r.pushed.at) + '">' + esc(r.pushed.result) + '</span>'
@@ -32,7 +38,7 @@ document.querySelectorAll('.sarecs').forEach(function (card) {
         var b = e.target.closest('.recpush');
         if (!b || b.disabled) return;
         b.disabled = true; b.textContent = 'Pushing…';
-        fetch(api + '/reports/' + encodeURIComponent(report) + '/sa_push', {
+        fetch(pushUrl, {
           method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({rid: b.dataset.rid})
         }).then(function (r) { return r.json().catch(function () { return {ok: false, error: 'HTTP ' + r.status}; }); })
           .then(function (j) {
