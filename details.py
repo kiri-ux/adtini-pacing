@@ -390,7 +390,16 @@ class DetailsView:
         """A strategy label without the product code the pill already shows."""
         code = products.abbreviation(self.item.product)
         prefix = f"{code} - " if code else ""
-        return label[len(prefix):] if prefix and label.startswith(prefix) else label
+        label = label[len(prefix):] if prefix and label.startswith(prefix) else label
+        # Feed names lead with the advertiser ("Keystone Payroll - ..."),
+        # which every row on the order shares.
+        head, sep, rest = label.partition(" - ")
+        client = getattr(getattr(self.item.order, "client", None), "name", None) or ""
+        if sep and rest.strip() and client:
+            h, c = head.strip().lower(), client.strip().lower()
+            if h == c or (h.split() and c.split() and h.split()[0] == c.split()[0]):
+                return rest.strip()
+        return label
 
     def is_future(self, day: dt.date) -> bool:
         return day > (self.partial_day or self.as_of)
