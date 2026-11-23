@@ -1,0 +1,11 @@
+{# Campaign recs for this line from campaign-insights (loaded in the browser). #}
+{% if line_id and not line_id.startswith('name:') %}
+<div class="tablecard sarecs" id="sarecs" data-line="{{ line_id }}" data-api="{{ insights_url }}" hidden>
+  <div class="cardhead">
+    <h3>Campaign Recs</h3>
+    <span class="dsub" data-recs-sub></span>
+  </div>
+  <div data-recs-body></div>
+</div>
+<script src="{{ url_for('static', filename='sarecs.js') }}" defer></script>
+{% endif %}

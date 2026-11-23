@@ -195,7 +195,8 @@ def metric_filter(value, row):
 
 @app.context_processor
 def inject_globals():
-    return {"build": settings.build, "today": dt.date.today()}
+    return {"build": settings.build, "today": dt.date.today(),
+            "insights_url": os.environ.get("INSIGHTS_URL", "https://campaign-insights.onrender.com")}
 
 
 SWEEP_LOCK = Path(tempfile.gettempdir()) / "adtini-pacing-sweep.pid"
