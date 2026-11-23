@@ -1055,3 +1055,6 @@ table.satable td.pushcell{text-align:right}
 button.recpush{background:#03294D;color:#fff;border:0;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer}
 button.recpush:hover{background:#1C4A7A}
 button.recpush:disabled{background:#5B7896;cursor:default}
+button.recdrop{background:none;color:#03294D;border:1px solid #C9D3DE;border-radius:8px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer}
+button.recdrop:hover{background:#F2F5F9}
+button.recdrop:disabled{color:#8A9BB0;cursor:default}
