@@ -177,6 +177,8 @@ class GridRow:
     linked: list[tuple[str, str]] = field(default_factory=list)
     # The DSP strategy line names delivering to this row.
     feed_names: list[str] = field(default_factory=list)
+    # The saved split total, before the goals were set from the serve mix.
+    saved_total: float | None = None
 
     @property
     def running(self) -> bool:
@@ -318,7 +320,8 @@ class DetailsView:
         rows = [e for e in self.elements if e.sold and e.rate]
         if not live or not rows:
             return None
-        plan = sum((e.total or 0) * e.rate / 1000 for e in rows)
+        plan = sum((e.saved_total if e.saved_total is not None else e.total or 0)
+                   * e.rate / 1000 for e in rows)
         mix = sum(self.row.total_target * live.get(e.strategy_id, 0) / 100 * e.rate / 1000
                   for e in rows)
         return (mix, plan) if abs(mix - plan) >= 10 else None
@@ -684,6 +687,19 @@ def details_view(
             elements.append(
                 GridRow(label=_label(item.product, name), ordered=True, **estimate(key))
             )
+
+    if not combined:
+        # A sold row that never served, for targeting another sold row is
+        # already delivering, is a leftover: drop it.
+        live_keys = {sheets.match_key(x) for e in elements
+                     if e.sold and e.feed_names and e.to_date
+                     for x in [e.label, *e.feed_names]}
+        live_keys.discard(None)
+        elements = [e for e in elements if not (
+            e.sold and not e.feed_names and not e.to_date
+            and not e.label.rstrip()[-1:].isdigit()
+            and sheets.match_key(e.label) in live_keys)]
+        _follow_serve(elements, row, as_of, money, tomorrow, catch_up, day_budget)
 
     # The whole flight, future days included, the way the tab is laid out:
     # the last date header is the end date, and the to-date target on it is
@@ -1076,3 +1092,45 @@ def record_check(
             )
         )
     return check
+
+
+def _follow_serve(elements, row, as_of, money, tomorrow, catch_up, day_budget) -> None:
+    """Set each serving row's goals to its share of the last RUN_CPM_DAYS
+    days of serve. Rows that served nothing in that window keep the goal
+    they have, and the serving rows split what is left."""
+    first = as_of - dt.timedelta(days=RUN_CPM_DAYS - 1)
+    served = {
+        id(e): sum(v for d, v in e.by_date.items() if first <= d <= as_of)
+        for e in elements
+    }
+    serving = [e for e in elements if served[id(e)] > 0]
+    whole = sum(served[id(e)] for e in serving)
+    if not serving or not whole or not row.total_target:
+        return
+    idle = [e for e in elements if served[id(e)] <= 0]
+    left_total = row.total_target - sum(e.total or 0 for e in idle)
+    left_monthly = (row.monthly_target or 0) - sum(e.monthly or 0 for e in idle)
+    if left_total <= 0:
+        return
+    frac = (row.on_pace / row.total_target) if row.on_pace else None
+    for e in serving:
+        share = served[id(e)] / whole
+        e.saved_total = e.total or 0.0
+        e.monthly = (left_monthly * share) or None if left_monthly > 0 else None
+        e.total = left_total * share
+        e.daily = (row.daily_target * share) or None
+        if e.rate is None and not money:
+            e.rate = row.unit_cost or None
+        e.total_budget = (row.total_budget * share) or None
+        e.remaining = max(e.total - e.to_date, 0.0)
+        e.on_pace = e.total * frac if frac else None
+        e.pacing_pct = (
+            (e.on_pace - e.to_date) / e.on_pace if e.on_pace else None
+        )
+        e.daily_budget = day_budget(
+            catch_up(None if row.prorated else e.monthly, e.total, e.by_date, tomorrow),
+            e.rate,
+        )
+        e.media_budget = e.total if money else (
+            media_budget(e.media_spent, e.total, e.to_date, e.rate)
+            if e.media_spent is not None else media_budget(0.0, e.total, 0.0, e.rate))

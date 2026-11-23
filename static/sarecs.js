@@ -10,7 +10,14 @@ document.querySelectorAll('.sarecs').forEach(function (card) {
   fetch(api + '/api/line_recs/' + encodeURIComponent(line))
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (j) {
-      if (!j || !j.groups || !j.groups.length) return;
+      if (!j) return;
+      if (!j.groups || !j.groups.length) {
+        if (j.impressions == null) return;
+        sub.textContent = 'StackAdapt, last 30 days';
+        body.innerHTML = '<p class="dsub">' + Math.round(j.impressions).toLocaleString() + ' impressions. Recs start at ' + num(j.min_impr || 10000) + '.</p>';
+        card.hidden = false;
+        return;
+      }
       var report = j.report;
       var pushUrl = api + (j.push_url || '/reports/' + encodeURIComponent(report) + '/sa_push');
       if (j.updated) {
