@@ -20,6 +20,7 @@ document.querySelectorAll('.sarecs').forEach(function (card) {
       }
       var report = j.report;
       var pushUrl = api + (j.push_url || '/reports/' + encodeURIComponent(report) + '/sa_push');
+      var dropUrl = j.push_url === '/recs/sa_push' ? api + '/recs/sa_drop' : null;
       if (j.updated) {
         var t = new Date(j.updated);
         sub.textContent = 'StackAdapt, last 30 days · updated ' + t.toLocaleString([], {month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit'});
@@ -35,8 +36,9 @@ document.querySelectorAll('.sarecs').forEach(function (card) {
       var byRid = {};
       j.groups.forEach(function (g) { (g.recs || []).forEach(function (r) { byRid[r.rid] = r; }); });
       function row(r) {
-        var cell = r.pushed ? '<span class="recdone" title="' + esc(r.pushed.at) + '">' + esc(r.pushed.result) + '</span>' + liveLink(r.pushed.result, r.link)
-          : r.can_push ? '<button type="button" class="recpush" data-rid="' + esc(r.rid) + '" data-link="' + esc(r.link || '') + '">Push</button>' : '';
+        var cell = r.pushed ? '<span class="recdone" title="' + esc(r.pushed.at) + '">' + esc(r.pushed.result) + '</span>' + (r.pushed.result === 'Dropped' ? '' : liveLink(r.pushed.result, r.link))
+          : (r.can_push ? '<button type="button" class="recpush" data-rid="' + esc(r.rid) + '" data-link="' + esc(r.link || '') + '">Push</button>' : '') +
+            (dropUrl ? ' <button type="button" class="recdrop" data-rid="' + esc(r.rid) + '">Drop</button>' : '');
         return '<tr><td class="nowrap"><span class="recflag ' + esc(r.tone) + '">' + esc(label(r.action)) + '</span></td>' +
           '<td>' + esc(r.scope || 'All in group') + '</td><td>' + esc(r.kind) + '</td><td>' + esc(r.target) + '</td>' +
           '<td class="num">' + num(r.impressions) + '</td><td class="num">' + (r.share ? pct(r.share, 0) : '—') + '</td>' +
@@ -62,18 +64,20 @@ document.querySelectorAll('.sarecs').forEach(function (card) {
       body.addEventListener('click', function (e) {
         var t = e.target.closest('.recseg button');
         if (t) { tab = t.dataset.tab; render(); return; }
-        var b = e.target.closest('.recpush');
+        var b = e.target.closest('.recpush, .recdrop');
         if (!b || b.disabled) return;
-        b.disabled = true; b.textContent = 'Pushing…';
-        fetch(pushUrl, {
+        var drop = b.classList.contains('recdrop');
+        b.parentNode.querySelectorAll('button').forEach(function (x) { x.disabled = true; });
+        b.textContent = drop ? 'Dropping…' : 'Pushing…';
+        fetch(drop ? dropUrl : pushUrl, {
           method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({rid: b.dataset.rid})
         }).then(function (r) { return r.json().catch(function () { return {ok: false, error: 'HTTP ' + r.status}; }); })
           .then(function (res) {
             var td = b.parentNode;
             if (res.ok) {
-              if (window.syncPushNotes) window.syncPushNotes(false);
+              if (window.syncPushNotes && !drop) window.syncPushNotes(false);
               // Shown here until the next tab switch, then listed under Completed.
-              td.innerHTML = '<span class="recdone">' + esc(res.result) + '</span>' + liveLink(res.result, b.dataset.link);
+              td.innerHTML = '<span class="recdone">' + esc(res.result) + '</span>' + (drop ? '' : liveLink(res.result, b.dataset.link));
               var r = byRid[b.dataset.rid];
               if (r) r.pushed = {result: res.result, at: new Date().toISOString()};
               var seg = body.querySelector('.recseg [data-tab="done"]'), open = body.querySelector('.recseg [data-tab="open"]');
@@ -82,7 +86,10 @@ document.querySelectorAll('.sarecs').forEach(function (card) {
             } else {
               td.innerHTML = '<span class="recerr">' + esc(res.error || 'Push failed') + '</span>';
             }
-          }).catch(function () { b.disabled = false; b.textContent = 'Push'; });
+          }).catch(function () {
+            b.parentNode.querySelectorAll('button').forEach(function (x) { x.disabled = false; });
+            b.textContent = drop ? 'Drop' : 'Push';
+          });
       });
     }).catch(function () {});
 });
