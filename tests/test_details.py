@@ -1126,3 +1126,15 @@ def test_saving_two_rows_under_one_name_keeps_both(site):
     with db_module.session_scope() as session:
         labels = {session.get(StrategyTerms, i).label for i in ids}
     assert labels == {first, f"{first} 2"}
+
+
+def test_short_label_drops_the_advertiser_prefix():
+    from types import SimpleNamespace as NS
+
+    import details
+
+    item = NS(product="Display Ads", order=NS(client=NS(name="Keystone Altoona")))
+    d = NS(item=item)
+    short = lambda l: details.DetailsView.short_label(d, l)
+    assert short("Keystone Payroll - Retargeting B2B Display") == "Retargeting B2B Display"
+    assert short("Behavioral - Auto Intenders") == "Behavioral - Auto Intenders"
