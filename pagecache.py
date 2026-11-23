@@ -100,19 +100,14 @@ def _scope_count(path: str) -> int:
     return _order_edits.get(order_id, 0) if order_id is not None else _shared_edits
 
 
-def edited(order_id: int | None = None) -> None:
-    """Something was saved here.
-
-    Saved on an order: that order's pages and the shared pages may now be
-    wrong. Anywhere else: every cached page may be.
-    """
+def _forget(order_id: int | None) -> None:
+    """Drop this worker's copies of the pages a save made wrong."""
     global _edits, _shared_edits
     with _lock:
         if order_id is None:
             _edits += 1
             _pages.clear()
             _latest.clear()
-            _drop_snapshots(None)
             return
         _order_edits[order_id] = _order_edits.get(order_id, 0) + 1
         _shared_edits += 1
@@ -122,7 +117,78 @@ def edited(order_id: int | None = None) -> None:
                 owner = _order_of(path)
                 if owner is None or owner == order_id:
                     del store[k]
+
+
+# Saves are written to `cache_edits` so the other gunicorn worker drops its
+# copies too. Each worker reads the newest id on every page request.
+_seen_edit: int | None = None
+_my_edits: set[int] = set()
+_edit_lock = threading.Lock()
+
+
+def edited(order_id: int | None = None) -> None:
+    """Something was saved here.
+
+    Saved on an order: that order's pages and the shared pages may now be
+    wrong. Anywhere else: every cached page may be.
+    """
+    _forget(order_id)
     _drop_snapshots(order_id)
+    if persist_enabled:
+        _share_edit(order_id)
+
+
+def _share_edit(order_id: int | None) -> None:
+    from db import session_scope
+    from models import CacheEdit
+
+    try:
+        with session_scope() as session:
+            row = CacheEdit(order_id=order_id, at=dt.datetime.utcnow())
+            session.add(row)
+            session.flush()
+            with _edit_lock:
+                _my_edits.add(row.id)
+            if row.id % 200 == 0:
+                session.execute(
+                    CacheEdit.__table__.delete().where(
+                        CacheEdit.at < dt.datetime.utcnow() - dt.timedelta(days=2)
+                    )
+                )
+    except Exception:
+        log.exception("sharing an edit")
+
+
+def sync_edits(session) -> None:
+    """Apply saves the other worker took since this one last looked."""
+    global _seen_edit
+    if not persist_enabled:
+        return
+    from models import CacheEdit
+
+    try:
+        newest = session.execute(select(func.max(CacheEdit.id))).scalar() or 0
+        with _edit_lock:
+            if _seen_edit is None:
+                # A new worker starts with nothing cached.
+                _seen_edit = newest
+                return
+            if newest <= _seen_edit:
+                return
+            since = _seen_edit
+            _seen_edit = newest
+        rows = session.execute(
+            select(CacheEdit.id, CacheEdit.order_id)
+            .where(CacheEdit.id > since, CacheEdit.id <= newest)
+        ).all()
+        for edit_id, order_id in rows:
+            with _edit_lock:
+                if edit_id in _my_edits:
+                    _my_edits.discard(edit_id)
+                    continue
+            _forget(order_id)
+    except Exception:
+        log.exception("reading shared edits")
 
 
 def edit_count() -> int:
@@ -312,6 +378,7 @@ def start_warmer(app, paths=("/",), every: float = 60.0) -> None:
         while True:
             try:
                 with session_scope() as session:
+                    sync_edits(session)
                     stamp = data_stamp(session, fresh=True)
                 # The date is in every page's cache key, so a new day needs
                 # warming as much as new data does.
@@ -353,5 +420,28 @@ def start_warmer(app, paths=("/",), every: float = 60.0) -> None:
     global persist_enabled
     persist_enabled = True
     threading.Thread(target=_save_snapshots, name="page-snapshots", daemon=True).start()
-    threading.Thread(target=loop, name="page-warmer", daemon=True).start()
+    # One warmer per instance, not per worker: the whole list twice would
+    # only compete with itself. The lock is held for the worker's life.
+    if _warmer_lock():
+        threading.Thread(target=loop, name="page-warmer", daemon=True).start()
     threading.Thread(target=fetch, name="page-prefetch", daemon=True).start()
+
+
+_lock_file = None
+
+
+def _warmer_lock() -> bool:
+    global _lock_file
+    try:
+        import fcntl
+        import os
+        import tempfile
+
+        handle = open(os.path.join(tempfile.gettempdir(), "adtini-pacing-warmer.lock"), "w")
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return False
+    except ImportError:  # not on Linux; one worker anyway
+        return True
+    _lock_file = handle
+    return True

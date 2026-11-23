@@ -459,6 +459,17 @@ class DeliveryStaging(Base):
     goal_cpm: Mapped[float | None] = mapped_column(Float)
 
 
+class CacheEdit(Base):
+    """A save, so every worker drops the pages it made wrong, not only the
+    worker that took the save."""
+
+    __tablename__ = "cache_edits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    at: Mapped[dt.datetime] = mapped_column(DateTime, index=True)
+
+
 class PageSnapshot(Base):
     """The last good copy of a page, zlib-compressed, so a deploy (which
     starts with an empty memory cache) can show it while a fresh one builds."""

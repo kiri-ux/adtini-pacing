@@ -386,6 +386,7 @@ def cached_page(view):
         if app.config.get("TESTING") or flask_session.get("_flashes"):
             return view(*args, **kwargs)
         with session_scope() as db:
+            pagecache.sync_edits(db)
             stamp = pagecache.data_stamp(db)
         page_key = pagecache.key(request.full_path, stamp)
         body = pagecache.get(page_key)
