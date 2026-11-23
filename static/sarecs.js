@@ -29,7 +29,7 @@ document.querySelectorAll('.sarecs').forEach(function (card) {
       function liveLink(result, fallback) {
         var cp = /Copied to (\d+)/.exec(result || '');
         var link = cp ? 'https://www.stackadapt.com/editor?ids=' + cp[1] + '&tab=inventory' : fallback;
-        return link ? ' <a href="' + esc(link) + '" target="_blank" rel="noopener">See live changes</a>' : '';
+        return link ? ' <a href="' + esc(link) + '" target="_blank" rel="noopener" title="See live changes" aria-label="See live changes"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-3px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></a>' : '';
       }
       body.innerHTML = j.groups.map(function (g) {
         var rows = (g.recs || []).map(function (r) {
