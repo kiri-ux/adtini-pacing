@@ -1501,3 +1501,69 @@ def test_an_empty_repeat_row_with_nothing_to_take_is_removed(site):
 
     assert changed == 1
     assert labels == ["FB - Categories", "FB - Categories 3"]
+
+
+def test_a_running_line_the_split_does_not_list_gets_its_own_row(site):
+    """A keyword campaign the order never listed joins the split, linked."""
+    import datetime as dt
+
+    from models import DailyDelivery, LineItem, StrategyTerms
+
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        item = session.query(LineItem).filter_by(external_id="88001").one()
+        for term in session.query(StrategyTerms).filter_by(order_id=order_id):
+            term.line_item_id = item.id
+        session.flush()
+        before = session.query(StrategyTerms).filter_by(line_item_id=item.id).count()
+        for day in range(1, 6):
+            session.add(DailyDelivery(
+                date=dt.date(2026, 8, day), data_source="Meta",
+                campaign_id="CMP-9", strategy_id=f"rt-{day}",
+                client_name="Bud's Auto", external_order_id="44100",
+                external_line_item_id="88001",
+                product="Meta Display & Video Ads",
+                strategy_name="Meta - Keyword", strategy_type="Keyword",
+                impressions=300.0,
+            ))
+
+    with db_module.session_scope() as session:
+        added = views.add_extra_lines(session, as_of=dt.date(2026, 8, 10))
+    with db_module.session_scope() as session:
+        again = views.add_extra_lines(session, as_of=dt.date(2026, 8, 10))
+        terms = session.query(StrategyTerms).filter_by(line_item_id=item.id).all()
+
+    assert added == 1 and again == 0
+    assert len(terms) == before + 1
+    new = [t for t in terms if t.source == "running, not in split"]
+    assert len(new) == 1 and views.term_keys(new[0])[0] == "keyword"
+
+
+def test_a_line_that_stopped_serving_is_not_added(site):
+    import datetime as dt
+
+    from models import DailyDelivery, LineItem, StrategyTerms
+
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        item = session.query(LineItem).filter_by(external_id="88001").one()
+        for term in session.query(StrategyTerms).filter_by(order_id=order_id):
+            term.line_item_id = item.id
+        session.add(DailyDelivery(
+            date=dt.date(2026, 7, 1), data_source="Meta",
+            campaign_id="CMP-9", strategy_id="rt-old",
+            client_name="Bud's Auto", external_order_id="44100",
+            external_line_item_id="88001",
+            product="Meta Display & Video Ads",
+            strategy_name="Meta - Keyword", strategy_type="Keyword",
+            impressions=300.0,
+        ))
+
+    with db_module.session_scope() as session:
+        assert views.add_extra_lines(session, as_of=dt.date(2026, 8, 10)) == 0
