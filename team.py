@@ -53,6 +53,13 @@ COLORS = {
 }
 
 
+# Products the paid media buyer runs (social, search, YouTube). Every
+# other ad product is the buyer's. Services that are not ad buys need
+# neither.
+PAID_MEDIA_CODES = {"M", "MM", "ML", "TT", "LI", "PPC", "PM", "PMM", "YT"}
+SERVICE_CODES = {"SEO", "ORM", "LC", "GA4", "ID"}
+
+
 @dataclass(frozen=True)
 class Person:
     name: str
@@ -110,10 +117,21 @@ def full_name(name: str | None, known: list[str] | tuple[str, ...] = ()) -> str 
 
 
 def team_for(partner: str | None, order_buyer: str | None = None,
-             known: list[str] | tuple[str, ...] = ()) -> Team:
+             known: list[str] | tuple[str, ...] = (),
+             codes: list[str] | tuple[str, ...] | set[str] | None = None) -> Team:
     """The partner's buyer and paid media buyer. The order's own buyer
-    stands in for a partner the sheet does not list."""
+    stands in for a partner the sheet does not list.
+
+    With `codes` (the order's product codes), only the people who run
+    those products: the buyer for programmatic products, the paid media
+    buyer for PAID_MEDIA_CODES."""
     buyer, pmb = _sheet().get(_key(partner), (None, None))
+    if codes:
+        codes = {c.upper() for c in codes if c}
+        if not codes & PAID_MEDIA_CODES:
+            pmb = None
+        if not codes - PAID_MEDIA_CODES - SERVICE_CODES:
+            buyer, order_buyer = None, None
     buyer_name = full_name(buyer, known) if buyer else order_buyer
     pmb_name = full_name(pmb, known) if pmb else None
     return Team(

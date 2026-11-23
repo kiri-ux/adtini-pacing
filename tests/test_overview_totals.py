@@ -219,3 +219,16 @@ def test_team_initials_come_from_the_partner_sheet():
     t = team.team_for("AGM Albuquerque")
     assert t.buyer.initials == "DR" and t.buyer.color
     assert team.team_for("Ampersand").paid_media.initials == "BB"
+
+
+def test_only_the_people_who_run_the_orders_products_show():
+    import team
+    p = "7 Mountains PA State College"
+    t = team.team_for(p, "Amin Vora", codes=["D"])
+    assert t.buyer.initials == "AV" and t.paid_media is None
+    t = team.team_for(p, "Amin Vora", codes=["M", "PPC"])
+    assert t.buyer is None and t.paid_media.initials == "HM"
+    t = team.team_for(p, "Amin Vora", codes=["D", "M"])
+    assert t.buyer and t.paid_media
+    t = team.team_for(p, "Amin Vora", codes=[])
+    assert t.buyer and t.paid_media
