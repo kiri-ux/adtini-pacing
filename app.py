@@ -655,6 +655,9 @@ def order_detail(order_id: int):
         return render_template(
             "order.html",
             sa_alerts=views.sa_alerts(db, [li.external_id for li in view.order.line_items]),
+            recs_lines=[li.external_id for li in sorted(view.order.line_items, key=lambda li: (li.sort_order, li.id))
+                        if products.is_paced(li.product) and li.external_id
+                        and not li.external_id.startswith("name:")],
             v=view,
             t=view.total,
             pacing_choices=PACING_CHOICES,

@@ -1,11 +1,12 @@
-{# Campaign recs for this line from campaign-insights (loaded in the browser). #}
+{# Campaign recs for one line from campaign-insights (loaded in the browser).
+   Set line_id; show_line adds the product ID to the title. Include
+   _sarecs_js.html once per page. #}
 {% if line_id and not line_id.startswith('name:') %}
-<div class="tablecard sarecs" id="sarecs" data-line="{{ line_id }}" data-api="{{ insights_url }}" hidden>
+<div class="tablecard sarecs" data-line="{{ line_id }}" data-api="{{ insights_url }}" hidden>
   <div class="cardhead">
-    <h3>Campaign Recs</h3>
+    <h3>Campaign Recs{% if show_line %} · {{ line_id }}{% endif %}</h3>
     <span class="dsub" data-recs-sub></span>
   </div>
   <div data-recs-body></div>
 </div>
-<script src="{{ url_for('static', filename='sarecs.js') }}" defer></script>
 {% endif %}

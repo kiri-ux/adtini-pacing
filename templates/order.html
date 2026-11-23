@@ -47,6 +47,8 @@
 </div>
 
 {% with show_line=true %}{% include "_saalerts.html" %}{% endwith %}
+{% for lid in recs_lines %}{% with line_id=lid, show_line=(recs_lines|length > 1) %}{% include "_sarecs.html" %}{% endwith %}{% endfor %}
+{% if recs_lines %}{% include "_sarecs_js.html" %}{% endif %}
 
 <div class="tablecard">
   <div class="cardhead">

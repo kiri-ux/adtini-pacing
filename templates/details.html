@@ -51,7 +51,8 @@
 {% for f in d.flags %}<p class="warnbar">{{ f }}</p>{% endfor %}
 
 {% with show_line=false %}{% include "_saalerts.html" %}{% endwith %}
-{% with line_id=(d.item.external_id or "") %}{% include "_sarecs.html" %}{% endwith %}
+{% with line_id=(d.item.external_id or ""), show_line=false %}{% include "_sarecs.html" %}{% endwith %}
+{% include "_sarecs_js.html" %}
 
 <form method="post" action="{{ url_for('strategies_save', order_id=o.id) }}" id="splitform">
   <input type="hidden" name="back_li" value="{{ d.item.id }}">
