@@ -490,7 +490,7 @@ def _timed(response, how: str, seconds: float = 0.0):
 @app.after_request
 def _drop_cache_on_write(response):
     if request.method == "POST" and response.status_code < 500:
-        if request.endpoint == "note_sync_pushes" and not (response.get_json(silent=True) or {}).get("added"):
+        if request.endpoint == "note_sync_pushes" and not any((response.get_json(silent=True) or {}).get(k) for k in ("added", "removed")):
             # Runs on every order page load; nothing added, nothing to drop.
             return response
         order_id = (request.view_args or {}).get("order_id")
@@ -1083,9 +1083,11 @@ def note_sync_pushes(order_id: int):
                 log = json.load(r).get("log") or []
         except Exception:
             return {"added": 0, "error": "insights unreachable"}
-        have = {(n.date, n.body) for n in db.execute(
+        notes = list(db.execute(
             select(DayNote).where(DayNote.order_id == order_id, DayNote.author == PUSH_NOTE_AUTHOR)
-        ).scalars()}
+        ).scalars())
+        have = {(n.date, n.body) for n in notes}
+        wanted = set()
         added = 0
         for e in log:
             li = by_line.get(str(e.get("line") or ""))
@@ -1094,12 +1096,22 @@ def note_sync_pushes(order_id: int):
             except Exception:
                 continue
             body = _push_note_body(e)
-            if li is None or (on, body) in have:
+            if li is None:
+                continue
+            wanted.add((on, body))
+            if (on, body) in have:
                 continue
             db.add(DayNote(order_id=order_id, line_item_id=li, date=on, body=body, author=PUSH_NOTE_AUTHOR))
             have.add((on, body))
             added += 1
-    return {"added": added}
+        # A push corrected in insights' log replaces its old note.
+        removed = 0
+        if wanted:
+            for n in notes:
+                if (n.date, n.body) not in wanted:
+                    db.delete(n)
+                    removed += 1
+    return {"added": added, "removed": removed}
 
 
 @app.route("/orders/<int:order_id>/notes/<int:note_id>/delete", methods=["POST"])

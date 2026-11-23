@@ -372,8 +372,8 @@ def test_stackadapt_pushes_become_notes_once(site, monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", fake)
     c = app_module.app.test_client()
-    assert c.post(f"/orders/{order_id}/notes/sync-pushes").get_json() == {"added": 1}
-    assert c.post(f"/orders/{order_id}/notes/sync-pushes").get_json() == {"added": 0}
+    assert c.post(f"/orders/{order_id}/notes/sync-pushes").get_json() == {"added": 1, "removed": 0}
+    assert c.post(f"/orders/{order_id}/notes/sync-pushes").get_json() == {"added": 0, "removed": 0}
     assert "lines=122628" in seen[0]
     with db_module.session_scope() as session:
         note = session.query(DayNote).one()
@@ -381,3 +381,8 @@ def test_stackadapt_pushes_become_notes_once(site, monkeypatch):
         assert note.author == "StackAdapt push"
         assert note.body == "Cap at 5% · All campaigns · Device · Desktop: Caps set (Desktop 5%) on 4 campaigns"
         assert note.line_item_id is not None
+    # A push corrected in insights' log replaces its note.
+    log["log"][0]["result"] = "Caps set (Desktop 5%) on 3 campaigns"
+    assert c.post(f"/orders/{order_id}/notes/sync-pushes").get_json() == {"added": 1, "removed": 1}
+    with db_module.session_scope() as session:
+        assert session.query(DayNote).one().body.endswith("on 3 campaigns")
