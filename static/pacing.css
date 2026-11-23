@@ -1052,3 +1052,6 @@ table.overview .ctrchg.down{color:#B42318}
 .recdone{color:#1D6B3A;font-size:12px}
 .recerr{color:#8E2A1F;font-size:12px}
 table.satable td.pushcell{text-align:right}
+button.recpush{background:#03294D;color:#fff;border:0;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer}
+button.recpush:hover{background:#1C4A7A}
+button.recpush:disabled{background:#5B7896;cursor:default}
