@@ -1131,10 +1131,30 @@ def _platform(source: str | None) -> str | None:
     return None
 
 
+NO_CTR_PRODUCTS = {"Connected TV Ads", "Social Mirror CTV Ads", "Online Audio Ads"}
+
+
+def no_ctr(product: str | None, feed: bool = False) -> bool:
+    """CTV and audio: nobody clicks, so they stay out of the order's CTR. A
+    feed row is read by its channel too, which drops the CTV half of a
+    CTV + Video line and keeps the video half."""
+    found = products.lookup(product)
+    if found and found.name in NO_CTR_PRODUCTS:
+        return True
+    if not feed:
+        return False
+    t = (product or "").lower()
+    return channel_of(t) == "ctv" or bool(re.search(r"\baudio\b", t))
+
+
 @timing.timed("ctr")
 def ctr_by_order(session, orders: list[Order], as_of: dt.date) -> dict[int, CtrStats]:
-    """CtrStats per order id, summed in the database in one pass."""
-    line_items = [li for o in orders for li in o.line_items if products.is_paced(li.product)]
+    """CtrStats per order id, summed in the database in one pass. CTV and audio
+    lines, and the CTV half of a CTV + Video line, are left out."""
+    line_items = [
+        li for o in orders for li in o.line_items
+        if products.is_paced(li.product) and not no_ctr(li.product)
+    ]
     join = _delivery_join(session, line_items)
     if not join:
         return {}
@@ -1152,6 +1172,7 @@ def ctr_by_order(session, orders: list[Order], as_of: dt.date) -> dict[int, CtrS
             DailyDelivery.external_line_item_id,
             DailyDelivery.data_source,
             DailyDelivery.campaign_id,
+            DailyDelivery.product,
             func.sum(DailyDelivery.impressions),
             func.sum(DailyDelivery.clicks),
             within(in_week, DailyDelivery.impressions),
@@ -1165,11 +1186,14 @@ def ctr_by_order(session, orders: list[Order], as_of: dt.date) -> dict[int, CtrS
             DailyDelivery.external_line_item_id,
             DailyDelivery.data_source,
             DailyDelivery.campaign_id,
+            DailyDelivery.product,
         )
     )
     order_of = {li.id: li.order_id for li in line_items}
     out: dict[int, CtrStats] = {}
-    for order_id, li_id, source, campaign, imps, clicks, w_i, w_c, p_i, p_c in session.execute(stmt):
+    for order_id, li_id, source, campaign, feed, imps, clicks, w_i, w_c, p_i, p_c in session.execute(stmt):
+        if no_ctr(feed, feed=True):
+            continue
         target = join.resolve(order_id, li_id, source, campaign)
         if target is None or target not in order_of:
             continue
