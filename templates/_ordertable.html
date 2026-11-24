@@ -40,7 +40,7 @@
           href="{{ url_for('order_detail', order_id=r.order.id) }}">{{ r.client.name }}</a>
           {%- if r.paused %} <span class="pausedflag" tabindex="0" aria-label="Paused: {{ r.paused|join(', ') }}"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="#F5C518"/><rect x="5.3" y="4.5" width="1.8" height="7" rx=".6" fill="#3A2E00"/><rect x="8.9" y="4.5" width="1.8" height="7" rx=".6" fill="#3A2E00"/></svg><span class="tipbox">Paused: {{ r.paused|join(', ') }}</span></span>{% endif %}</td>
         <td class="num orderid">{{ r.order.external_order_id or '—' }}</td>
-        <td class="pills">
+        <td class="pillcell"><div class="pills">
           {% for p in r.products[:5] %}
             <span class="pill-prod" style="background:{{ p.hex }};color:{{ p.text_hex }}">{{ p.code }}
               <i class="pdot {{ p.health }}"></i>
@@ -49,7 +49,7 @@
                 Expected: {{ p.expected|metric(t) }}</span></span>
           {% endfor %}
           {% if r.products|length > 5 %}<span class="pill-more">+{{ r.products|length - 5 }}</span>{% endif %}
-        </td>
+        </div></td>
         {% set c = r.ctr %}
         <td class="num ctrcell{% if c and c.sa_under %} saunder{% endif %}"
           {%- if c and (c.last7 is not none or c.both) %} data-tip="Last 7 days {{ '%.2f%%'|format(c.last7) if c.last7 is not none else '—' }} · Prior 7 days {{ '%.2f%%'|format(c.prior7) if c.prior7 is not none else '—' }}
