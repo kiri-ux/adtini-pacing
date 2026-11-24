@@ -433,6 +433,12 @@ class DetailsView:
         if c and (h == c or h.startswith(c) or c.startswith(h)
                   or (h.split() and c.split() and h.split()[0] == c.split()[0])):
             return rest.strip()
+        # "Yes Idaho- Envision Sight" on DonorConnect- Envision Sight: the
+        # partner and client, sharing the client's half of the name.
+        def parts(x):
+            return {_plain(p) for p in re.split(r"\s*-\s*", x or "") if _plain(p)}
+        if parts(head) & parts(client):
+            return rest.strip()
         # Or a head every row on the grid shares: that is the advertiser too.
         heads = {_plain(e.label.partition(" - ")[0]) for e in getattr(self, "elements", None) or []
                  if " - " in (e.label or "")}

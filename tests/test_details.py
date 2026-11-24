@@ -1142,6 +1142,9 @@ def test_short_label_drops_the_advertiser_prefix():
     item.order.client.name = "Acme"
     d.elements = [NS(label="NRF Org - Retargeting"), NS(label="NRF Org - Behavioral")]
     assert short("NRF Org - Behavioral") == "Behavioral"
+    d.elements = []
+    item.order.client.name = "DonorConnect- Envision Sight"
+    assert short("Yes Idaho- Envision Sight - Keyword Social Mirror") == "Keyword Social Mirror"
 
 
 def test_the_plus_adds_a_strategy_row_before_anything_serves(site):
