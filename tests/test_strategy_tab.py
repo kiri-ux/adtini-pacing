@@ -1567,3 +1567,38 @@ def test_a_line_that_stopped_serving_is_not_added(site):
 
     with db_module.session_scope() as session:
         assert views.add_extra_lines(session, as_of=dt.date(2026, 8, 10)) == 0
+
+
+def test_an_empty_auto_row_twinning_a_row_is_folded_into_it(site):
+    """Rooterman 135309: the nightly job left an empty "D - Behavioral Targeting"
+    row beside the Behavioral row already serving."""
+    import datetime as dt
+
+    from models import LineItem, StrategyTerms
+
+    import db as db_module
+    import views
+
+    app_module, order_id = site
+    with db_module.session_scope() as session:
+        item = session.query(LineItem).filter_by(external_id="88001").one()
+        terms = session.query(StrategyTerms).filter_by(order_id=order_id).all()
+        for term in terms:
+            term.line_item_id = item.id
+        first = terms[0]
+        session.add(StrategyTerms(
+            order_id=order_id, line_item_id=item.id, label=first.label + " copy",
+            match_key=first.match_key, sort_order=99, source="running, not in split",
+            linked_keys="some feed key",
+        ))
+        session.flush()
+        before = session.query(StrategyTerms).filter_by(line_item_id=item.id).count()
+        own = views.term_keys(first)[0]
+
+    with db_module.session_scope() as session:
+        views.add_extra_lines(session, as_of=dt.date(2026, 8, 10))
+    with db_module.session_scope() as session:
+        rows = session.query(StrategyTerms).filter_by(line_item_id=item.id).all()
+        twin = next(t for t in rows if views.term_keys(t)[0] == own)
+        assert len(rows) == before - 1
+        assert "some feed key" in (twin.linked_keys or "")
