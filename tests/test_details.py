@@ -1207,3 +1207,58 @@ def test_a_short_high_ctr_note_still_tags_its_original_row():
     details._mark_hc_copy(rows, note)
     assert rows[0].hc == {"copy_id": None, "add": 0.5, "on": dt.date(2026, 11, 24), "budget": None}
     assert rows[1].hc is None
+
+
+def test_a_short_high_ctr_note_carries_the_group_budget():
+    import datetime as dt
+    from types import SimpleNamespace as NS
+
+    import details
+
+    rows = [details.GridRow(label="AI Display")]
+    note = NS(author="StackAdapt push", date=dt.date(2026, 11, 24),
+              body="High CTR copy added: AI Display · Group budget +$430")
+    details._mark_hc_copy(rows, note)
+    assert rows[0].hc["budget"] == "430"
+
+
+def test_a_slowed_row_keeps_what_it_served_in_its_goal():
+    import datetime as dt
+    from types import SimpleNamespace as NS
+
+    import details
+
+    as_of = dt.date(2026, 11, 24)
+    old = {dt.date(2026, 10, d): 7000.0 for d in range(1, 31)}  # 210,000 before
+    kw = details.GridRow(label="Keyword", to_date=210_010.0,
+                         by_date={**old, as_of: 10.0})
+    rt = details.GridRow(label="Retargeting", to_date=60_000.0,
+                         by_date={as_of - dt.timedelta(days=i): 1000.0 for i in range(7)})
+    row = NS(total_target=1_500_000.0, monthly_target=136_000.0, on_pace=500_000.0,
+             daily_target=4500.0, unit_cost=1.0, total_budget=1500.0, prorated=False)
+    details._follow_serve([kw, rt], row, as_of, False, as_of + dt.timedelta(days=1),
+                          lambda *a: 0.0, lambda *a: 0.0)
+    assert kw.total >= kw.to_date and rt.total >= rt.to_date
+    assert abs(kw.total + rt.total - 1_500_000) < 1
+    kw_pct = kw.to_date / kw.on_pace
+    assert 0.9 < kw_pct < 1.1
+
+
+def test_the_pause_button_flags_a_strategy_row(site):
+    import db as db_module
+    from models import StrategyTerms
+
+    app_module, (order_id, li_id) = site
+    client = app_module.app.test_client()
+    client.post(f"/orders/{order_id}/details/{li_id}/link", data={"term": "new:Geo-Fencing"})
+    with db_module.session_scope() as session:
+        term = session.query(StrategyTerms).filter_by(line_item_id=li_id).first()
+        sid = term.id
+    client.post(f"/orders/{order_id}/strategies/{sid}/pause")
+    with db_module.session_scope() as session:
+        assert session.get(StrategyTerms, sid).paused
+    html = client.get(f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
+    assert "pausedrow" in html and 'aria-label="Unpause row"' in html
+    client.post(f"/orders/{order_id}/strategies/{sid}/pause")
+    with db_module.session_scope() as session:
+        assert not session.get(StrategyTerms, sid).paused

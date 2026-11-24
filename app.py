@@ -13,6 +13,7 @@ import io
 import logging
 import math
 import os
+import re
 import threading
 import tempfile
 import time
@@ -1061,7 +1062,14 @@ def _push_note_body(e: dict) -> str:
     action = str(e.get("action") or "")
     scope = e.get("scope") or "All in group"
     if "high ctr" in action.lower() and action.lower().startswith("copy"):
-        return f"High CTR copy added: {scope}"
+        note = f"High CTR copy added: {scope}"
+        res = str(e.get("result") or "")
+        m = re.search(r"Group budget \+\$[\d,]+", res)
+        if m:
+            return f"{note} · {m.group(0)}"
+        if "Group budget is in impressions" in res:
+            return f"{note} · Group budget in impressions"
+        return note
     parts = [action, scope, e.get("target")]
     return " · ".join(str(p) for p in parts if p)
 
@@ -1351,6 +1359,19 @@ def strategy_delete(order_id: int, strategy_id: int):
         term = db.get(StrategyTerms, strategy_id)
         if term and term.order_id == order_id:
             db.delete(term)
+    return _back(order_id)
+
+
+@app.route(
+    "/orders/<int:order_id>/strategies/<int:strategy_id>/pause", methods=["POST"]
+)
+@login_required
+def strategy_pause(order_id: int, strategy_id: int):
+    """Flag a strategy row as paused, or clear the flag (kiri 11/24)."""
+    with session_scope() as db:
+        term = db.get(StrategyTerms, strategy_id)
+        if term and term.order_id == order_id:
+            term.paused = not term.paused
     return _back(order_id)
 
 

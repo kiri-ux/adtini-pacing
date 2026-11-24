@@ -1104,3 +1104,10 @@ table.daily.pinned.detailgrid tr.noterow th.pin{font-weight:600;font-size:12px}
 /* Monthly, total and daily read as separate groups */
 table.overview th.grp,table.overview td.grp{padding-left:28px}
 table.overview th.meterhead{min-width:190px}
+
+/* Strategy row flagged paused: italic, shouldn't be serving */
+.stratcell .strpause{flex:0 0 auto;order:4;border:0;background:none;color:#B0B7C3;padding:0 2px;cursor:pointer;line-height:1}
+.stratcell .strpause:hover{color:#475467}
+.stratcell .strpause.on{color:#B54708}
+tr.pausedrow th.pin,tr.pausedrow td{font-style:italic;color:#667085}
+tr.pausedrow input{font-style:italic;color:#667085}

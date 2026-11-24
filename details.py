@@ -173,6 +173,7 @@ class GridRow:
     # The StrategyTerms row behind it; None for targeting that is running
     # but sits in no sold row.
     strategy_id: int | None = None
+    paused: bool = False
     # What the strategy targets - categories, keywords, places - one per
     # line. Typed in by hand until the adtini forms carry it.
     targets: str | None = None
@@ -531,7 +532,7 @@ def _mark_hc_copy(elements: list, note) -> None:
         copy_id = m.group(1)
     elif body.startswith(HC_SHORT):
         # Short push note (PR #150) carries no copy id or CPM; copies bid +$0.50.
-        scope, copy_id = body[len(HC_SHORT):].strip(), None
+        scope, copy_id = body[len(HC_SHORT):].split(" · ", 1)[0].strip(), None
     else:
         return
     add = re.search(r"CPM \+\$([\d.]+)", body)
@@ -746,6 +747,7 @@ def details_view(
                     row_run_cpm, rate, srow.to_date, srow.on_pace),
                 cpm_over=None if money else over_max(row_run_cpm),
                 strategy_id=srow.strategy_id,
+                paused=bool(term and term.paused),
                 targets=term.targets if term else None,
                 ordered=combined or key in ordered,
                 linked=linked,
@@ -1224,18 +1226,28 @@ def _follow_serve(elements, row, as_of, money, tomorrow, catch_up, day_budget) -
     left_monthly = (row.monthly_target or 0) - sum(e.monthly or 0 for e in idle)
     if left_total <= 0:
         return
-    frac = (row.on_pace / row.total_target) if row.on_pace else None
+    # Each serving row keeps what it has served and takes its share of what is
+    # left, so a row that has slowed down isn't read against a goal far under
+    # its own serve (kiri 11/24: Keyword at 17,297%).
+    month_start = as_of.replace(day=1)
+    mtd = {id(e): sum(v for d, v in e.by_date.items() if month_start <= d <= as_of) for e in serving}
+    rest_total = max(left_total - sum(e.to_date for e in serving), 0.0)
+    rest_month = max(left_monthly - sum(mtd.values()), 0.0)
+    # The line's ahead / behind, split the same way.
+    gap = None
+    if row.on_pace:
+        gap = (row.on_pace - sum(e.on_pace or 0 for e in idle)) - sum(e.to_date for e in serving)
     for e in serving:
         share = served[id(e)] / whole
         e.saved_total = e.total or 0.0
-        e.monthly = (left_monthly * share) or None if left_monthly > 0 else None
-        e.total = left_total * share
+        e.monthly = (mtd[id(e)] + rest_month * share) or None if left_monthly > 0 else None
+        e.total = e.to_date + rest_total * share
         e.daily = (row.daily_target * share) or None
         if e.rate is None and not money:
             e.rate = row.unit_cost or None
-        e.total_budget = (row.total_budget * share) or None
+        e.total_budget = (row.total_budget * e.total / row.total_target) or None if row.total_budget else None
         e.remaining = max(e.total - e.to_date, 0.0)
-        e.on_pace = e.total * frac if frac else None
+        e.on_pace = max(e.to_date + gap * share, 0.0) or None if gap is not None else None
         e.pacing_pct = (
             (e.on_pace - e.to_date) / e.on_pace if e.on_pace else None
         )
