@@ -582,12 +582,42 @@ def import_orders(session, frame, cache: dict | None = None) -> ImportResult:
 class AdoptResult:
     orders_added: int = 0
     line_items_added: int = 0
+    orders_removed: int = 0
 
     def summary(self) -> str:
-        return (
+        text = (
             f"{self.orders_added} orders and {self.line_items_added} line items "
             "created for delivery with no order record"
         )
+        if self.orders_removed:
+            text += f"; {self.orders_removed} duplicate unmatched orders removed"
+        return text
+
+
+def _drop_duplicate_unmatched(session, known_lines: set[str]) -> int:
+    """Remove adopted orders whose every line item is already on a real order,
+    when nobody has put work into them (strategy rows, checks, hand notes)."""
+    from models import DayNote, PinnedOrder, StrategyTerms, WeeklyCheck
+
+    removed = 0
+    for order in session.execute(select(Order).where(Order.status == "Unmatched")).scalars().all():
+        ids = [li.external_id for li in order.line_items]
+        if not ids or any(i not in known_lines for i in ids):
+            continue
+        worked = (
+            session.execute(select(StrategyTerms.id).where(StrategyTerms.order_id == order.id).limit(1)).first()
+            or session.execute(select(WeeklyCheck.id).where(WeeklyCheck.order_id == order.id).limit(1)).first()
+            or session.execute(select(PinnedOrder.order_id).where(PinnedOrder.order_id == order.id).limit(1)).first()
+            or session.execute(select(DayNote.id).where(
+                DayNote.order_id == order.id, DayNote.author != "StackAdapt push").limit(1)).first()
+        )
+        if worked:
+            continue
+        session.delete(order)
+        removed += 1
+    if removed:
+        session.flush()
+    return removed
 
 
 def adopt_unmatched_delivery(session) -> AdoptResult:
@@ -630,6 +660,18 @@ def adopt_unmatched_delivery(session) -> AdoptResult:
         )
     ).all()
 
+    # Line items an order on the books already has. Delivery with a blank order
+    # id but one of these line item ids joins to that order by line item id, so
+    # adopting it made a second, goal-less copy of the order (Rooterman 135309).
+    known_lines = {
+        li.external_id
+        for li in session.execute(
+            select(LineItem).join(Order).where(Order.status != "Unmatched")
+        ).scalars()
+        if li.external_id and not li.external_id.startswith("name:")
+    }
+    result.orders_removed = _drop_duplicate_unmatched(session, known_lines)
+
     clients = {c.name: c for c in session.execute(select(Client)).scalars()}
     adopted: dict[tuple[int, str], Order] = {
         (order.client_id, order.name): order
@@ -643,6 +685,8 @@ def adopt_unmatched_delivery(session) -> AdoptResult:
         # Delivery whose order is already on the books joins by id; nothing
         # to adopt.
         if (row.external_order_id or "") in known_orders and row.external_order_id:
+            continue
+        if row.external_line_item_id and row.external_line_item_id in known_lines:
             continue
 
         client = clients.get(client_name)
