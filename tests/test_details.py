@@ -1162,3 +1162,20 @@ def test_the_plus_adds_a_strategy_row_before_anything_serves(site):
         rows = [(t.label, t.monthly_target, t.rate) for t in terms]
     assert rows[0][0] == "Geo-Fencing" and rows[0][1] == 450_000 and rows[0][2]
     assert rows[1][0] == "Geo-Fencing 2" and rows[1][1] is None
+
+
+def test_a_high_ctr_copy_tags_its_original_row():
+    import datetime as dt
+    from types import SimpleNamespace as NS
+
+    import details
+
+    rows = [details.GridRow(label="NV - Retargeting Native Video",
+                            feed_names=["National Retail Federation (NRF) - Retargeting Native Video · AdLib, StackAdapt"]),
+            details.GridRow(label="NV - Retargeting Lookalike Native Video")]
+    note = NS(author="StackAdapt push", date=dt.date(2026, 11, 23),
+              body="Copy with High CTR inventory · Retargeting Native Video · Inventory · 3 US High CTR packages: "
+                   "Copied to 3477401 with 3 High CTR packages, CPM +$0.25, rec caps and bid factors off, live.")
+    details._mark_hc_copy(rows, note)
+    assert rows[0].hc == {"copy": "3477401", "add": 0.25, "on": dt.date(2026, 11, 23), "budget": None}
+    assert rows[1].hc is None
