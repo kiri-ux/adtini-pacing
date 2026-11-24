@@ -950,6 +950,16 @@ def test_pinned_page_shows_only_the_pinned_orders(site):
     html = client.get("/pinned").get_data(as_text=True)
     assert f"/orders/{order_id}" in html
     assert "1 orders" in html
+    assert "Last Edit" in html
+    import db as db_module
+    from models import DayNote
+    with db_module.session_scope() as session:
+        session.add(DayNote(order_id=order_id, date=dt.date(2026, 11, 20), body="Raised CPM", author="Laura"))
+        session.add(DayNote(order_id=order_id, date=dt.date(2026, 11, 24), body="High CTR copy added: AI Display",
+                            author="StackAdapt push"))
+    html = client.get("/pinned").get_data(as_text=True)
+    assert 'data-tip="High CTR copy added: AI Display · StackAdapt push">11/24<' in html
+    assert "Last Edit" not in client.get("/").get_data(as_text=True)
     client.post(f"/pins/{order_id}", data={"on": "0"})
     assert client.get("/pins").get_json()["ids"] == []
 

@@ -6,10 +6,11 @@
     <thead>
       <tr>
         <th class="rowacts"></th>
-        <th>Buyer / PMB</th><th>Partner</th><th>Client</th><th>Order ID</th><th>Products</th><th class="num">CTR (7d)</th>
-        <th class="num">Monthly Serve / Goal</th><th class="meterhead">Monthly Pacing</th>
-        <th class="num">Total Serve / Goal</th><th class="meterhead">Total Pacing</th>
-        <th class="num">Avg Daily Serve / Needed</th><th class="num">Days Left</th>
+        <th class="team">Buyer</th><th>Partner</th><th>Client</th><th>Order ID</th><th>Products</th>
+        <th class="num grp">Monthly Serve / Goal</th><th class="meterhead">Monthly Pacing</th>
+        <th class="num grp">Total Serve / Goal</th><th class="meterhead">Total Pacing</th>
+        <th class="num grp">Avg Daily Serve / Needed</th><th class="num">CTR (7d)</th><th class="num">Days Left</th>
+        {%- if last_edits is defined %}<th class="num">Last Edit</th>{% endif %}
       </tr>
     </thead>
     <tbody>
@@ -50,6 +51,14 @@
           {% endfor %}
           {% if r.products|length > 5 %}<span class="pill-more">+{{ r.products|length - 5 }}</span>{% endif %}
         </div></td>
+        <td class="num pair grp">{{ t.month_to_date|metric(t) }} <i>/ {{ t.month_goal|metric(t) }}</i></td>
+        <td>{{ meter(t.month_to_date, t.month_on_pace, t.month_goal,
+                     t.month_delivery_ratio, r.health, t.is_money) }}</td>
+        <td class="num pair grp">{{ t.to_date|metric(t) }} <i>/ {{ t.total_target|metric(t) }}</i></td>
+        <td>{{ meter(t.to_date, t.on_pace, t.total_target,
+                     t.delivery_ratio, r.total_health, t.is_money) }}
+          {% if r.partial_history %}<span class="partial" title="{% if r.missing %}No serve on record {{ r.missing[0].strftime('%-m/%-d/%y') }} to {{ r.missing[1].strftime('%-m/%-d/%y') }}.{% else %}This order started before the delivery feed's earliest day, so the total figures are short by whatever ran earlier.{% endif %}">partial</span>{% endif %}</td>
+        <td class="num pair grp">{{ t.avg_daily|metric(t) }} <i>/ {{ t.daily_needed|metric(t) }}</i></td>
         {% set c = r.ctr %}
         <td class="num ctrcell{% if c and c.sa_under %} saunder{% endif %}"
           {%- if c and (c.last7 is not none or c.both) %} data-tip="Last 7 days {{ '%.2f%%'|format(c.last7) if c.last7 is not none else '—' }} · Prior 7 days {{ '%.2f%%'|format(c.prior7) if c.prior7 is not none else '—' }}
@@ -57,18 +66,12 @@
           {%- if c and c.last7 is not none %}{{ '%.2f%%'|format(c.last7) }}
             {%- if c.change is not none %}<div class="ctrchg {{ 'up' if c.change > 0 else ('down' if c.change < 0 else '') }}">{{ '%+.2f'|format(c.change) }}</div>{% endif %}
           {%- else %}—{% endif %}</td>
-        <td class="num pair">{{ t.month_to_date|metric(t) }} <i>/ {{ t.month_goal|metric(t) }}</i></td>
-        <td>{{ meter(t.month_to_date, t.month_on_pace, t.month_goal,
-                     t.month_delivery_ratio, r.health, t.is_money) }}</td>
-        <td class="num pair">{{ t.to_date|metric(t) }} <i>/ {{ t.total_target|metric(t) }}</i></td>
-        <td>{{ meter(t.to_date, t.on_pace, t.total_target,
-                     t.delivery_ratio, r.total_health, t.is_money) }}
-          {% if r.partial_history %}<span class="partial" title="{% if r.missing %}No serve on record {{ r.missing[0].strftime('%-m/%-d/%y') }} to {{ r.missing[1].strftime('%-m/%-d/%y') }}.{% else %}This order started before the delivery feed's earliest day, so the total figures are short by whatever ran earlier.{% endif %}">partial</span>{% endif %}</td>
-        <td class="num pair">{{ t.avg_daily|metric(t) }} <i>/ {{ t.daily_needed|metric(t) }}</i></td>
         <td class="num">{{ t.days_left if t.flight_days else '—' }}</td>
+        {%- if last_edits is defined %}{% set le = last_edits.get(r.order.id) %}
+        <td class="num"{% if le %} data-tip="{{ le.body }}{% if le.author %} · {{ le.author }}{% endif %}"{% endif %}>{{ le.date.strftime('%-m/%-d') if le else '—' }}</td>{% endif %}
       </tr>
     {% else %}
-      <tr><td colspan="13" class="empty">{% if empty_text %}{{ empty_text }}{% else %}Nothing to pace yet. Load a delivery file on the
+      <tr><td colspan="{{ 14 if last_edits is defined else 13 }}" class="empty">{% if empty_text %}{{ empty_text }}{% else %}Nothing to pace yet. Load a delivery file on the
         <a href="/data">Data</a> page.{% endif %}</td></tr>
     {% endfor %}
     </tbody>
@@ -76,16 +79,18 @@
     <tfoot>
       <tr class="totalrow">
         <td class="rowacts"></td>
-        <td colspan="6">Pacing total &middot; {{ rows|length }} orders on this page</td>
-        <td class="num pair">{{ page_total.month_to_date|num }} <i>/ {{ page_total.month_goal|num }}</i></td>
+        <td colspan="5">Pacing total &middot; {{ rows|length }} orders on this page</td>
+        <td class="num pair grp">{{ page_total.month_to_date|num }} <i>/ {{ page_total.month_goal|num }}</i></td>
         <td>{{ meter(page_total.month_to_date, page_total.month_on_pace,
                      page_total.month_goal, page_total.month_delivery_ratio,
                      page_total.month_health, false) }}</td>
-        <td class="num pair">{{ page_total.to_date|num }} <i>/ {{ page_total.total_target|num }}</i></td>
+        <td class="num pair grp">{{ page_total.to_date|num }} <i>/ {{ page_total.total_target|num }}</i></td>
         <td>{{ meter(page_total.to_date, page_total.on_pace, page_total.total_target,
                      page_total.delivery_ratio, page_total.health, false) }}</td>
-        <td class="num pair">{{ page_total.avg_daily|num }} <i>/ {{ page_total.daily_needed|num }}</i></td>
+        <td class="num pair grp">{{ page_total.avg_daily|num }} <i>/ {{ page_total.daily_needed|num }}</i></td>
         <td></td>
+        <td></td>
+        {%- if last_edits is defined %}<td></td>{% endif %}
       </tr>
     </tfoot>
     {% endif %}
