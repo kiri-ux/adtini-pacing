@@ -1354,6 +1354,7 @@ def overview(
     daily = _daily_by_line_item(session, spilled) if spilled else {}
 
     out: list[OverviewRow] = []
+    team_codes: dict[int, list[str]] = {}
     for order in orders:
         line_items = [
             li for li in sorted(order.line_items, key=lambda li: (li.sort_order, li.id))
@@ -1394,6 +1395,13 @@ def overview(
             chip.expected += row.on_pace
             chip.goal += row.total_target
 
+        # Who the order needs: only products running now (a pending Meta
+        # line is no PMB line yet).
+        team_codes[order.id] = [
+            products.abbreviation(item.product or "Other")
+            for item, row in zip(line_items, rows)
+            if counts_toward_goal(row) and row.state == "running"
+        ]
         out.append(
             OverviewRow(
                 order=order,
@@ -1421,7 +1429,7 @@ def overview(
     ))
     for r in out:
         r.team = team_sheet.team_for(r.client.market, r.order.buyer, known,
-                                     [p.code for p in r.products])
+                                     team_codes.get(r.order.id) or [p.code for p in r.products])
 
     if needs_terms is True:
         out = [r for r in out if r.total.needs_setup]
