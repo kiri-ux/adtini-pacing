@@ -171,6 +171,9 @@ class GridRow:
     # Feed cost in the flight, and the media budget at the row's CPM.
     media_spent: float | None = None
     media_budget: float | None = None
+    # A High CTR copy of this row's campaign bidding more (from the push notes):
+    # {"copy": SA id, "add": CPM added, "on": date, "budget": group budget note}.
+    hc: dict | None = None
     cpm_flag: str | None = None
     # Running over the rate card's Max CPM.
     cpm_over: str | None = None
@@ -467,6 +470,30 @@ class DetailsView:
 def _source_label(source: str) -> str:
     """The DSP's short name: "Adlib Database" reads as AdLib."""
     return "AdLib" if source.lower().startswith("adlib") else source
+
+
+HC_NOTE = "Copy with High CTR inventory · "
+
+
+def _mark_hc_copy(elements: list, note) -> None:
+    """A pushed High CTR copy shows on its original's row, not as a row of its
+    own: the copy keeps the name, so the feed already merges its serve in."""
+    body = note.body or ""
+    if note.author != "StackAdapt push" or not body.startswith(HC_NOTE):
+        return
+    scope = body[len(HC_NOTE):].split(" · ", 1)[0]
+    m = re.search(r"Copied to (\d+)", body)
+    if not m:
+        return
+    add = re.search(r"CPM \+\$([\d.]+)", body)
+    budget = re.search(r"Group budget \+\$([\d,]+)", body)
+    want = _plain(scope)
+    for e in elements:
+        names = [n.split(" · ", 1)[0] for n in [e.label, *(e.feed_names or [])]]
+        if any(_plain(n) == want or _plain(n).endswith(" " + want) for n in names):
+            e.hc = {"copy": m.group(1), "add": float(add.group(1)) if add else 0.0,
+                    "on": note.date, "budget": budget.group(1) if budget else None}
+            return
 
 
 @timing.timed("details grid")
@@ -800,6 +827,7 @@ def details_view(
     for note in views.day_log(session, order_id):
         if note.line_item_id in (None, item.id):
             notes_by_date.setdefault(note.date, []).append(note)
+            _mark_hc_copy(elements, note)
 
     checks = list(
         session.execute(
