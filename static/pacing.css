@@ -1080,7 +1080,7 @@ table.detailgrid th.prodcell .addform .btn{align-self:flex-end}
 table.daily.pinned.detailgrid tbody th.prodcell:focus-within{z-index:7}
 table.daily.pinned.detailgrid tbody th.prodcell{overflow:visible}
 table.daily.pinned.detailgrid tbody th.prodcell:has(details[open]){z-index:20}
-.hctag{position:relative;display:inline-block;margin-top:3px;padding:1px 6px;border-radius:999px;
+.hctag{position:relative;display:inline-block;margin-left:8px;padding:1px 6px;border-radius:999px;
   background:#E8F1FB;color:#1F4E8C;font-size:10.5px;font-weight:700;cursor:help;white-space:nowrap}
 .hctag .tipbox{display:none;position:absolute;right:0;top:18px;z-index:20;width:240px;white-space:normal;
   text-align:left;background:#fff;color:var(--ink,#1a1a1a);border:1px solid #D6E2F0;border-radius:8px;

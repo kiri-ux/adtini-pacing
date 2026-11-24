@@ -1177,5 +1177,5 @@ def test_a_high_ctr_copy_tags_its_original_row():
               body="Copy with High CTR inventory · Retargeting Native Video · Inventory · 3 US High CTR packages: "
                    "Copied to 3477401 with 3 High CTR packages, CPM +$0.25, rec caps and bid factors off, live.")
     details._mark_hc_copy(rows, note)
-    assert rows[0].hc == {"copy": "3477401", "add": 0.25, "on": dt.date(2026, 11, 23), "budget": None}
+    assert rows[0].hc == {"copy_id": "3477401", "add": 0.25, "on": dt.date(2026, 11, 23), "budget": None}
     assert rows[1].hc is None
