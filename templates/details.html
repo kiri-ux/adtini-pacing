@@ -74,12 +74,6 @@
       {% endif %}
     </p>
     {% endif %}
-    {% if not d.has_split %}
-    <form method="post" class="inlineform buildsplit"
-      action="{{ url_for('details_build', order_id=o.id, line_item_id=d.item.id) }}">
-      <button class="btn save" type="submit">Build split</button>
-    </form>
-    {% endif %}
 <div class="tablecard detailcard">
   {{ grid([d]) }}
   {% if d.has_split %}

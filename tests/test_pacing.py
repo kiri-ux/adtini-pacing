@@ -102,7 +102,8 @@ def test_delivery_outside_the_flight_is_not_counted(comfort_inn):
 
 
 def test_month_target_spreads_over_the_days_the_flight_covers():
-    """A flight starting on 9/17 owes its September impressions in 14 days."""
+    """A flight starting on 9/17 owes 14 of September's 30 days, spread over
+    those 14 (kiri 11/24: launching the 5th or later owes part of the month)."""
     order = Order(
         id=2, client_id=1, name="Blair County WIC", pacing_type="impression",
         start_date=dt.date(2026, 9, 17), end_date=dt.date(2027, 2, 28),
@@ -113,9 +114,10 @@ def test_month_target_spreads_over_the_days_the_flight_covers():
     )
     row = compute_row(item, order, [], dt.date(2026, 9, 21))
     assert row.month_days == 14
-    assert round(row.month_daily_target, 2) == round(200_000 / 14, 2)
+    assert round(row.month_goal) == round(200_000 * 14 / 30)
+    assert round(row.month_daily_target, 2) == round(200_000 / 30, 2)
     # Five days in (the 17th through the 21st).
-    assert round(row.month_on_pace) == round(200_000 / 14 * 5)
+    assert round(row.month_on_pace) == round(200_000 / 30 * 5)
 
 
 def test_a_row_without_sold_terms_is_flagged_but_still_reports_delivery():
@@ -624,3 +626,23 @@ def test_a_renewal_with_no_serve_yet_starts_with_its_sold_months():
     row = compute_row(item, order, [], dt.date(2026, 11, 18))
     assert row.start_date == dt.date(2027, 1, 1)
     assert not row.on_pace
+
+
+def _launch(start, as_of):
+    order = Order(id=6, client_id=1, name="NV", pacing_type="impression",
+                  start_date=start, end_date=dt.date(2027, 10, 30))
+    item = LineItem(id=6, order_id=6, name="NV", monthly_impressions=142_857,
+                    total_impressions=1_714_284, goal_cpm=10.0,
+                    start_date=start, end_date=dt.date(2027, 10, 30))
+    return compute_row(item, order, days(start, as_of, 4_700), as_of)
+
+
+def test_a_line_launching_the_5th_or_later_owes_part_of_its_launch_month():
+    # 139578: launched 11/9, so November owes 22 of 30 days of 142,857.
+    row = _launch(dt.date(2026, 11, 9), dt.date(2026, 11, 21))
+    assert round(row.month_goal) == round(142_857 * 22 / 30)
+
+
+def test_a_line_launching_the_1st_to_4th_owes_the_full_month():
+    row = _launch(dt.date(2026, 11, 4), dt.date(2026, 11, 21))
+    assert row.month_goal == 142_857
