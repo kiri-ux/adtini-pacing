@@ -1192,3 +1192,18 @@ def test_a_high_ctr_copy_tags_its_original_row():
     details._mark_hc_copy(rows, note)
     assert rows[0].hc == {"copy_id": "3477401", "add": 0.25, "on": dt.date(2026, 11, 23), "budget": None}
     assert rows[1].hc is None
+
+
+def test_a_short_high_ctr_note_still_tags_its_original_row():
+    import datetime as dt
+    from types import SimpleNamespace as NS
+
+    import details
+
+    rows = [details.GridRow(label="HHI Under $175K/Renters/First Time Home Buyers Behavioral Display"),
+            details.GridRow(label="Retargeting Display")]
+    note = NS(author="StackAdapt push", date=dt.date(2026, 11, 24),
+              body="High CTR copy added: HHI Under $175K/Renters/First Time Home Buyers Behavioral Display")
+    details._mark_hc_copy(rows, note)
+    assert rows[0].hc == {"copy_id": None, "add": 0.5, "on": dt.date(2026, 11, 24), "budget": None}
+    assert rows[1].hc is None
