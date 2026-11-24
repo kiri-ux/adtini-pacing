@@ -1395,12 +1395,12 @@ def overview(
             chip.expected += row.on_pace
             chip.goal += row.total_target
 
-        # Who the order needs: only products running now (a pending Meta
-        # line is no PMB line yet).
+        # Who the order needs: products running or pending, not finished
+        # ones (kiri 11/24: a pending PMB line still brings in the PMB).
         team_codes[order.id] = [
             products.abbreviation(item.product or "Other")
             for item, row in zip(line_items, rows)
-            if counts_toward_goal(row) and row.state == "running"
+            if row.state == "running"
         ]
         out.append(
             OverviewRow(
