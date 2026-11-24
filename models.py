@@ -31,6 +31,7 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.sql.expression import false as sa_false
 
 
 class Base(DeclarativeBase):
@@ -331,6 +332,8 @@ class StrategyTerms(Base):
     # Added by a buyer rather than seeded from a sheet or the order data.
     # Extra targeting gets bought mid-flight and has to be sayable here.
     added_by_hand: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Flagged by a buyer: this strategy shouldn't be serving any more.
+    paused: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false())
 
     order: Mapped["Order"] = relationship(back_populates="strategy_terms")
 

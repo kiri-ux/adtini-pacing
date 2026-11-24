@@ -399,3 +399,8 @@ def test_a_high_ctr_copy_push_note_is_short():
         "target": "5 US High CTR packages", "result": "Copied to 3478797 with 5 High CTR packages, ...",
     })
     assert body == "High CTR copy added: AI Display"
+    with_budget = app_module._push_note_body({
+        "action": "Copy with High CTR inventory", "scope": "AI Display",
+        "result": "Copied to 3478797 with 5 High CTR packages; Group budget +$430",
+    })
+    assert with_budget == "High CTR copy added: AI Display · Group budget +$430"

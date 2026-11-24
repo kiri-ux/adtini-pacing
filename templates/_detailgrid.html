@@ -131,7 +131,7 @@
   {%- if gap %} <span class="servegap" tabindex="0" aria-label="Last serve: {{ gap }}">&#9888;<span class="tipbox">Last serve: {{ gap }}</span></span>{% endif -%}
 {%- endmacro %}
       {% for e in d.elements %}
-        <tr class="{{ 'soldrow' if e.sold else 'unsoldrow' }}{% if loop.first %} prodstart{% endif %}">
+        <tr class="{{ 'soldrow' if e.sold else 'unsoldrow' }}{% if loop.first %} prodstart{% endif %}{% if e.paused %} pausedrow{% endif %}">
           {% if loop.first %}{{ prodcell() }}{% endif %}<th class="pin">
             <div class="stratcell{% if e.sold %} matched{% endif %}">
             {%- if e.sold -%}
@@ -148,6 +148,9 @@
             <button type="submit" form="splitform" class="strdel" title="Remove row" aria-label="Remove row"
               formaction="{{ url_for('strategy_delete', order_id=d.order.id, strategy_id=e.strategy_id) }}"
               onclick="return confirm('Remove this row?')">&times;</button>
+            <button type="submit" form="splitform" class="strpause{% if e.paused %} on{% endif %}"
+              title="{{ 'Paused' if e.paused else 'Pause' }}" aria-label="{{ 'Unpause row' if e.paused else 'Pause row' }}" aria-pressed="{{ 'true' if e.paused else 'false' }}"
+              formaction="{{ url_for('strategy_pause', order_id=d.order.id, strategy_id=e.strategy_id) }}"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><rect x="4" y="3" width="2.6" height="10" rx=".6" fill="currentColor"/><rect x="9.4" y="3" width="2.6" height="10" rx=".6" fill="currentColor"/></svg></button>
             {%- else -%}
             {% set nm, dsps = d.dsp_parts(e.label) %}<span class="stratname">{{ nm }}{% for f, alt in dsps %}<img class="dspicon" src="{{ url_for('static', filename='dsp/' ~ f ~ '.png') }}" alt="{{ alt }}" title="{{ alt }}">{% endfor %}
               {%- if not e.ordered %} <span class="setupflag">not sold</span>{% endif -%}
