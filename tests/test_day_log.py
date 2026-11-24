@@ -372,8 +372,11 @@ def test_stackadapt_pushes_become_notes_once(site, monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", fake)
     c = app_module.app.test_client()
-    assert c.post(f"/orders/{order_id}/notes/sync-pushes").get_json() == {"added": 1, "removed": 0}
-    assert c.post(f"/orders/{order_id}/notes/sync-pushes").get_json() == {"added": 0, "removed": 0}
+    first = c.post(f"/orders/{order_id}/notes/sync-pushes").get_json()
+    assert (first["added"], first["removed"]) == (1, 0)
+    # The page puts the new note on its day without a reload.
+    assert first["notes"] == [{"date": "2026-11-23", "body": "Cap at 5% · All campaigns · Device · Desktop: Caps set (Desktop 5%) on 4 campaigns"}]
+    assert c.post(f"/orders/{order_id}/notes/sync-pushes").get_json() == {"added": 0, "removed": 0, "notes": []}
     assert "lines=122628" in seen[0]
     with db_module.session_scope() as session:
         note = session.query(DayNote).one()
@@ -383,6 +386,7 @@ def test_stackadapt_pushes_become_notes_once(site, monkeypatch):
         assert note.line_item_id is not None
     # A push corrected in insights' log replaces its note.
     log["log"][0]["result"] = "Caps set (Desktop 5%) on 3 campaigns"
-    assert c.post(f"/orders/{order_id}/notes/sync-pushes").get_json() == {"added": 1, "removed": 1}
+    again = c.post(f"/orders/{order_id}/notes/sync-pushes").get_json()
+    assert (again["added"], again["removed"]) == (1, 1)
     with db_module.session_scope() as session:
         assert session.query(DayNote).one().body.endswith("on 3 campaigns")

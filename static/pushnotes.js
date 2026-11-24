@@ -1,6 +1,21 @@
 // Pull StackAdapt pushes from campaign-insights into this order's Notes.
 // Reloads once when notes were added or replaced so they show in the table.
+// After a push from the recs card, the new note is put on its day in place.
 (function () {
+  function place(notes) {
+    (notes || []).forEach(function (n) {
+      document.querySelectorAll('td.note[data-day="' + n.date + '"]').forEach(function (td) {
+        var mark = td.querySelector('.notemark');
+        if (!mark) {
+          mark = document.createElement('span');
+          mark.className = 'notemark'; mark.tabIndex = 0; mark.innerHTML = '&#9679;';
+          td.appendChild(mark);
+        }
+        var tip = mark.getAttribute('data-tip');
+        mark.setAttribute('data-tip', tip ? tip + ' · ' + n.body : n.body);
+      });
+    });
+  }
   var el = document.querySelector('[data-push-sync]');
   if (!el) return;
   var url = el.dataset.pushSync, key = 'pushsync:' + url;
@@ -15,6 +30,7 @@
           location.reload();
         } else {
           try { sessionStorage.removeItem(key); } catch (e) {}
+          if (!reload) place(j.notes);
         }
         return j;
       }).catch(function () { return {added: 0}; });
