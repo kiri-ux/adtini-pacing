@@ -1093,6 +1093,7 @@ def note_sync_pushes(order_id: int):
         have = {(n.date, n.body) for n in notes}
         wanted = set()
         added = 0
+        fresh = []
         for e in log:
             li = by_line.get(str(e.get("line") or ""))
             try:
@@ -1107,6 +1108,7 @@ def note_sync_pushes(order_id: int):
                 continue
             db.add(DayNote(order_id=order_id, line_item_id=li, date=on, body=body, author=PUSH_NOTE_AUTHOR))
             have.add((on, body))
+            fresh.append({"date": on.isoformat(), "body": body})
             added += 1
         # A push corrected in insights' log replaces its old note.
         removed = 0
@@ -1115,7 +1117,7 @@ def note_sync_pushes(order_id: int):
                 if (n.date, n.body) not in wanted:
                     db.delete(n)
                     removed += 1
-    return {"added": added, "removed": removed}
+    return {"added": added, "removed": removed, "notes": fresh}
 
 
 @app.route("/orders/<int:order_id>/notes/<int:note_id>/delete", methods=["POST"])

@@ -46,7 +46,7 @@
           {% for day in dates %}
             {% set ns = [] %}
             {% for d in gs %}{% for n in d.notes_by_date.get(day, []) %}{% if n not in ns %}{% set _ = ns.append(n) %}{% endif %}{% endfor %}{% endfor %}
-            <td class="note{% if day.day == 1 %} mstart{% endif %}">
+            <td class="note{% if day.day == 1 %} mstart{% endif %}" data-day="{{ day.isoformat() }}">
               {%- if ns -%}
               <span class="notemark" tabindex="0" data-tip="{{ ns|map(attribute='body')|join(' · ') }}">&#9679;</span>
               {%- endif -%}</td>
