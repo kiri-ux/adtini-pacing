@@ -20,7 +20,7 @@
       live.setAttribute("aria-pressed", on ? "true" : "false");
     }
   }
-  try { setLive(localStorage.getItem("pacing.liveonly") === "1"); } catch (e) {}
+  try { setLive(localStorage.getItem("pacing.liveonly") !== "0"); } catch (e) { setLive(true); }
   if (live) {
     live.addEventListener("click", function () {
       var on = !document.body.classList.contains("liveonly");

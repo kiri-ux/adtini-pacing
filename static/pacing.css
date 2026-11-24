@@ -904,7 +904,7 @@ table.daily.pinned.detailgrid tr.prodstart > *{border-top:2px solid var(--navy)}
 table.daily.pinned.detailgrid tbody:first-of-type tr:first-child > *{border-top:0}
 table.daily.pinned.detailgrid tr.cumrow.first > *{border-top:0}
 table.daily.pinned.detailgrid tr.totalrow > *{border-top:0}
-table.daily.pinned.detailgrid tbody tr:last-child > *{border-bottom:0}
+table.daily.pinned.detailgrid tbody:last-of-type tr:last-child > *{border-bottom:0}
 /* The dropdown's own chevron, so it sits the same in every browser. */
 table.detailgrid th.pin .stratcell select{appearance:none;-webkit-appearance:none;padding-right:28px;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2303294D' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
@@ -1097,5 +1097,6 @@ table.daily.pinned.detailgrid tbody th.prodcell:has(details[open]){z-index:20}
 .brktag .tipbox th{font-weight:700;border-bottom:1px solid #E3E8EF}
 .brktag .tipbox td.num,.brktag .tipbox th:not(:first-child){text-align:right}
 .brktag .tipbox tr.on td{font-weight:700}
-table.daily.pinned.detailgrid tr.noterow > *{border-top:2px solid var(--navy)}
+table.daily.pinned.detailgrid tr.cumrow.first.noterow > *{border-top:2px solid var(--navy)}
 table.daily.pinned.detailgrid tr.noterow th.pin{font-weight:600;font-size:12px}
+.detailcard .scroller.detailscroll{padding-bottom:0}
