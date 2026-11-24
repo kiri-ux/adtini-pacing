@@ -102,7 +102,7 @@ def test_the_grid_runs_the_whole_flight(site):
     assert "13-Oct" in html and "31-Oct" in html and "11-Nov" not in html
     html = client.get(f"/orders/{order_id}/details/{li_id}?days=all").get_data(as_text=True)
     assert "13-Oct" in html and "11-Nov" in html
-    assert "Build split" in html
+    assert 'title="Add strategy"' in html
 
 
 def test_monthly_rows_start_again_on_the_first(site):
@@ -157,7 +157,6 @@ def test_build_split_follows_the_setup_guide(site):
     assert terms["D - Behavioral"].rate == 2.04
 
     html = client.get(f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
-    assert "Build split" not in html
     assert "D - Behavioral" in html
 
 
@@ -360,7 +359,7 @@ def test_budgeting_expand_loads_each_products_grid(site):
 
     grids = client.get(f"/orders/{order_id}/budgeting").get_data(as_text=True)
     assert "13-Oct" in grids and "11-Nov" not in grids
-    assert "Build split" in grids
+    assert 'title="Add strategy"' in grids
 
 
 def test_budgeting_expand_steps_through_the_months(site):
@@ -1143,3 +1142,23 @@ def test_short_label_drops_the_advertiser_prefix():
     item.order.client.name = "Acme"
     d.elements = [NS(label="NRF Org - Retargeting"), NS(label="NRF Org - Behavioral")]
     assert short("NRF Org - Behavioral") == "Behavioral"
+
+
+def test_the_plus_adds_a_strategy_row_before_anything_serves(site):
+    import db as db_module
+    from models import DailyDelivery, StrategyTerms
+
+    app_module, (order_id, li_id) = site
+    with db_module.session_scope() as session:
+        session.query(DailyDelivery).delete()
+        session.query(StrategyTerms).filter_by(line_item_id=li_id).delete()
+    client = app_module.app.test_client()
+    url = f"/orders/{order_id}/details/{li_id}/link"
+    client.post(url, data={"term": "new:Geo-Fencing"})
+    client.post(url, data={"term": "new:Geo-Fencing"})
+    with db_module.session_scope() as session:
+        terms = sorted(session.query(StrategyTerms).filter_by(line_item_id=li_id),
+                       key=lambda t: t.sort_order)
+        rows = [(t.label, t.monthly_target, t.rate) for t in terms]
+    assert rows[0][0] == "Geo-Fencing" and rows[0][1] == 450_000 and rows[0][2]
+    assert rows[1][0] == "Geo-Fencing 2" and rows[1][1] is None

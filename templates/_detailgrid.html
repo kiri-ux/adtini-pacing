@@ -86,9 +86,23 @@
     {%- else -%}{{ d.item.product or d.item.name }}{%- endif -%}
     {%- if linked -%}</a>{%- endif -%}
     <span class="liid">{{ d.ext_id or d.item.id }}</span>
-    {%- if linked and not d.has_split -%}
-    <button class="btn2 buildbtn" type="submit" form="build-{{ d.item.id }}">Build split</button>
-    {%- endif -%}
+    {%- set live = d.elements|rejectattr('sold')|selectattr('feed_key')|list -%}
+    <details class="addstrat">
+      <summary title="Add strategy" aria-label="Add strategy">+</summary>
+      <form method="post" class="addform" action="{{ url_for('strategy_link', order_id=d.order.id, line_item_id=d.item.id) }}">
+        <select name="term" required aria-label="Strategy">
+          <option value="">Strategy&hellip;</option>
+          {% for opt in d.strategy_options %}<option value="new:{{ opt }}">{{ d.short_label(opt) }}</option>{% endfor %}
+        </select>
+        {%- if live %}
+        <select name="key" aria-label="Live line">
+          <option value="">Link to live line&hellip;</option>
+          {% for e in live %}<option value="{{ e.feed_key }}">{{ d.short_label(e.feed_names[0] if e.feed_names else e.label) }}</option>{% endfor %}
+        </select>
+        {%- endif %}
+        <button type="submit" class="btn save">Add</button>
+      </form>
+    </details>
   </th>
 {%- endmacro %}
 {% macro stricon(key) -%}
@@ -146,7 +160,7 @@
               <button type="submit" class="btn2 addsplit">&#43; Add to split</button>
             </form>
             {%- endif -%}
-            {%- if e.feed_key and d.has_split %}
+            {%- if e.feed_key %}
             <form method="post" class="linkform" action="{{ url_for('strategy_link', order_id=d.order.id, line_item_id=d.item.id) }}">
               <input type="hidden" name="key" value="{{ e.feed_key }}">
               <select name="term" onchange="this.form.submit()" aria-label="Link to strategy">

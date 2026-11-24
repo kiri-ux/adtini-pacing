@@ -1436,16 +1436,30 @@ def strategy_link(order_id: int, line_item_id: int):
             wanted = form.get("term") or ""
             term = next((t for t in terms if str(t.id) == wanted), None)
             label = wanted[4:].strip() if wanted.startswith("new:") else ""
-            if key and term is None and label:
+            if term is None and label:
                 # Any strategy, not only the sold ones: a row for it, then
-                # the link.
-                term = next((t for t in terms if t.label.lower() == label.lower()), None)
+                # the link. Added from the +, a second of the same targeting
+                # gets its own numbered row.
+                taken = {t.label.lower() for t in terms}
+                term = next((t for t in terms if t.label.lower() == label.lower()), None) if key else None
                 if term is None:
+                    base, n = label, 1
+                    while label.lower() in taken:
+                        n += 1
+                        label = f"{base} {n}"
+                    first = not terms
                     term = StrategyTerms(
                         order_id=order_id, line_item_id=item.id, label=label,
-                        match_key=sheets.match_key(label),
+                        match_key=sheets.match_key(base),
                         sort_order=max((t.sort_order or 0 for t in terms), default=-1) + 1,
-                        source="linked by hand", added_by_hand=True,
+                        source="linked by hand" if key else "added by hand",
+                        added_by_hand=True,
+                        rate=item.goal_cpm or item.goal_cpc or item.goal_cpe,
+                        # The only row carries the whole line.
+                        monthly_target=(item.monthly_impressions or item.monthly_spend
+                                        or item.client_monthly_budget) if first else None,
+                        total_target=(item.total_impressions or item.total_spend
+                                      or item.client_total_budget) if first else None,
                     )
                     db.add(term)
                     terms.append(term)

@@ -11,10 +11,6 @@
   {% endif %}
 </p>
 {% endif %}
-{% for g in grids if not g.has_split %}
-<form method="post" id="build-{{ g.item.id }}" hidden
-  action="{{ url_for('details_build', order_id=o.id, line_item_id=g.item.id) }}"></form>
-{% endfor %}
 {% if grids %}
 <div class="tablecard detailcard">
   {{ grid(grids, linked=true) }}

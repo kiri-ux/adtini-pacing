@@ -1066,3 +1066,17 @@ table.detailgrid th.prodcell .liid{display:block;margin-top:6px;font-size:10.5px
 table.daily.pinned.detailgrid tr.ontrack th.pin,table.daily.pinned.detailgrid tr.cumrow th.pin{font-weight:500;font-size:11px;color:var(--muted);padding-top:4px;padding-bottom:4px}
 table.daily.pinned.detailgrid tr.ontrack td,table.daily.pinned.detailgrid tr.cumrow td{padding-top:4px;padding-bottom:4px}
 table.daily.pinned.detailgrid tr.noterow th.pin{color:var(--text)}
+/* + on the product cell: pick a strategy, optionally link a live line. */
+table.detailgrid th.prodcell .addstrat{position:relative;margin-top:8px}
+table.detailgrid th.prodcell .addstrat summary{list-style:none;width:24px;height:24px;margin:0 auto;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;font-weight:600;line-height:1;
+  background:var(--fill);color:var(--adt-blue);border:1px solid var(--line)}
+table.detailgrid th.prodcell .addstrat summary::-webkit-details-marker{display:none}
+table.detailgrid th.prodcell .addstrat[open] summary,table.detailgrid th.prodcell .addstrat summary:hover{background:var(--adt-blue);color:#fff;border-color:var(--adt-blue)}
+table.detailgrid th.prodcell .addform{position:absolute;left:calc(50% + 18px);top:-8px;z-index:30;width:240px;display:flex;flex-direction:column;gap:8px;
+  background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px;box-shadow:0 6px 20px rgba(3,41,77,.18);text-align:left}
+table.detailgrid th.prodcell .addform select{width:100%}
+table.detailgrid th.prodcell .addform .btn{align-self:flex-end}
+table.daily.pinned.detailgrid tbody th.prodcell:focus-within{z-index:7}
+table.daily.pinned.detailgrid tbody th.prodcell{overflow:visible}
+table.daily.pinned.detailgrid tbody th.prodcell:has(details[open]){z-index:20}
