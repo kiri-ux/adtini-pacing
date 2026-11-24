@@ -513,17 +513,26 @@ def _source_label(source: str) -> str:
 
 
 HC_NOTE = "Copy with High CTR inventory · "
+HC_SHORT = "High CTR copy added: "
+HC_CPM_ADD = 0.50  # campaign-insights sa_push.HC_CPM_ADD (kiri 11/24)
 
 
 def _mark_hc_copy(elements: list, note) -> None:
     """A pushed High CTR copy shows on its original's row, not as a row of its
     own: the copy keeps the name, so the feed already merges its serve in."""
     body = note.body or ""
-    if note.author != "StackAdapt push" or not body.startswith(HC_NOTE):
+    if note.author != "StackAdapt push":
         return
-    scope = body[len(HC_NOTE):].split(" · ", 1)[0]
-    m = re.search(r"Copied to (\d+)", body)
-    if not m:
+    if body.startswith(HC_NOTE):
+        scope = body[len(HC_NOTE):].split(" · ", 1)[0]
+        m = re.search(r"Copied to (\d+)", body)
+        if not m:
+            return
+        copy_id = m.group(1)
+    elif body.startswith(HC_SHORT):
+        # Short push note (PR #150) carries no copy id or CPM; copies bid +$0.50.
+        scope, copy_id = body[len(HC_SHORT):].strip(), None
+    else:
         return
     add = re.search(r"CPM \+\$([\d.]+)", body)
     budget = re.search(r"Group budget \+\$([\d,]+)", body)
@@ -531,7 +540,7 @@ def _mark_hc_copy(elements: list, note) -> None:
     for e in elements:
         names = [n.split(" · ", 1)[0] for n in [e.label, *(e.feed_names or [])]]
         if any(_plain(n) == want or _plain(n).endswith(" " + want) for n in names):
-            e.hc = {"copy_id": m.group(1), "add": float(add.group(1)) if add else 0.0,
+            e.hc = {"copy_id": copy_id, "add": float(add.group(1)) if add else HC_CPM_ADD,
                     "on": note.date, "budget": budget.group(1) if budget else None}
             return
 
