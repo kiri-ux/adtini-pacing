@@ -774,8 +774,9 @@ class OrderView:
 
     @property
     def partial_history(self) -> bool:
-        """True when the flight started before the feed's earliest day."""
-        return bool(
+        """True when the flight started before the feed's earliest day, or a
+        line's serve on record starts weeks after it did."""
+        return bool(missing_serve(self.rows)) or bool(
             self.covers_from
             and self.order.start_date
             and self.order.start_date < self.covers_from
@@ -1185,6 +1186,23 @@ def ctr_by_order(session, orders: list[Order], as_of: dt.date) -> dict[int, CtrS
     return out
 
 
+MISSING_SERVE_DAYS = 14
+
+
+def missing_serve(rows: list[PacingRow]) -> tuple[dt.date, dt.date] | None:
+    """(start, day before first serve) for the counted line whose serve on record starts
+    the longest after its start date, when that is MISSING_SERVE_DAYS or more:
+    serve the feed never loaded, which leaves the total short."""
+    worst = None
+    for r in rows:
+        if not (r.first_served and r.start_date and counts_toward_goal(r)):
+            continue
+        gap = (r.first_served - r.start_date).days
+        if gap >= MISSING_SERVE_DAYS and (worst is None or gap > (worst[1] - worst[0]).days):
+            worst = (r.start_date, r.first_served)
+    return (worst[0], worst[1] - dt.timedelta(days=1)) if worst else None
+
+
 @dataclass
 class OverviewRow:
     order: Order
@@ -1197,6 +1215,9 @@ class OverviewRow:
     paused: list[str] = field(default_factory=list)
     ctr: "CtrStats | None" = None
     team: "team_sheet.Team | None" = None
+    # (line start, last day with no serve) for the line missing the most
+    # days of serve at its start, when one is.
+    missing: tuple[dt.date, dt.date] | None = None
 
     @property
     def health(self) -> str:
@@ -1204,7 +1225,7 @@ class OverviewRow:
 
     @property
     def partial_history(self) -> bool:
-        return bool(
+        return bool(self.missing) or bool(
             self.covers_from
             and self.order.start_date
             and self.order.start_date < self.covers_from
@@ -1411,6 +1432,7 @@ def overview(
                 products=sorted(chips.values(), key=lambda c: -c.goal),
                 covers_from=covers_from,
                 paused=[li.product or "Product" for li, r in zip(line_items, rows) if is_paused(r)],
+                missing=missing_serve(rows),
             )
         )
 
