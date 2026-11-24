@@ -2964,8 +2964,9 @@ def add_extra_lines(session, as_of: dt.date | None = None) -> int:
 
     A Keyword line per market: the order lists Keyword once, the split has
     one Keyword row, and the second line would otherwise sit outside the
-    split as "not sold". Rows are added with no goals for a buyer to fill;
-    nothing existing is changed. Returns how many rows were added.
+    split as "not sold". Rows are added with no goals for a buyer to fill.
+    A running line with the same targeting as a row already there (a High CTR
+    copy) is linked to that row instead. Returns how many rows were added.
     """
     as_of = as_of or latest_delivery_date(session) or dt.date.today()
     order_ids = list(
@@ -3027,6 +3028,21 @@ def add_extra_lines(session, as_of: dt.date | None = None) -> int:
                 claimed.update(keys)
                 # Linked by hand counts as placed, even with no serve today.
                 claimed.update(term_keys(term)[1:])
+            # Auto rows from before that duplicate a row's targeting, with no
+            # goals: fold their link into that row and drop them.
+            for t in list(terms):
+                if t.source != "running, not in split" or t.monthly_target or t.total_target:
+                    continue
+                twin = next((o for o in terms if o is not t and term_keys(o)[0] == term_keys(t)[0]), None)
+                if twin is None:
+                    continue
+                extra = [k for k in term_keys(t)[1:] if k not in term_keys(twin)]
+                if extra:
+                    twin.linked_keys = "\n".join(term_keys(twin)[1:] + extra)
+                session.delete(t)
+                terms.remove(t)
+            if not terms:
+                continue
             owners = {term_keys(t)[0]: t for t in reversed(terms)}
             labels = {t.label for t in terms}
             next_sort = max((t.sort_order or 0) for t in terms) + 1
@@ -3060,6 +3076,14 @@ def add_extra_lines(session, as_of: dt.date | None = None) -> int:
                 if not series.by_date or max(series.by_date) < recent:
                     continue
                 base = label_of.get(key) or series.label
+                # Same targeting as a row already on the line (a High CTR copy
+                # of a campaign, say): the serve joins that row, not a new one.
+                twin = owners.get(sheets.match_key(base) or "")
+                if twin is not None:
+                    twin.linked_keys = "\n".join(
+                        [k for k in (twin.linked_keys or "").splitlines() if k.strip()] + [key])
+                    claimed.add(key)
+                    continue
                 label, n = base, 1
                 while label in labels:
                     n += 1
