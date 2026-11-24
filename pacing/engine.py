@@ -594,7 +594,16 @@ def goal_in_window(row: PacingRow, first: dt.date, last: dt.date) -> float:
         return row.total_target
     if row.prorated:
         return row.daily_target * inclusive_days(first, last)
+    # A line launching on the 5th or later owes only its share of the launch
+    # month; launching on the 1st-4th it owes the full month.
+    start = row.start_date
+    if start and first == start and start.day >= LATE_LAUNCH_DAY:
+        days = (month_bounds(start)[1] - month_bounds(start)[0]).days + 1
+        return row.monthly_target * inclusive_days(first, last) / days
     return row.monthly_target
+
+
+LATE_LAUNCH_DAY = 5
 
 
 def month_goal_on(row: PacingRow, day: dt.date) -> float:
