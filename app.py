@@ -775,6 +775,9 @@ def order_budgeting(order_id: int):
         if months and month not in months:
             current = view.as_of.replace(day=1)
             month = current if current in months else (months[0] if current < months[0] else months[-1])
+        if not show_all and month:
+            # Only the lines scheduled to run in the month shown.
+            grids = [g for g in grids if month in g.months_in_flight] or grids
         for g in grids:
             g.show_all, g.month = show_all, month
         i = months.index(month) if month in months else -1

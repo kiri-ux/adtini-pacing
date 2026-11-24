@@ -159,7 +159,7 @@ body.loginpage{padding-left:0;display:flex;align-items:center;justify-content:ce
    footnote. */
 /* Sits under the figure it qualifies, not beside it - beside it, the badge
    was as wide as the number and read as a second column. */
-.partial{display:block;margin-top:3px;color:var(--muted);font-size:9.5px;
+span.partial{display:block;margin-top:3px;color:var(--muted);font-size:9.5px;
   font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:help}
 .warnbar{background:#FBEBC2;border-radius:10px;color:#7A4C09;font-size:12.5px;
   margin:0 0 16px;padding:11px 15px}
@@ -1097,3 +1097,5 @@ table.daily.pinned.detailgrid tbody th.prodcell:has(details[open]){z-index:20}
 .brktag .tipbox th{font-weight:700;border-bottom:1px solid #E3E8EF}
 .brktag .tipbox td.num,.brktag .tipbox th:not(:first-child){text-align:right}
 .brktag .tipbox tr.on td{font-weight:700}
+table.daily.pinned.detailgrid tr.noterow > *{border-top:2px solid var(--navy)}
+table.daily.pinned.detailgrid tr.noterow th.pin{font-weight:600;font-size:12px}
