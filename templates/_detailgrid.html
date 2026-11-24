@@ -29,7 +29,7 @@
         <th class="num">{{ 'Tot. Spend' if g0.is_money else 'Tot. Impr.' }}</th>
         <th class="num">{{ 'CPC' if g0.is_money else 'CPM' }}</th>
         {% endif %}
-        <th class="num">Run. CPM</th>
+        <th class="num">{{ 'Run. CPM/CPC' if mixed else ('Run. CPC' if g0.is_money else 'Run. CPM') }}</th>
         <th class="num">Day Budg.</th>
         <th class="num">Mon. Budg.</th>
         <th class="num">Media Spent</th>
@@ -61,6 +61,7 @@
    max CPM: above max reads "over", below starting reads "under". #}
 {% macro runcpm(d, x) -%}
   {%- set c = d.card -%}
+  {%- set c = none if d.is_money else c -%}
   {%- set state = 'over' if (x is not none and c and c.max_cpm and x > c.max_cpm) else ('under' if (x is not none and c and c.starting_cpm and x < c.starting_cpm) else '') -%}
   <td class="num runcpm{% if state %} {{ state }}{% endif %}"
     {%- if c and (c.starting_cpm or c.max_cpm) %} title="Starting {{ c.starting_cpm|money if c.starting_cpm else '—' }} · Max {{ c.max_cpm|money if c.max_cpm else '—' }}"{% endif %}>
@@ -209,16 +210,16 @@
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-monthly" value="{{ e.monthly|entry(not money) }}"></td>
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-total" value="{{ e.total|entry(not money) }}"></td>
           <td class="num"><input form="splitform" type="text" name="st-{{ e.strategy_id }}-rate" value="{{ e.rate|entry }}"
-            {%- if not money %} data-cpm-old="{{ e.rate or '' }}" data-served="{{ e.to_date or 0 }}" data-total="{{ e.total or '' }}" data-group="li-{{ d.item.id }}" data-name="{{ d.short_label(d.selected_option(e.label) or e.label) }}"{% endif %}>{% if e.hc %}<span class="hctag" tabindex="0">+{{ e.hc.add|money }}<span class="tipbox">+1 High CTR strategy line live since {{ e.hc.on.strftime('%-m/%-d') }}.{% if e.hc.budget %} Group budget +${{ e.hc.budget }}.{% endif %}</span></span>{% endif %}{% if money %}<div class="clicksub" title="CPC">{{ (e.to_date / e.clicks)|money if e.clicks else '—' }} CPC</div>{% endif %}</td>
+            {%- if not money %} data-cpm-old="{{ e.rate or '' }}" data-served="{{ e.to_date or 0 }}" data-total="{{ e.total or '' }}" data-group="li-{{ d.item.id }}" data-name="{{ d.short_label(d.selected_option(e.label) or e.label) }}"{% endif %}>{% if e.hc %}<span class="hctag" tabindex="0">+{{ e.hc.add|money }}<span class="tipbox">+1 High CTR strategy line live since {{ e.hc.on.strftime('%-m/%-d') }}.{% if e.hc.budget %} Group budget +${{ e.hc.budget }}.{% endif %}</span></span>{% endif %}</td>
           {% elif e.monthly or e.total %}
           {% set base = r.monthly_target or r.total_target %}
           {% set mine = e.monthly if r.monthly_target else e.total %}
           <td class="num">{{ '%.1f'|format(mine / base * 100) if (mine and base) else '—' }}</td>
           <td class="num">{{ val(d, e.monthly) }}</td>
           <td class="num">{{ val(d, e.total) }}</td>
-          <td class="num">{{ e.rate|money if e.rate else '—' }}{% if e.hc %}<span class="hctag" tabindex="0">+{{ e.hc.add|money }}<span class="tipbox">+1 High CTR strategy line live since {{ e.hc.on.strftime('%-m/%-d') }}.{% if e.hc.budget %} Group budget +${{ e.hc.budget }}.{% endif %}</span></span>{% endif %}{% if money %}<div class="clicksub" title="CPC">{{ (e.to_date / e.clicks)|money if e.clicks else '—' }} CPC</div>{% endif %}</td>
+          <td class="num">{{ e.rate|money if e.rate else '—' }}{% if e.hc %}<span class="hctag" tabindex="0">+{{ e.hc.add|money }}<span class="tipbox">+1 High CTR strategy line live since {{ e.hc.on.strftime('%-m/%-d') }}.{% if e.hc.budget %} Group budget +${{ e.hc.budget }}.{% endif %}</span></span>{% endif %}</td>
           {% else %}
-          <td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">&mdash;{% if money %}<div class="clicksub" title="CPC">{{ (e.to_date / e.clicks)|money if e.clicks else '—' }} CPC</div>{% endif %}</td>
+          <td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">&mdash;</td>
           {% endif %}
           {{ runcpm(d, e.run_cpm) }}
           <td class="num" title="Total budget {{ e.total_budget|money if e.total_budget is not none else '—' }}">{{ e.daily_budget|money if e.daily_budget is not none else '—' }}</td>

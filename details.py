@@ -32,7 +32,7 @@ import strategy_menu
 import views
 from models import DayNote, LineItem, StrategyTerms, WeeklyCheck
 from pacing.calendar import inclusive_days, month_window, months_between
-from pacing.engine import PacingRow
+from pacing.engine import PacingRow, month_goal_on
 
 
 # Retargeting falls outside the line item minimums, so it takes a fixed 5%
@@ -94,10 +94,18 @@ def run_cpm(points, as_of: dt.date) -> float | None:
     return (cost / impressions * 1000.0) if impressions else None
 
 
-def _series_points(series):
+def _series_points(series, money: bool = False):
     if series is None:
         return []
-    return [(d, v[0], v[2]) for d, v in series.metrics_by_date.items()]
+    # Ad spend lines run on cost per click: clicks stand in for impressions.
+    i = 1 if money else 0
+    return [(d, v[i], v[2]) for d, v in series.metrics_by_date.items()]
+
+
+def run_rate(points, as_of: dt.date, money: bool) -> float | None:
+    """Running CPM, or running CPC on an ad spend line."""
+    x = run_cpm(points, as_of)
+    return x / 1000.0 if (money and x is not None) else x
 
 
 # How far the running CPM can sit from the setup CPM, and pacing from 100%,
@@ -690,7 +698,7 @@ def details_view(
         ]
         sold = bool(srow.total_target)
         spent = None if money else sum(per_day(series, 2).values())
-        row_run_cpm = None if money else run_cpm(_series_points(series), as_of)
+        row_run_cpm = run_rate(_series_points(series, money), as_of, money)
         # A row with no CPM of its own is bought at the product's goal CPM
         # (the rate card's). Ad spend rows have no card rate to fall back on.
         rate = srow.unit_cost or (None if money else row.unit_cost) or None
@@ -721,7 +729,7 @@ def details_view(
                     spent, srow.total_target, srow.to_date, rate),
                 cpm_flag=None if money else cpm_flag(
                     row_run_cpm, rate, srow.to_date, srow.on_pace),
-                cpm_over=over_max(row_run_cpm),
+                cpm_over=None if money else over_max(row_run_cpm),
                 strategy_id=srow.strategy_id,
                 targets=term.targets if term else None,
                 ordered=combined or key in ordered,
@@ -736,7 +744,7 @@ def details_view(
             key.split("#")[0] in split_keys or key.split("#")[0] in ordered
         )
         by_date = per_day(series, index)
-        feed_cpm = None if money else run_cpm(_series_points(series), as_of)
+        feed_cpm = run_rate(_series_points(series, money), as_of, money)
         est = estimate(key)
         if est.get("total"):
             est["remaining"] = max(est["total"] - sum(by_date.values()), 0.0)
@@ -822,7 +830,7 @@ def details_view(
         elif start and end and row.monthly_target:
             window = month_window(day, start, end)
             days = inclusive_days(*window) if window else 0
-            month_daily = row.monthly_target / days if days else 0.0
+            month_daily = month_goal_on(row, day) / days if days else 0.0
         else:
             month_daily = 0.0
         # What each day needed, given what had served before it.
@@ -934,8 +942,9 @@ def details_view(
         checks=checks,
         flags=flags,
         day_state=day_state,
-        run_cpm=None if money else run_cpm(
-            [(p.date, p.impressions, p.cost) for p in row.daily], as_of),
+        run_cpm=run_rate(
+            [(p.date, p.clicks if money else p.impressions, p.cost) for p in row.daily],
+            as_of, money),
         media_spent=(row.to_date or None) if money else product_spent,
         media_budget=(row.total_target or None) if money else (
             product_spent + split_left if split_left is not None else media_budget(
