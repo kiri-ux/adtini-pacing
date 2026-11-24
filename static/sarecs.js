@@ -35,12 +35,30 @@ document.querySelectorAll('.sarecs').forEach(function (card) {
       var tab = 'open';
       var byRid = {};
       j.groups.forEach(function (g) { (g.recs || []).forEach(function (r) { byRid[r.rid] = r; }); });
+      // Every slice of the breakdown, so a cut can be weighed against the rest.
+      function brk(r) {
+        var b = r.breakout;
+        if (!b || b.length < 2) return '';
+        var rows = b.map(function (x) {
+          return '<tr' + (x.name === r.target ? ' class="on"' : '') + '><td>' + esc(x.name) + '</td><td class="num">' + num(x.impressions) +
+            '</td><td class="num">' + pct(x.share, 0) + '</td><td class="num">' + pct(x.ctr) + '</td></tr>';
+        }).join('');
+        return '<span class="brktag" tabindex="0">All ' + esc(r.kind === 'Audience' ? 'audiences' : r.kind) +
+          '<span class="tipbox"><table><thead><tr><th>' + esc(r.kind) + '</th><th>Impr</th><th>Share</th><th>CTR</th></tr></thead><tbody>' + rows + '</tbody></table></span></span>';
+      }
+      body.addEventListener('mouseover', function (e) {
+        var t = e.target.closest('.brktag');
+        if (!t) return;
+        var tip = t.querySelector('.tipbox'), rc = t.getBoundingClientRect();
+        tip.style.left = Math.max(8, Math.min(rc.left, window.innerWidth - 340)) + 'px';
+        tip.style.top = (rc.bottom + 4) + 'px';
+      });
       function row(r) {
         var cell = r.pushed ? '<span class="recdone" title="' + esc(r.pushed.at) + '">' + esc(r.pushed.result) + '</span>' + (r.pushed.result === 'Dropped' ? '' : liveLink(r.pushed.result, r.link))
           : (r.can_push ? '<button type="button" class="recpush" data-rid="' + esc(r.rid) + '" data-link="' + esc(r.link || '') + '">Push</button>' : '') +
             (dropUrl ? ' <button type="button" class="recdrop" data-rid="' + esc(r.rid) + '">Drop</button>' : '');
         return '<tr><td class="nowrap"><span class="recflag ' + esc(r.tone) + '">' + esc(label(r.action)) + '</span></td>' +
-          '<td>' + esc(r.scope || 'All in group') + '</td><td>' + esc(r.kind) + '</td><td>' + esc(r.target) + '</td>' +
+          '<td>' + esc(r.scope || 'All in group') + '</td><td>' + esc(r.kind) + '</td><td>' + esc(r.target) + brk(r) + '</td>' +
           '<td class="num">' + num(r.impressions) + '</td><td class="num">' + (r.share ? pct(r.share, 0) : '—') + '</td>' +
           '<td class="num">' + (r.impressions ? pct(r.ctr) : '—') + '</td><td class="nowrap pushcell">' + cell + '</td></tr>';
       }
