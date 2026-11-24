@@ -1765,9 +1765,17 @@ def pinned():
         order = {oid: i for i, oid in enumerate(ids)}
         rows.sort(key=lambda r: order.get(r.order.id, len(order)))
         as_of = rows[0].as_of if rows else views.latest_delivery_date(db)
+        # The last change on each order: an SA push or a note someone wrote.
+        last_edits = {}
+        if ids:
+            for n in db.execute(
+                select(DayNote).where(DayNote.order_id.in_(ids))
+                .order_by(DayNote.date, DayNote.id)
+            ).scalars():
+                last_edits[n.order_id] = n
         return render_template(
             "pinned.html", nav="pinned", rows=rows,
-            page_total=views.page_total(rows), as_of=as_of,
+            page_total=views.page_total(rows), as_of=as_of, last_edits=last_edits,
         )
 
 

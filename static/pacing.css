@@ -1059,7 +1059,7 @@ button.recpush:disabled{background:#5B7896;cursor:default}
 button.recdrop{background:none;color:#03294D;border:1px solid #C9D3DE;border-radius:8px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer}
 button.recdrop:hover{background:#F2F5F9}
 button.recdrop:disabled{color:#8A9BB0;cursor:default}
-table.overview td.team{white-space:nowrap}
+table.overview td.team,table.overview th.team{white-space:nowrap;width:1%;padding-right:4px}
 table.overview td.team .ini{display:inline-block;min-width:26px;padding:1px 5px;margin-right:4px;border-radius:10px;border:2px solid var(--line,#D0D5DD);background:#fff;font-size:11px;font-weight:600;text-align:center}
 table.detailgrid th.prodcell .liid{display:block;margin-top:6px;font-size:10.5px;font-weight:500;color:var(--muted);font-variant-numeric:tabular-nums}
 /* Summary rows under each product read as notes on the total, not rows of their own. */
@@ -1100,3 +1100,7 @@ table.daily.pinned.detailgrid tbody th.prodcell:has(details[open]){z-index:20}
 table.daily.pinned.detailgrid tr.cumrow.first.noterow > *{border-top:2px solid var(--navy)}
 table.daily.pinned.detailgrid tr.noterow th.pin{font-weight:600;font-size:12px}
 .detailcard .scroller.detailscroll{padding-bottom:0}
+
+/* Monthly, total and daily read as separate groups */
+table.overview th.grp,table.overview td.grp{padding-left:28px}
+table.overview th.meterhead{min-width:190px}
