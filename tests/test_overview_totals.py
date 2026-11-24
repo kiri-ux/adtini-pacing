@@ -273,3 +273,28 @@ def test_a_line_whose_serve_starts_weeks_late_is_partial():
     assert got == (dt.date(2026, 1, 1), dt.date(2026, 2, 28))
     rows[0].first_served = dt.date(2026, 1, 5)
     assert views.missing_serve(rows) is None
+
+
+def test_delivery_for_a_known_line_item_is_not_adopted_twice(session):
+    """Rooterman 135309: rows with a blank order id but a line item id already
+    on an order made a second, goal-less Unmatched order."""
+    from orderbook import adopt_unmatched_delivery
+    order, item = _build(session, flight_end=dt.date(2026, 10, 31), delivery_days=[])
+    # An earlier run's duplicate, with only an auto push note on it.
+    from models import DayNote
+    dup = Order(client_id=order.client_id, name="Acme - Display - 7001", status="Unmatched",
+                pacing_type="impression", order_type="Insertion Order")
+    session.add(dup)
+    session.flush()
+    session.add(LineItem(order_id=dup.id, external_id="7001", name="Display", product="Display Ads"))
+    session.add(DayNote(order_id=dup.id, date=AS_OF, body="High CTR copy added: AI", author="StackAdapt push"))
+    session.add(DailyDelivery(
+        date=AS_OF, data_source="StackAdapt", campaign_id="C9", strategy_id="S9",
+        client_name="Acme", external_order_id=None, external_line_item_id="7001",
+        order_level_name="Acme - Display - 7001", product="Display Ads", impressions=10.0,
+    ))
+    session.flush()
+
+    result = adopt_unmatched_delivery(session)
+    assert result.orders_added == 0 and result.orders_removed == 1
+    assert session.query(Order).filter(Order.status == "Unmatched").count() == 0
