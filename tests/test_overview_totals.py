@@ -192,6 +192,33 @@ def test_ctr_compares_the_last_week_and_flags_stackadapt_under_adlib(session):
     assert ctr.stackadapt_ctr == pytest.approx(0.2)
 
 
+def test_ctr_leaves_out_ctv_and_audio(session):
+    order, item = _build(session, flight_end=dt.date(2026, 10, 31), delivery_days=[])
+    for ext, product in (("7002", "Connected TV Ads"), ("7003", "Online Audio Ads"),
+                         ("7004", "CTV + Video Ads")):
+        session.add(LineItem(
+            order_id=order.id, external_id=ext, name=product, product=product,
+            monthly_impressions=30_000.0, total_impressions=90_000.0, goal_cpm=20.0,
+        ))
+    session.flush()
+
+    def add(li, feed, clicks):
+        session.add(DailyDelivery(
+            date=AS_OF, data_source="StackAdapt", campaign_id=f"{li}-{feed}",
+            strategy_id=f"{li}-{feed}", client_name="Acme", external_order_id="900",
+            external_line_item_id=li, product=feed, impressions=1_000.0, clicks=clicks,
+        ))
+    add("7001", "Display", 4.0)
+    add("7002", "CTV", 50.0)
+    add("7003", "Online Audio", 50.0)
+    add("7004", "CTV", 50.0)    # the CTV half of CTV + Video
+    add("7004", "Video", 2.0)   # the video half counts
+    session.flush()
+
+    ctr = views.overview(session, as_of=AS_OF)[0].ctr
+    assert ctr.last7 == pytest.approx(0.3)
+
+
 def test_a_finished_line_with_no_serve_on_record_is_left_out_of_the_total(session):
     """Keystone 26760: a 2022 line with its goal and none of its serve read
     the order's total as 47% beside a running line at 103%."""
