@@ -172,7 +172,7 @@ class GridRow:
     media_spent: float | None = None
     media_budget: float | None = None
     # A High CTR copy of this row's campaign bidding more (from the push notes):
-    # {"copy": SA id, "add": CPM added, "on": date, "budget": group budget note}.
+    # {"copy_id": SA id, "add": CPM added, "on": date, "budget": group budget note}.
     hc: dict | None = None
     cpm_flag: str | None = None
     # Running over the rate card's Max CPM.
@@ -491,7 +491,7 @@ def _mark_hc_copy(elements: list, note) -> None:
     for e in elements:
         names = [n.split(" · ", 1)[0] for n in [e.label, *(e.feed_names or [])]]
         if any(_plain(n) == want or _plain(n).endswith(" " + want) for n in names):
-            e.hc = {"copy": m.group(1), "add": float(add.group(1)) if add else 0.0,
+            e.hc = {"copy_id": m.group(1), "add": float(add.group(1)) if add else 0.0,
                     "on": note.date, "budget": budget.group(1) if budget else None}
             return
 
