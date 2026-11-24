@@ -375,18 +375,27 @@ def test_stackadapt_pushes_become_notes_once(site, monkeypatch):
     first = c.post(f"/orders/{order_id}/notes/sync-pushes").get_json()
     assert (first["added"], first["removed"]) == (1, 0)
     # The page puts the new note on its day without a reload.
-    assert first["notes"] == [{"date": "2026-11-23", "body": "Cap at 5% · All campaigns · Device · Desktop: Caps set (Desktop 5%) on 4 campaigns"}]
+    assert first["notes"] == [{"date": "2026-11-23", "body": "Cap at 5% · All campaigns · Desktop"}]
     assert c.post(f"/orders/{order_id}/notes/sync-pushes").get_json() == {"added": 0, "removed": 0, "notes": []}
     assert "lines=122628" in seen[0]
     with db_module.session_scope() as session:
         note = session.query(DayNote).one()
         assert note.date == dt.date(2026, 11, 23)
         assert note.author == "StackAdapt push"
-        assert note.body == "Cap at 5% · All campaigns · Device · Desktop: Caps set (Desktop 5%) on 4 campaigns"
+        assert note.body == "Cap at 5% · All campaigns · Desktop"
         assert note.line_item_id is not None
     # A push corrected in insights' log replaces its note.
-    log["log"][0]["result"] = "Caps set (Desktop 5%) on 3 campaigns"
+    log["log"][0]["target"] = "App"
     again = c.post(f"/orders/{order_id}/notes/sync-pushes").get_json()
     assert (again["added"], again["removed"]) == (1, 1)
     with db_module.session_scope() as session:
-        assert session.query(DayNote).one().body.endswith("on 3 campaigns")
+        assert session.query(DayNote).one().body.endswith("App")
+
+
+def test_a_high_ctr_copy_push_note_is_short():
+    import app as app_module
+    body = app_module._push_note_body({
+        "action": "Copy with High CTR inventory", "scope": "AI Display", "kind": "Inventory",
+        "target": "5 US High CTR packages", "result": "Copied to 3478797 with 5 High CTR packages, ...",
+    })
+    assert body == "High CTR copy added: AI Display"

@@ -1057,9 +1057,13 @@ PUSH_NOTE_AUTHOR = "StackAdapt push"
 
 
 def _push_note_body(e: dict) -> str:
-    parts = [e.get("action"), e.get("scope") or "All in group", e.get("kind"), e.get("target")]
-    body = " · ".join(str(p) for p in parts if p)
-    return f"{body}: {e['result']}" if e.get("result") else body
+    """A short note per push (kiri 11/24: the push result is too long)."""
+    action = str(e.get("action") or "")
+    scope = e.get("scope") or "All in group"
+    if "high ctr" in action.lower() and action.lower().startswith("copy"):
+        return f"High CTR copy added: {scope}"
+    parts = [action, scope, e.get("target")]
+    return " · ".join(str(p) for p in parts if p)
 
 
 @app.route("/orders/<int:order_id>/notes/sync-pushes", methods=["POST"])
