@@ -174,6 +174,19 @@ class GridRow:
     # A High CTR copy of this row's campaign bidding more (from the push notes):
     # {"copy_id": SA id, "add": CPM added, "on": date, "budget": group budget note}.
     hc: dict | None = None
+
+    @property
+    def budget_cpm(self) -> float | None:
+        """The CPM budgets are set at. A High CTR copy bidding more is taken to
+        get half the row's serve (an even share with its original), the way the
+        group budget was raised for it."""
+        if not self.rate:
+            return self.rate
+        return self.rate + (self.hc["add"] / 2 if self.hc else 0.0)
+
+    @property
+    def monthly_budget(self) -> float:
+        return (self.monthly or 0.0) * (self.budget_cpm or 0.0) / 1000.0 if self.rate else 0.0
     cpm_flag: str | None = None
     # Running over the rate card's Max CPM.
     cpm_over: str | None = None
@@ -418,6 +431,19 @@ class DetailsView:
         if len(heads) == 1 and h in heads and len(getattr(self, "elements", None) or []) > 1:
             return rest.strip()
         return label
+
+    DSP_ICONS = {"adlib": "AdLib", "stackadapt": "StackAdapt"}
+
+    def dsp_parts(self, label: str) -> tuple[str, list[tuple[str, str]]]:
+        """A feed name without its " · AdLib, StackAdapt" tail, plus the
+        (icon file, DSP name) pairs that tail named."""
+        head, sep, tail = (label or "").rpartition(" · ")
+        if not sep:
+            return self.short_label(label), []
+        keys = [_plain(t).replace(" ", "") for t in tail.split(",")]
+        if not keys or any(k not in self.DSP_ICONS for k in keys):
+            return self.short_label(label), []
+        return self.short_label(head), [(k, self.DSP_ICONS[k]) for k in keys]
 
     def is_future(self, day: dt.date) -> bool:
         return day > (self.partial_day or self.as_of)
@@ -860,6 +886,15 @@ def details_view(
     if checks and checks[0].tracking_conversions and not row.conversions:
         flags.append("Tracking conversions - none reported")
 
+    # Rows with a High CTR copy budget at the higher CPM.
+    if not money:
+        for e in elements:
+            if e.hc and e.rate:
+                if e.daily_budget is not None:
+                    e.daily_budget = e.daily_budget * e.budget_cpm / e.rate
+                e.media_budget = media_budget(e.media_spent or 0.0, e.total,
+                                              e.to_date if e.media_spent is not None else 0.0, e.budget_cpm)
+
     # With a split, the Total row's budgets are the rows' added up, each at
     # its own CPM. The product's goal CPM is the client's rate, not what any
     # DSP line is set to, so budgets from it never matched the rows above.
@@ -870,7 +905,7 @@ def details_view(
     split_left = None
     if priced and not money:
         split_left = sum(
-            max((e.total or 0.0) - e.to_date, 0.0) * e.rate / 1000.0 for e in priced
+            max((e.total or 0.0) - e.to_date, 0.0) * e.budget_cpm / 1000.0 for e in priced
         )
 
     return DetailsView(

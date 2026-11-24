@@ -515,7 +515,7 @@ def test_the_grid_shows_media_cost(site):
     assert behavioral.media_budget == pytest.approx(14 * 20.4 + 287_500 * 2.04 / 1000)
     assert d.media_spent == pytest.approx(14 * 20.4)
     html = client.get(f"/orders/{order_id}/details/{li_id}").get_data(as_text=True)
-    assert "Media Budg." in html
+    assert "Total Budg." in html
 
 
 def test_the_morning_sweep_drafts_missing_splits(site):
