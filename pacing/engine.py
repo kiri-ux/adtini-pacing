@@ -82,6 +82,8 @@ class PacingRow:
     # days of this month it runs.
     month_goal: float = 0.0
     months_running: float | None = None
+    # The first day the feed has serve for this line.
+    first_served: dt.date | None = None
     prorated: bool = False
     # Sold as one month: its month is the flight, so monthly and total read
     # the same.
@@ -387,9 +389,10 @@ def compute_row(
     attr = _primary_attr(pacing_type)
     gross = row.client_cost_ratio if pacing_type == PACING_EVENT else 1.0
 
+    first = totals.first if totals is not None else next(
+        (p.date for p in points if getattr(p, attr)), None)
+    row.first_served = first
     if line_item.start_date in (None, order.start_date):
-        first = totals.first if totals is not None else next(
-            (p.date for p in points if getattr(p, attr)), None)
         begin = sold_window_start(row, start, end, first, as_of)
         if begin:
             start = begin

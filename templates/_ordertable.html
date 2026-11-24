@@ -63,7 +63,7 @@
         <td class="num pair">{{ t.to_date|metric(t) }} <i>/ {{ t.total_target|metric(t) }}</i></td>
         <td>{{ meter(t.to_date, t.on_pace, t.total_target,
                      t.delivery_ratio, r.total_health, t.is_money) }}
-          {% if r.partial_history %}<span class="partial" title="This order started before the delivery feed's earliest day, so the total figures are short by whatever ran earlier.">partial</span>{% endif %}</td>
+          {% if r.partial_history %}<span class="partial" title="{% if r.missing %}No serve on record {{ r.missing[0].strftime('%-m/%-d/%y') }} to {{ r.missing[1].strftime('%-m/%-d/%y') }}.{% else %}This order started before the delivery feed's earliest day, so the total figures are short by whatever ran earlier.{% endif %}">partial</span>{% endif %}</td>
         <td class="num pair">{{ t.avg_daily|metric(t) }} <i>/ {{ t.daily_needed|metric(t) }}</i></td>
         <td class="num">{{ t.days_left if t.flight_days else '—' }}</td>
       </tr>

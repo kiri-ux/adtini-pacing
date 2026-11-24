@@ -232,3 +232,17 @@ def test_only_the_people_who_run_the_orders_products_show():
     assert t.buyer and t.paid_media
     t = team.team_for(p, "Amin Vora", codes=[])
     assert t.buyer and t.paid_media
+
+
+def test_a_line_whose_serve_starts_weeks_late_is_partial():
+    import datetime as dt
+    from types import SimpleNamespace as NS
+
+    import views
+
+    rows = [NS(first_served=dt.date(2026, 3, 1), start_date=dt.date(2026, 1, 1),
+               status="IO Live", state="running", end_date=dt.date(2026, 12, 31))]
+    got = views.missing_serve(rows)
+    assert got == (dt.date(2026, 1, 1), dt.date(2026, 2, 28))
+    rows[0].first_served = dt.date(2026, 1, 5)
+    assert views.missing_serve(rows) is None
