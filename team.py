@@ -53,10 +53,10 @@ COLORS = {
 }
 
 
-# Products the paid media buyer runs (social, search, YouTube). Every
-# other ad product is the buyer's. Services that are not ad buys need
-# neither.
-PAID_MEDIA_CODES = {"M", "MM", "ML", "TT", "LI", "PPC", "PM", "PMM", "YT"}
+# Products the paid media buyer runs: PPC, Performance Max, LinkedIn and
+# YouTube (kiri 11/25). Meta, TikTok and every other ad product are the
+# buyer's. Services that are not ad buys need neither.
+PAID_MEDIA_CODES = {"LI", "PPC", "PM", "PMM", "YT"}
 SERVICE_CODES = {"SEO", "ORM", "LC", "GA4", "ID"}
 
 

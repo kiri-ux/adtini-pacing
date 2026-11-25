@@ -253,10 +253,12 @@ def test_only_the_people_who_run_the_orders_products_show():
     p = "7 Mountains PA State College"
     t = team.team_for(p, "Amin Vora", codes=["D"])
     assert t.buyer.initials == "AV" and t.paid_media is None
-    t = team.team_for(p, "Amin Vora", codes=["M", "PPC"])
+    t = team.team_for(p, "Amin Vora", codes=["PM", "PPC"])
     assert t.buyer is None and t.paid_media.initials == "HM"
-    t = team.team_for(p, "Amin Vora", codes=["D", "M"])
+    t = team.team_for(p, "Amin Vora", codes=["D", "PPC"])
     assert t.buyer and t.paid_media
+    t = team.team_for(p, "Amin Vora", codes=["SM", "M"])
+    assert t.buyer.initials == "AV" and t.paid_media is None
     t = team.team_for(p, "Amin Vora", codes=[])
     assert t.buyer and t.paid_media
 
