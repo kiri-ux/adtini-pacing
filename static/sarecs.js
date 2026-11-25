@@ -40,11 +40,12 @@ document.querySelectorAll('.sarecs').forEach(function (card) {
         var b = r.breakout;
         if (!b || b.length < 2) return '';
         var rows = b.map(function (x) {
-          return '<tr' + (x.name === r.target ? ' class="on"' : '') + '><td>' + esc(x.name) + '</td><td class="num">' + num(x.impressions) +
-            '</td><td class="num">' + pct(x.share, 0) + '</td><td class="num">' + pct(x.ctr) + '</td></tr>';
+          var on = x.name === r.target ? ' on' : '';
+          return '<span class="bn' + on + '">' + esc(x.name) + '</span><span class="bv' + on + '">' + num(x.impressions) +
+            '</span><span class="bv' + on + '">' + pct(x.share, 0) + '</span><span class="bv' + on + '">' + pct(x.ctr) + '</span>';
         }).join('');
         return '<span class="brktag" tabindex="0">All ' + esc(r.kind === 'Audience' ? 'audiences' : (r.kind === 'Creative' ? 'ads' : r.kind)) +
-          '<span class="tipbox"><table><thead><tr><th>' + esc(r.kind) + '</th><th>Impr</th><th>Share</th><th>CTR</th></tr></thead><tbody>' + rows + '</tbody></table></span></span>';
+          '<span class="tipbox"><span class="bgrid"><span class="bh">' + esc(r.kind) + '</span><span class="bh bv">Impr</span><span class="bh bv">Share</span><span class="bh bv">CTR</span>' + rows + '</span></span></span>';
       }
       body.addEventListener('mouseover', function (e) {
         var t = e.target.closest('.brktag');
