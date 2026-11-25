@@ -1112,3 +1112,8 @@ table.overview th.meterhead{min-width:190px}
 .stratcell .strpause.on{color:#B54708}
 tr.pausedrow th.pin,tr.pausedrow td{font-style:italic;color:#667085}
 tr.pausedrow input{font-style:italic;color:#667085}
+
+/* Order lists: pacing bars at half width (kiri 11/25) */
+table.ordertable .meter{min-width:0}
+table.ordertable .mtrack{flex:0 0 72px}
+table.ordertable th.meterhead{min-width:0}

@@ -2,14 +2,14 @@
 {% from "_meter.html" import meter %}
 <div class="tablecard">
  <div class="scroller">
-  <table class="overview">
+  <table class="overview ordertable">
     <thead>
       <tr>
         <th class="rowacts"></th>
         <th class="team">Buyer</th><th>Partner</th><th>Client</th><th>Order ID</th><th>Products</th>
         <th class="num grp">Monthly Serve / Goal</th><th class="meterhead">Monthly Pacing</th>
         <th class="num grp">Total Serve / Goal</th><th class="meterhead">Total Pacing</th>
-        <th class="num grp">Avg Daily Serve / Needed</th><th class="num">CTR (7d)</th><th class="num">Days Left</th>
+        <th class="num grp">Avg Daily Serve / Needed</th><th class="num">CTR (7d)</th><th class="num">Days Left</th><th>Start Date</th><th>End Date</th>
         {%- if last_edits is defined %}<th class="num">Last Edit</th>{% endif %}
       </tr>
     </thead>
@@ -67,11 +67,13 @@
             {%- if c.change is not none %}<div class="ctrchg {{ 'up' if c.change > 0 else ('down' if c.change < 0 else '') }}">{{ '%+.2f'|format(c.change) }}</div>{% endif %}
           {%- else %}—{% endif %}</td>
         <td class="num">{{ t.days_left if t.flight_days else '—' }}</td>
+        <td class="nowrap">{{ r.order.start_date.strftime('%-m/%-d/%y') if r.order.start_date else '—' }}</td>
+        <td class="nowrap">{{ r.order.end_date.strftime('%-m/%-d/%y') if r.order.end_date else '—' }}</td>
         {%- if last_edits is defined %}{% set le = last_edits.get(r.order.id) %}
         <td class="num"{% if le %} data-tip="{{ le.body }}{% if le.author %} · {{ le.author }}{% endif %}"{% endif %}>{{ le.date.strftime('%-m/%-d') if le else '—' }}</td>{% endif %}
       </tr>
     {% else %}
-      <tr><td colspan="{{ 14 if last_edits is defined else 13 }}" class="empty">{% if empty_text %}{{ empty_text }}{% else %}Nothing to pace yet. Load a delivery file on the
+      <tr><td colspan="{{ 16 if last_edits is defined else 15 }}" class="empty">{% if empty_text %}{{ empty_text }}{% else %}Nothing to pace yet. Load a delivery file on the
         <a href="/data">Data</a> page.{% endif %}</td></tr>
     {% endfor %}
     </tbody>
@@ -89,7 +91,7 @@
                      page_total.delivery_ratio, page_total.health, false) }}</td>
         <td class="num pair grp">{{ page_total.avg_daily|num }} <i>/ {{ page_total.daily_needed|num }}</i></td>
         <td></td>
-        <td></td>
+        <td></td><td></td><td></td>
         {%- if last_edits is defined %}<td></td>{% endif %}
       </tr>
     </tfoot>
