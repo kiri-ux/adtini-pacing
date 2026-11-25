@@ -2160,7 +2160,9 @@ def api_lines():
     """Every Insertion Order line in the book, for tools that build from RZ data.
 
     The orders here come from the daily RZ sync, so dates, statuses and new IOs
-    are current (the S3 orders exports only land on the 1st). Token auth
+    are current (the S3 orders exports only land on the 1st). delivered_to_date
+    sums every day of delivery on the line (all data sources) through
+    delivered_through. Token auth
     (X-Export-Token = EXPORT_TOKEN), not the login: scripts call it.
     """
     token = os.getenv("EXPORT_TOKEN", "")
@@ -2179,6 +2181,12 @@ def api_lines():
                 .join(Client, Order.client_id == Client.id)
                 .filter(LineItem.external_id.isnot(None))
                 .all())
+        # Delivered to date per line, every data source, plus the last day with data, so a tool can work out
+        # what's left without an RZ login (Paul's worker, 11/25)
+        served = {lid: (imps, last) for lid, imps, last in db.query(
+            DailyDelivery.external_line_item_id, func.sum(DailyDelivery.impressions), func.max(DailyDelivery.date))
+            .filter(DailyDelivery.external_line_item_id.isnot(None))
+            .group_by(DailyDelivery.external_line_item_id).all()}
         lines = [{
             "line_item_id": li.external_id,
             "line_item_name": li.name,
@@ -2198,6 +2206,8 @@ def api_lines():
             "buyer": o.buyer or c.buyer,
             "client": c.name,
             "market": c.market,
+            "delivered_to_date": int(served.get(li.external_id, (0, None))[0] or 0),
+            "delivered_through": iso(served.get(li.external_id, (0, None))[1]),
         } for li, o, c in rows]
     return {"rz_synced": rz.split("/")[-1] if rz else None, "count": len(lines), "lines": lines}
 
