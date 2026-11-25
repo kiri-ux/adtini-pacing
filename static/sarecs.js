@@ -43,14 +43,14 @@ document.querySelectorAll('.sarecs').forEach(function (card) {
           return '<tr' + (x.name === r.target ? ' class="on"' : '') + '><td>' + esc(x.name) + '</td><td class="num">' + num(x.impressions) +
             '</td><td class="num">' + pct(x.share, 0) + '</td><td class="num">' + pct(x.ctr) + '</td></tr>';
         }).join('');
-        return '<span class="brktag" tabindex="0">All ' + esc(r.kind === 'Audience' ? 'audiences' : r.kind) +
+        return '<span class="brktag" tabindex="0">All ' + esc(r.kind === 'Audience' ? 'audiences' : (r.kind === 'Creative' ? 'ads' : r.kind)) +
           '<span class="tipbox"><table><thead><tr><th>' + esc(r.kind) + '</th><th>Impr</th><th>Share</th><th>CTR</th></tr></thead><tbody>' + rows + '</tbody></table></span></span>';
       }
       body.addEventListener('mouseover', function (e) {
         var t = e.target.closest('.brktag');
         if (!t) return;
         var tip = t.querySelector('.tipbox'), rc = t.getBoundingClientRect();
-        tip.style.left = Math.max(8, Math.min(rc.left, window.innerWidth - 340)) + 'px';
+        tip.style.left = Math.max(8, Math.min(rc.left, window.innerWidth - (tip.offsetWidth || 340) - 8)) + 'px';
         tip.style.top = (rc.bottom + 4) + 'px';
       });
       function row(r) {
